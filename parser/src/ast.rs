@@ -1,3 +1,4 @@
+#[derive(PartialEq, Debug)]
 pub enum ConnectiveType {
     COLON,
     PERIOD,
@@ -21,6 +22,7 @@ impl ConnectiveType {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub struct Connective {
     connective_type:ConnectiveType,
     number_of:usize
@@ -32,6 +34,7 @@ impl Connective {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub struct PathElementOrConnective {
     path_element:Option<PathElement>,
     connective:Option<Connective>
@@ -46,6 +49,7 @@ impl PathElementOrConnective {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub struct PathElement {
     element:String
 }
@@ -56,6 +60,7 @@ impl PathElement {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub struct Path {
     path:Vec<PathElementOrConnective>
 }
@@ -65,8 +70,8 @@ impl Path {
         Path{path:p}
     }
 
-    pub fn push(&mut self, pe:PathElementOrConnective) {
-        self.path.push(pe);
+    pub fn prepend(&mut self, pe:PathElementOrConnective) {
+        self.path.insert(0, pe);
     }
 }
 
