@@ -1,4 +1,4 @@
-mod myparser;
+mod parser;
 mod ast;
 
 #[cfg(test)]

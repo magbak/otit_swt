@@ -42,18 +42,20 @@ impl Connective {
 #[derive(PartialEq, Debug)]
 pub enum PathElementOrConnective {
     PathElement(PathElement),
-    Connective(Connective)
+    Connective(Connective),
 }
 
 #[derive(PartialEq, Debug)]
 pub struct PathElement {
-    element: String,
+    pub glue: Option<Glue>,
+    pub element: Option<ElementConstraint>,
 }
 
 impl PathElement {
-    pub fn new(element: &str) -> PathElement {
+    pub fn new(glue:Option<Glue>, element: Option<ElementConstraint>) -> PathElement {
         PathElement {
-            element: element.to_string(),
+            glue:glue,
+            element: element,
         }
     }
 }
@@ -105,28 +107,49 @@ impl BooleanOperator {
 pub enum Literal {
     Real(f64),
     Integer(i32),
-    String(String)
+    String(String),
 }
 
 #[derive(PartialEq, Debug)]
 pub enum PathOrLiteral {
     Path(Path),
-    Literal(Literal)
+    Literal(Literal),
 }
 
 #[derive(PartialEq, Debug)]
 pub struct ConditionedPath {
-    lhs_path:Path,
+    lhs_path: Path,
     boolean_operator: BooleanOperator,
-    rhs_path_or_literal: PathOrLiteral
+    rhs_path_or_literal: PathOrLiteral,
 }
 
 impl ConditionedPath {
-    pub fn new(lhs_path:Path, boolean_operator:BooleanOperator, rhs_path_or_literal:PathOrLiteral) -> ConditionedPath {
-        ConditionedPath{
+    pub fn new(
+        lhs_path: Path,
+        boolean_operator: BooleanOperator,
+        rhs_path_or_literal: PathOrLiteral,
+    ) -> ConditionedPath {
+        ConditionedPath {
             lhs_path,
             boolean_operator,
-            rhs_path_or_literal
+            rhs_path_or_literal,
         }
     }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Glue {
+    id: String
+}
+
+impl Glue {
+    pub fn new(g: &str) -> Glue {
+        Glue{id:g.to_string()}
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub enum ElementConstraint {
+    Name(String),
+    TypeName(String)
 }
