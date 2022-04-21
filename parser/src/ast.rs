@@ -1,22 +1,22 @@
 #[derive(PartialEq, Debug)]
 pub enum ConnectiveType {
-    COLON,
-    PERIOD,
-    SEMICOLON,
-    DASH,
-    SLASH,
-    BACKSLASH,
+    Colon,
+    Period,
+    Semicolon,
+    Dash,
+    Slash,
+    Backslash,
 }
 
 impl ConnectiveType {
     pub fn new(ctype: &char) -> ConnectiveType {
         match ctype {
-            ':' => ConnectiveType::COLON,
-            '.' => ConnectiveType::PERIOD,
-            ';' => ConnectiveType::SEMICOLON,
-            '-' => ConnectiveType::DASH,
-            '/' => ConnectiveType::SLASH,
-            '\\' => ConnectiveType::BACKSLASH,
+            ':' => ConnectiveType::Colon,
+            '.' => ConnectiveType::Period,
+            ';' => ConnectiveType::Semicolon,
+            '-' => ConnectiveType::Dash,
+            '/' => ConnectiveType::Slash,
+            '\\' => ConnectiveType::Backslash,
             _ => {
                 panic!("Should only be called with valid connective type")
             }
@@ -101,15 +101,17 @@ impl BooleanOperator {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub enum Literal {
-    REAL(f64),
-    INTEGER(i32),
-    STRING(String)
+    Real(f64),
+    Integer(i32),
+    String(String)
 }
 
+#[derive(PartialEq, Debug)]
 pub enum PathOrLiteral {
-    PATH(Path),
-    LITERAL(Literal)
+    Path(Path),
+    Literal(Literal)
 }
 
 #[derive(PartialEq, Debug)]
@@ -117,4 +119,14 @@ pub struct ConditionedPath {
     lhs_path:Path,
     boolean_operator: BooleanOperator,
     rhs_path_or_literal: PathOrLiteral
+}
+
+impl ConditionedPath {
+    pub fn new(lhs_path:Path, boolean_operator:BooleanOperator, rhs_path_or_literal:PathOrLiteral) -> ConditionedPath {
+        ConditionedPath{
+            lhs_path,
+            boolean_operator,
+            rhs_path_or_literal
+        }
+    }
 }
