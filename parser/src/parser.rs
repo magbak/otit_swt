@@ -6,14 +6,10 @@ use crate::ast::{
 };
 use nom::branch::alt;
 use nom::bytes::complete::tag;
-use nom::character::complete::{
-    alpha1, alphanumeric1, char, digit1, not_line_ending, one_of, space0,
-};
+use nom::character::complete::{alpha1, alphanumeric0, alphanumeric1, char, digit1, not_line_ending, space0};
 use nom::combinator::opt;
-use nom::error::{Error, ErrorKind, VerboseError};
 use nom::multi::many1;
 use nom::sequence::{delimited, pair, tuple};
-use nom::Err::Failure;
 use nom::IResult;
 use std::str::FromStr;
 
@@ -41,8 +37,8 @@ fn name_constraint(n: &str) -> IResult<&str, ElementConstraint> {
 }
 
 fn type_constraint(t: &str) -> IResult<&str, ElementConstraint> {
-    let (t, tname) = alphanumeric1(t)?;
-    Ok((t, ElementConstraint::TypeName(tname.to_string())))
+    let (t, (f,s)) = pair(alpha1, alphanumeric0)(t)?;
+    Ok((t, ElementConstraint::TypeName(f.to_string() + s)))
 }
 
 fn element_constraint(e: &str) -> IResult<&str, PathElement> {
@@ -173,12 +169,12 @@ fn test_parse_conditioned_path_literal() {
             number_of: 1,
         }),
         PathElementOrConnective::PathElement(PathElement::new(
-            None,
+            Some(Glue::new("mynode")),
             Some(ElementConstraint::Name("cda".to_string())),
         )),
     ]);
     assert_eq!(
-        conditioned_path("Abc.\"cda\" > 25"),
+        conditioned_path("Abc.[mynode]\"cda\" > 25"),
         Ok((
             "",
             ConditionedPath::new(
