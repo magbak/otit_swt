@@ -1,17 +1,18 @@
 extern crate nom;
 
-use crate::ast::{
-    BooleanOperator, ConditionedPath, Connective, ConnectiveType, ElementConstraint, Glue, Literal,
-    Path, PathElement, PathElementOrConnective, PathOrLiteral,
-};
+use crate::ast::{BooleanOperator, ConditionedPath, Connective, ConnectiveType, ElementConstraint, Glue, GraphPattern, Literal, Path, PathElement, PathElementOrConnective, PathOrLiteral};
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{alpha1, alphanumeric0, alphanumeric1, char, digit1, not_line_ending, space0};
-use nom::combinator::opt;
+use nom::combinator::{cond, opt};
 use nom::multi::many1;
 use nom::sequence::{delimited, pair, tuple};
 use nom::IResult;
 use std::str::FromStr;
+use dateparser::DateTimeUtc;
+use nom::Err::Failure;
+use nom::error::{Error, ErrorKind};
+use chrono::DateTime;
 
 fn connective(c: &str) -> IResult<&str, Connective> {
     let (c, conns) = alt((
@@ -130,6 +131,34 @@ fn conditioned_path(cp: &str) -> IResult<&str, ConditionedPath> {
     let (cp, (p, _, bop, _, pol)) =
         tuple((path, space0, boolean_operator, space0, path_or_literal))(cp)?;
     Ok((cp, ConditionedPath::new(p, bop, pol)))
+}
+
+fn graph_pattern(g: &str) -> IResult<&str, GraphPattern> {
+    let (g, cp) = many1(conditioned_path)(g)?;
+    Ok((g, GraphPattern::new(cp)))
+}
+
+//Will fail when attempting invalid datetime!
+fn datetime(d: &str) -> IResult<&str, DateTimeUtc> {
+    let dt_res = d.parse::<DateTimeUtc>();
+    match dt_res {
+        Ok(dt) => {Ok((d, dt))}
+        Err(e) => {Err(Failure(Error { input: d, code: ErrorKind::Fail}))}
+    }
+}
+
+fn from(f:&str) -> IResult<&str, DateTimeUtc> {
+    let (f, (_, dt)) = pair(tag("from "), datetime)(f)?;
+    Ok((f, dt))
+}
+
+fn to(t:&str) -> IResult<&str, DateTimeUtc> {
+    let (f, (_, dt)) = pair(tag("to "), datetime)?;
+    Ok((t, dt))
+}
+
+fn ts_query(t: &str) -> IResult<&str, TsQuery> {
+    let (t, (_, from, to, gp, agg)) = tuple((from, to, graph_pattern, aggregation))(t)?;
 }
 
 #[test]

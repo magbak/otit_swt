@@ -52,11 +52,8 @@ pub struct PathElement {
 }
 
 impl PathElement {
-    pub fn new(glue:Option<Glue>, element: Option<ElementConstraint>) -> PathElement {
-        PathElement {
-            glue:glue,
-            element: element,
-        }
+    pub fn new(glue: Option<Glue>, element: Option<ElementConstraint>) -> PathElement {
+        PathElement { glue, element }
     }
 }
 
@@ -139,17 +136,28 @@ impl ConditionedPath {
 
 #[derive(PartialEq, Debug)]
 pub struct Glue {
-    id: String
+    id: String,
 }
 
 impl Glue {
     pub fn new(g: &str) -> Glue {
-        Glue{id:g.to_string()}
+        Glue { id: g.to_string() }
     }
 }
 
 #[derive(PartialEq, Debug)]
 pub enum ElementConstraint {
     Name(String),
-    TypeName(String)
+    TypeName(String),
+}
+
+#[derive(PartialEq, Debug)]
+pub struct GraphPattern {
+    conditioned_paths: Vec<ConditionedPath>
+}
+
+impl GraphPattern {
+    pub fn new(conditioned_paths:Vec<ConditionedPath>) -> GraphPattern {
+        GraphPattern{conditioned_paths}
+    }
 }
