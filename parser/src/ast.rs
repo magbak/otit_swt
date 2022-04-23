@@ -1,3 +1,6 @@
+use std::time::Duration;
+use dateparser::DateTimeUtc;
+
 #[derive(PartialEq, Debug)]
 pub enum ConnectiveType {
     Colon,
@@ -153,11 +156,49 @@ pub enum ElementConstraint {
 
 #[derive(PartialEq, Debug)]
 pub struct GraphPattern {
-    conditioned_paths: Vec<ConditionedPath>
+    conditioned_paths: Vec<ConditionedPath>,
 }
 
 impl GraphPattern {
-    pub fn new(conditioned_paths:Vec<ConditionedPath>) -> GraphPattern {
-        GraphPattern{conditioned_paths}
+    pub fn new(conditioned_paths: Vec<ConditionedPath>) -> GraphPattern {
+        GraphPattern { conditioned_paths }
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Aggregation {
+    function_name: String,
+    duration: Duration,
+}
+
+impl Aggregation {
+    pub fn new(function_name: &str, duration: Duration) -> Aggregation {
+        Aggregation {
+            function_name: function_name.to_string(),
+            duration,
+        }
+    }
+}
+
+pub struct TsQuery {
+    graph_pattern: GraphPattern,
+    from_datetime: DateTimeUtc,
+    to_datetime: DateTimeUtc,
+    aggregation: Aggregation,
+}
+
+impl TsQuery {
+    pub fn new(
+        graph_pattern: GraphPattern,
+        from_datetime: DateTimeUtc,
+        to_datetime: DateTimeUtc,
+        aggregation: Aggregation,
+    ) -> TsQuery {
+        TsQuery {
+            graph_pattern,
+            from_datetime,
+            to_datetime,
+            aggregation,
+        }
     }
 }
