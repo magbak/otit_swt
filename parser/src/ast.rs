@@ -1,5 +1,5 @@
 use std::time::Duration;
-use dateparser::DateTimeUtc;
+use chrono::{DateTime, Utc};
 
 #[derive(PartialEq, Debug)]
 pub enum ConnectiveType {
@@ -119,8 +119,8 @@ pub enum PathOrLiteral {
 #[derive(PartialEq, Debug)]
 pub struct ConditionedPath {
     lhs_path: Path,
-    boolean_operator: BooleanOperator,
-    rhs_path_or_literal: PathOrLiteral,
+    boolean_operator: Option<BooleanOperator>,
+    rhs_path_or_literal: Option<PathOrLiteral>,
 }
 
 impl ConditionedPath {
@@ -131,8 +131,16 @@ impl ConditionedPath {
     ) -> ConditionedPath {
         ConditionedPath {
             lhs_path,
-            boolean_operator,
-            rhs_path_or_literal,
+            boolean_operator:Some(boolean_operator),
+            rhs_path_or_literal:Some(rhs_path_or_literal),
+        }
+    }
+
+    pub fn from_path(lhs_path:Path) -> ConditionedPath {
+        ConditionedPath{
+            lhs_path,
+            boolean_operator:None,
+            rhs_path_or_literal:None
         }
     }
 }
@@ -180,18 +188,19 @@ impl Aggregation {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub struct TsQuery {
     graph_pattern: GraphPattern,
-    from_datetime: DateTimeUtc,
-    to_datetime: DateTimeUtc,
+    from_datetime: DateTime<Utc>,
+    to_datetime: DateTime<Utc>,
     aggregation: Aggregation,
 }
 
 impl TsQuery {
     pub fn new(
         graph_pattern: GraphPattern,
-        from_datetime: DateTimeUtc,
-        to_datetime: DateTimeUtc,
+        from_datetime: DateTime<Utc>,
+        to_datetime: DateTime<Utc>,
         aggregation: Aggregation,
     ) -> TsQuery {
         TsQuery {
@@ -200,5 +209,54 @@ impl TsQuery {
             to_datetime,
             aggregation,
         }
+    }
+}
+
+pub enum DataType {
+    String,
+    Real,
+    Integer,
+}
+
+impl DataType {
+    pub fn new(dt:&str) -> DataType{
+        match dt {
+            "String" => DataType::String,
+            "Real" => DataType::String,
+            "Integer" => DataType::Integer,
+            p => panic!("Invalid data type {:}", p)
+        }
+    }
+}
+
+pub struct Output {
+    path: Vec<PathElement>,
+    data_type: DataType
+}
+
+impl Output {
+    pub fn new(path:Vec<PathElement>, data_type:DataType) -> Output {
+        Output{path, data_type:data_type}
+    }
+}
+
+pub struct Outputs {
+    outputs: Vec<Output>
+}
+
+impl Outputs {
+    pub fn new(outputs:Vec<Output>) -> Outputs {
+        Outputs{outputs}
+    }
+}
+
+pub struct TsApi {
+    input: GraphPattern,
+    outputs: Outputs
+}
+
+impl TsApi {
+    pub fn new(input:GraphPattern, outputs:Outputs) -> TsApi {
+        TsApi{input, outputs}
     }
 }

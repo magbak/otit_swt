@@ -1,25 +1,29 @@
 extern crate nom;
 
 use crate::ast::{
-    Aggregation, BooleanOperator, ConditionedPath, Connective, ConnectiveType, ElementConstraint,
-    Glue, GraphPattern, Literal, Path, PathElement, PathElementOrConnective, PathOrLiteral,
-    TsQuery,
+    Aggregation, BooleanOperator, ConditionedPath, Connective, ConnectiveType, DataType,
+    ElementConstraint, Glue, GraphPattern, Literal, Output, Outputs, Path, PathElement,
+    PathElementOrConnective, PathOrLiteral, TsQuery,
 };
-use chrono::{DateTime};
-use std::time::Duration;
-use dateparser::DateTimeUtc;
+use chrono::{DateTime, FixedOffset, Utc};
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{
-    alpha1, alphanumeric0, alphanumeric1, char, digit1, not_line_ending, space0,
+    alpha1, alphanumeric0, alphanumeric1, char, digit1, newline, not_line_ending, space0, space1,
 };
-use nom::combinator::{opt};
+use nom::combinator::{not, opt};
 use nom::error::{Error, ErrorKind};
-use nom::multi::many1;
+use nom::multi::{many0, many1};
 use nom::sequence::{delimited, pair, tuple};
 use nom::Err::Failure;
 use nom::IResult;
 use std::str::FromStr;
+use std::time::Duration;
+
+fn not_keyword(k: &str) -> IResult<&str, &str> {
+    not(alt((tag("from"), tag("to"), tag("aggregate"))))(k)?;
+    Ok((k, k))
+}
 
 fn connective(c: &str) -> IResult<&str, Connective> {
     let (c, conns) = alt((
@@ -45,7 +49,7 @@ fn name_constraint(n: &str) -> IResult<&str, ElementConstraint> {
 }
 
 fn type_constraint(t: &str) -> IResult<&str, ElementConstraint> {
-    let (t, (f, s)) = pair(alpha1, alphanumeric0)(t)?;
+    let (t, (_, f, s)) = tuple((not_keyword, alpha1, alphanumeric0))(t)?;
     Ok((t, ElementConstraint::TypeName(f.to_string() + s)))
 }
 
@@ -98,7 +102,6 @@ fn numeric_literal(l: &str) -> IResult<&str, Literal> {
 }
 
 fn string_literal(s: &str) -> IResult<&str, Literal> {
-    println!("{:}", s);
     let (s, lit) = delimited(tag("\""), not_line_ending, tag("\""))(s)?;
     Ok((s, Literal::String(lit.to_string())))
 }
@@ -140,37 +143,60 @@ fn conditioned_path(cp: &str) -> IResult<&str, ConditionedPath> {
     Ok((cp, ConditionedPath::new(p, bop, pol)))
 }
 
+fn path_as_conditioned(p: &str) -> IResult<&str, ConditionedPath> {
+    let (p, pa) = path(p)?;
+    Ok((p, ConditionedPath::from_path(pa)))
+}
+
 fn graph_pattern(g: &str) -> IResult<&str, GraphPattern> {
-    let (g, cp) = many1(conditioned_path)(g)?;
-    Ok((g, GraphPattern::new(cp)))
+    let (g, cp) = many1(tuple((
+        many0(newline),
+        space0,
+        alt((conditioned_path, path_as_conditioned)),
+        many0(newline),
+    )))(g)?;
+    Ok((
+        g,
+        GraphPattern::new(cp.into_iter().map(|(_, _, c, _)| c).collect()),
+    ))
 }
 
 //Will fail when attempting invalid datetime!
-fn datetime(d: &str) -> IResult<&str, DateTimeUtc> {
+fn datetime(d: &str) -> IResult<&str, DateTime<Utc>> {
     let (d, r) = not_line_ending(d)?;
-    let dt_res = r.parse::<DateTimeUtc>();
+    println!("{:?}",r);
+    let dt_res = DateTime::parse_from_rfc3339(r);
+    println!("{:?}",dt_res);
     match dt_res {
-        Ok(dt) => Ok((d, dt)),
+        Ok(dt) => Ok((d, dt.with_timezone(&Utc))),
         Err(_) => Err(Failure(Error {
             input: d,
-            code: ErrorKind::Fail,
+            code: ErrorKind::Permutation,
         })),
     }
 }
 
-fn from(f: &str) -> IResult<&str, DateTimeUtc> {
-    let (f, (_, dt)) = pair(tag("from "), datetime)(f)?;
+fn from(f: &str) -> IResult<&str, DateTime<Utc>> {
+    let (f, (_, _, _, dt, _, _)) = tuple((
+        space0,
+        tag("from"),
+        space1,
+        datetime,
+        space0,
+        many0(newline),
+    ))(f)?;
     Ok((f, dt))
 }
 
-fn to(t: &str) -> IResult<&str, DateTimeUtc> {
-    let (t, (_, dt)) = pair(tag("to "), datetime)(t)?;
+fn to(t: &str) -> IResult<&str, DateTime<Utc>> {
+    let (t, (_, _, _, dt, _, _)) =
+        tuple((space0, tag("to"), space1, datetime, space0, many0(newline)))(t)?;
     Ok((t, dt))
 }
 
 fn duration(d: &str) -> IResult<&str, Duration> {
     let (d, dur_str) = not_line_ending(d)?;
-    let dur_res = duration_str::parse(d);
+    let dur_res = duration_str::parse(dur_str);
     match dur_res {
         Ok(dur) => Ok((d, dur)),
         Err(_) => Err(Failure(Error {
@@ -181,17 +207,40 @@ fn duration(d: &str) -> IResult<&str, Duration> {
 }
 
 fn aggregation(a: &str) -> IResult<&str, Aggregation> {
-    let (a, (_, funcname, duration)) = tuple((tag("aggregate "), alpha1, duration))(a)?;
+    let (a, (_, _, _, funcname, _, duration, _)) = tuple((
+        space0,
+        tag("aggregate"),
+        space1,
+        alpha1,
+        space1,
+        duration,
+        many0(newline),
+    ))(a)?;
     Ok((a, Aggregation::new(funcname, duration)))
 }
 
-fn ts_query(t: &str) -> IResult<&str, TsQuery> {
-    let (t, (graph_pattern, from_datetime, to_datetime, aggregation)) =
-        tuple((graph_pattern, from, to, aggregation))(t)?;
+pub fn ts_query(t: &str) -> IResult<&str, TsQuery> {
+    let (t, (_, graph_pattern, from_datetime, to_datetime, aggregation)) =
+        tuple((many0(newline), graph_pattern, from, to, aggregation))(t)?;
     Ok((
         t,
         TsQuery::new(graph_pattern, from_datetime, to_datetime, aggregation),
     ))
+}
+
+fn data_type(d: &str) -> IResult<&str, DataType> {
+    let (d, dt) = alpha1(d)?;
+    Ok((d, DataType::new(dt)))
+}
+
+fn output(o: &str) -> IResult<&str, Output> {
+    let (o, (outputs, _, dt)) = tuple((many1(path_element), char(':'), data_type))(o)?;
+    Ok((o, Output::new(outputs, dt)))
+}
+
+fn outputs(o: &str) -> IResult<&str, Outputs> {
+    let (o, outs) = many1(output)(o)?;
+    Ok((o, Outputs::new(outs)))
 }
 
 #[test]
