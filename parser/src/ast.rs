@@ -34,9 +34,9 @@ pub struct Connective {
 }
 
 impl Connective {
-    pub fn new(ctype: &char, number_of: usize) -> Connective {
+    pub fn new(connective_type: ConnectiveType, number_of: usize) -> Connective {
         Connective {
-            connective_type: ConnectiveType::new(ctype),
+            connective_type,
             number_of,
         }
     }
@@ -108,6 +108,7 @@ pub enum Literal {
     Real(f64),
     Integer(i32),
     String(String),
+    Boolean(bool)
 }
 
 #[derive(PartialEq, Debug)]
@@ -191,6 +192,7 @@ impl Aggregation {
 #[derive(PartialEq, Debug)]
 pub struct TsQuery {
     graph_pattern: GraphPattern,
+    group: Group,
     from_datetime: DateTime<Utc>,
     to_datetime: DateTime<Utc>,
     aggregation: Aggregation,
@@ -199,12 +201,14 @@ pub struct TsQuery {
 impl TsQuery {
     pub fn new(
         graph_pattern: GraphPattern,
+        group: Group,
         from_datetime: DateTime<Utc>,
         to_datetime: DateTime<Utc>,
         aggregation: Aggregation,
     ) -> TsQuery {
         TsQuery {
             graph_pattern,
+            group,
             from_datetime,
             to_datetime,
             aggregation,
@@ -258,5 +262,18 @@ pub struct TsApi {
 impl TsApi {
     pub fn new(input:GraphPattern, outputs:Outputs) -> TsApi {
         TsApi{input, outputs}
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Group {
+    var_names: Vec<String>
+}
+
+impl Group {
+    pub fn new(var_names: Vec<&str>) -> Group {
+        Group {
+            var_names: var_names.into_iter().map(|s|s.to_string()).collect()
+        }
     }
 }

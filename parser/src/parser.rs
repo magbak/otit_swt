@@ -2,10 +2,11 @@ extern crate nom;
 
 use crate::ast::{
     Aggregation, BooleanOperator, ConditionedPath, Connective, ConnectiveType, DataType,
-    ElementConstraint, Glue, GraphPattern, Literal, Output, Outputs, Path, PathElement,
+    ElementConstraint, Glue, GraphPattern, Group, Literal, Output, Outputs, Path, PathElement,
     PathElementOrConnective, PathOrLiteral, TsQuery,
 };
 use chrono::{DateTime, FixedOffset, Utc};
+use dateparser::DateTimeUtc;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{
@@ -13,16 +14,22 @@ use nom::character::complete::{
 };
 use nom::combinator::{not, opt};
 use nom::error::{Error, ErrorKind};
-use nom::multi::{many0, many1};
+use nom::multi::{many0, many1, separated_list1};
 use nom::sequence::{delimited, pair, tuple};
 use nom::Err::Failure;
 use nom::IResult;
 use std::str::FromStr;
 use std::time::Duration;
-use dateparser::DateTimeUtc;
 
 fn not_keyword(k: &str) -> IResult<&str, &str> {
-    not(alt((tag("from"), tag("to"), tag("aggregate"))))(k)?;
+    not(alt((
+        tag("from"),
+        tag("to"),
+        tag("aggregate"),
+        tag("true"),
+        tag("false"),
+        tag("group"),
+    )))(k)?;
     Ok((k, k))
 }
 
@@ -36,7 +43,10 @@ fn connective(c: &str) -> IResult<&str, Connective> {
         many1(char('\\')),
     ))(c)?;
     assert!(conns.len() > 0);
-    Ok((c, Connective::new(conns.get(0).unwrap(), conns.len())))
+    Ok((
+        c,
+        Connective::new(ConnectiveType::new(conns.get(0).unwrap()), conns.len()),
+    ))
 }
 
 fn glue(g: &str) -> IResult<&str, PathElement> {
@@ -107,8 +117,14 @@ fn string_literal(s: &str) -> IResult<&str, Literal> {
     Ok((s, Literal::String(lit.to_string())))
 }
 
+fn boolean_literal(b: &str) -> IResult<&str, Literal> {
+    let (b, lit) = alt((tag("true"), tag("false")))(b)?;
+    let boolean = if lit == "true" { true } else { false };
+    Ok((b, Literal::Boolean(boolean)))
+}
+
 fn literal(l: &str) -> IResult<&str, Literal> {
-    alt((numeric_literal, string_literal))(l)
+    alt((numeric_literal, string_literal, boolean_literal))(l)
 }
 
 fn literal_as_path_or_literal(l: &str) -> IResult<&str, PathOrLiteral> {
@@ -167,8 +183,7 @@ fn datetime(d: &str) -> IResult<&str, DateTime<Utc>> {
     let (d, r) = not_line_ending(d)?;
     let dt_res = r.parse::<DateTimeUtc>();
     match dt_res {
-        Ok(dt) => {
-            Ok((d, dt.0))},
+        Ok(dt) => Ok((d, dt.0)),
         Err(_) => Err(Failure(Error {
             input: d,
             code: ErrorKind::Permutation,
@@ -192,6 +207,18 @@ fn to(t: &str) -> IResult<&str, DateTime<Utc>> {
     let (t, (_, _, _, dt, _, _)) =
         tuple((space0, tag("to"), space1, datetime, space0, many0(newline)))(t)?;
     Ok((t, dt))
+}
+
+fn group(g: &str) -> IResult<&str, Group> {
+    let (g, (_, _, _, var_names, _, _)) = tuple((
+        space0,
+        tag("group"),
+        space1,
+        separated_list1(tag(","), alpha1),
+        space0,
+        many0(newline),
+    ))(g)?;
+    Ok((g, Group::new(var_names)))
 }
 
 fn duration(d: &str) -> IResult<&str, Duration> {
@@ -220,11 +247,17 @@ fn aggregation(a: &str) -> IResult<&str, Aggregation> {
 }
 
 pub fn ts_query(t: &str) -> IResult<&str, TsQuery> {
-    let (t, (_, graph_pattern, from_datetime, to_datetime, aggregation)) =
-        tuple((many0(newline), graph_pattern, from, to, aggregation))(t)?;
+    let (t, (_, graph_pattern, group, from_datetime, to_datetime, aggregation)) =
+        tuple((many0(newline), graph_pattern, group, from, to, aggregation))(t)?;
     Ok((
         t,
-        TsQuery::new(graph_pattern, from_datetime, to_datetime, aggregation),
+        TsQuery::new(
+            graph_pattern,
+            group,
+            from_datetime,
+            to_datetime,
+            aggregation,
+        ),
     ))
 }
 
@@ -245,7 +278,10 @@ fn outputs(o: &str) -> IResult<&str, Outputs> {
 
 #[test]
 fn test_parse_path() {
-    assert_eq!(connective("-"), Ok(("", Connective::new(&'-', 1))));
+    assert_eq!(
+        connective("-"),
+        Ok(("", Connective::new(ConnectiveType::Dash, 1)))
+    );
     assert_eq!(
         path("Abc.\"cda\""),
         Ok((
