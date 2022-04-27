@@ -19,6 +19,7 @@ use nom::Err::Failure;
 use nom::IResult;
 use std::str::FromStr;
 use std::time::Duration;
+use dateparser::DateTimeUtc;
 
 fn not_keyword(k: &str) -> IResult<&str, &str> {
     not(alt((tag("from"), tag("to"), tag("aggregate"))))(k)?;
@@ -164,11 +165,10 @@ fn graph_pattern(g: &str) -> IResult<&str, GraphPattern> {
 //Will fail when attempting invalid datetime!
 fn datetime(d: &str) -> IResult<&str, DateTime<Utc>> {
     let (d, r) = not_line_ending(d)?;
-    println!("{:?}",r);
-    let dt_res = DateTime::parse_from_rfc3339(r);
-    println!("{:?}",dt_res);
+    let dt_res = r.parse::<DateTimeUtc>();
     match dt_res {
-        Ok(dt) => Ok((d, dt.with_timezone(&Utc))),
+        Ok(dt) => {
+            Ok((d, dt.0))},
         Err(_) => Err(Failure(Error {
             input: d,
             code: ErrorKind::Permutation,
