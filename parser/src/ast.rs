@@ -1,9 +1,8 @@
-use std::time::Duration;
 use chrono::{DateTime, Utc};
+use std::time::Duration;
 
 #[derive(PartialEq, Debug)]
 pub enum ConnectiveType {
-    Colon,
     Period,
     Semicolon,
     Dash,
@@ -14,7 +13,6 @@ pub enum ConnectiveType {
 impl ConnectiveType {
     pub fn new(ctype: &char) -> ConnectiveType {
         match ctype {
-            ':' => ConnectiveType::Colon,
             '.' => ConnectiveType::Period,
             ';' => ConnectiveType::Semicolon,
             '-' => ConnectiveType::Dash,
@@ -108,7 +106,7 @@ pub enum Literal {
     Real(f64),
     Integer(i32),
     String(String),
-    Boolean(bool)
+    Boolean(bool),
 }
 
 #[derive(PartialEq, Debug)]
@@ -132,16 +130,16 @@ impl ConditionedPath {
     ) -> ConditionedPath {
         ConditionedPath {
             lhs_path,
-            boolean_operator:Some(boolean_operator),
-            rhs_path_or_literal:Some(rhs_path_or_literal),
+            boolean_operator: Some(boolean_operator),
+            rhs_path_or_literal: Some(rhs_path_or_literal),
         }
     }
 
-    pub fn from_path(lhs_path:Path) -> ConditionedPath {
-        ConditionedPath{
+    pub fn from_path(lhs_path: Path) -> ConditionedPath {
+        ConditionedPath {
             lhs_path,
-            boolean_operator:None,
-            rhs_path_or_literal:None
+            boolean_operator: None,
+            rhs_path_or_literal: None,
         }
     }
 }
@@ -161,6 +159,7 @@ impl Glue {
 pub enum ElementConstraint {
     Name(String),
     TypeName(String),
+    TypeNameAndName(String, String),
 }
 
 #[derive(PartialEq, Debug)]
@@ -216,64 +215,106 @@ impl TsQuery {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub enum DataType {
     String,
     Real,
     Integer,
+    Boolean
 }
 
 impl DataType {
-    pub fn new(dt:&str) -> DataType{
+    pub fn new(dt: &str) -> DataType {
         match dt {
             "String" => DataType::String,
-            "Real" => DataType::String,
+            "Real" => DataType::Real,
             "Integer" => DataType::Integer,
-            p => panic!("Invalid data type {:}", p)
+            "Boolean" => DataType::Boolean,
+            p => panic!("Invalid data type {:}", p),
         }
     }
 }
 
-pub struct Output {
-    path: Vec<PathElement>,
-    data_type: DataType
+#[derive(PartialEq, Debug)]
+pub enum ArrowType {
+    Right,
+    Left,
 }
 
-impl Output {
-    pub fn new(path:Vec<PathElement>, data_type:DataType) -> Output {
-        Output{path, data_type:data_type}
+impl ArrowType {
+    pub fn new(arrow: &str) -> ArrowType {
+        match arrow {
+            "->" => ArrowType::Right,
+            "<-" => ArrowType::Left,
+            _ => panic!("Invalid arrow type {:}", arrow),
+        }
     }
 }
 
-pub struct Outputs {
-    outputs: Vec<Output>
+#[derive(PartialEq, Debug)]
+pub struct TypedLabel {
+    label: String,
+    data_type: DataType,
 }
 
-impl Outputs {
-    pub fn new(outputs:Vec<Output>) -> Outputs {
-        Outputs{outputs}
+impl TypedLabel {
+    pub fn new(label: &str, data_type: DataType) -> TypedLabel {
+        TypedLabel {
+            label: label.to_string(),
+            data_type,
+        }
     }
 }
 
+#[derive(PartialEq, Debug)]
+pub struct InputOutput {
+    path: Path,
+    arrow_type: Option<ArrowType>,
+    typed_label: Option<TypedLabel>,
+}
+
+impl InputOutput {
+    pub fn new(path: Path, arrow_type: ArrowType, typed_label:TypedLabel) -> InputOutput {
+        InputOutput {
+            path,
+            arrow_type: Some(arrow_type),
+            typed_label: Some(typed_label),
+        }
+    }
+
+    pub fn from_path(path: Path) -> InputOutput {
+        InputOutput {
+            path,
+            arrow_type: None,
+            typed_label: None,
+        }
+    }
+}
+
+#[derive(PartialEq, Debug)]
 pub struct TsApi {
-    input: GraphPattern,
-    outputs: Outputs
+    inputs_outputs: Vec<InputOutput>,
+    group: Group,
 }
 
 impl TsApi {
-    pub fn new(input:GraphPattern, outputs:Outputs) -> TsApi {
-        TsApi{input, outputs}
+    pub fn new(inputs_outputs: Vec<InputOutput>, group: Group) -> TsApi {
+        TsApi {
+            inputs_outputs,
+            group,
+        }
     }
 }
 
 #[derive(PartialEq, Debug)]
 pub struct Group {
-    var_names: Vec<String>
+    var_names: Vec<String>,
 }
 
 impl Group {
     pub fn new(var_names: Vec<&str>) -> Group {
         Group {
-            var_names: var_names.into_iter().map(|s|s.to_string()).collect()
+            var_names: var_names.into_iter().map(|s| s.to_string()).collect(),
         }
     }
 }

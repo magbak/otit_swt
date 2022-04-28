@@ -1,21 +1,85 @@
-use chrono::{DateTime};
-use otit_dsl_parser::ast::ElementConstraint::{Name};
 use otit_dsl_parser::ast::{
-    Aggregation, BooleanOperator, ConditionedPath, Connective, ConnectiveType, ElementConstraint,
-    Glue, GraphPattern, Literal, Path, PathElement, PathElementOrConnective, PathOrLiteral,
-    TsQuery,
+    ArrowType, Connective, ConnectiveType, DataType, ElementConstraint, Glue, Group, InputOutput,
+    Path, PathElement, PathElementOrConnective, TsApi, TypedLabel,
 };
-use otit_dsl_parser::parser::ts_query;
-use std::str::FromStr;
-use std::time::Duration;
+use otit_dsl_parser::parser::ts_api;
 
 #[test]
 fn test_basic_api() {
     let q = r#"
-    ABC-[valve]"HLV"."Mvm"."stVal"
-    [valve]."PosPct"."mag"
-    from 2021-12-01T00:00:01+01:00
-    to 2021-12-02T00:00:01+01:00
-    aggregate mean 10min
+    ABC-[valve]"HLV"."Mvm"."stVal" -> status:Boolean
+    [valve]."PosPct"."mag" -> magnitude:Real
+    [valve]."myKpi":KPIType <- myKpi:Real
+    group valve
 "#;
+    let (_, actual) = ts_api(q).expect("Noproblems");
+    let expected = TsApi::new(
+        vec![
+            InputOutput::new(
+                Path::new(vec![
+                    PathElementOrConnective::PathElement(PathElement::new(
+                        None,
+                        Some(ElementConstraint::TypeName("ABC".to_string())),
+                    )),
+                    PathElementOrConnective::Connective(Connective::new(ConnectiveType::Dash, 1)),
+                    PathElementOrConnective::PathElement(PathElement::new(
+                        Some(Glue::new("valve")),
+                        Some(ElementConstraint::Name("HLV".to_string())),
+                    )),
+                    PathElementOrConnective::Connective(Connective::new(ConnectiveType::Period, 1)),
+                    PathElementOrConnective::PathElement(PathElement::new(
+                        None,
+                        Some(ElementConstraint::Name("Mvm".to_string())),
+                    )),
+                    PathElementOrConnective::Connective(Connective::new(ConnectiveType::Period, 1)),
+                    PathElementOrConnective::PathElement(PathElement::new(
+                        None,
+                        Some(ElementConstraint::Name("stVal".to_string())),
+                    )),
+                ]),
+                ArrowType::Right,
+                TypedLabel::new("status", DataType::Boolean),
+            ),
+            InputOutput::new(
+                Path::new(vec![
+                    PathElementOrConnective::PathElement(PathElement::new(
+                        Some(Glue::new("valve")),
+                        None,
+                    )),
+                    PathElementOrConnective::Connective(Connective::new(ConnectiveType::Period, 1)),
+                    PathElementOrConnective::PathElement(PathElement::new(
+                        None,
+                        Some(ElementConstraint::Name("PosPct".to_string())),
+                    )),
+                    PathElementOrConnective::Connective(Connective::new(ConnectiveType::Period, 1)),
+                    PathElementOrConnective::PathElement(PathElement::new(
+                        None,
+                        Some(ElementConstraint::Name("mag".to_string())),
+                    )),
+                ]),
+                ArrowType::Right,
+                TypedLabel::new("magnitude", DataType::Real),
+            ),
+            InputOutput::new(
+                Path::new(vec![
+                    PathElementOrConnective::PathElement(PathElement::new(
+                        Some(Glue::new("valve")),
+                        None,
+                    )),
+                    PathElementOrConnective::Connective(Connective::new(ConnectiveType::Period, 1)),
+                    PathElementOrConnective::PathElement(PathElement::new(
+                        None,
+                        Some(ElementConstraint::TypeNameAndName(
+                            "myKpi".to_string(),
+                            "KPIType".to_string(),
+                        )),
+                    )),
+                ]),
+                ArrowType::Left,
+                TypedLabel::new("myKpi", DataType::Real),
+            ),
+        ],
+        Group::new(vec!["valve"]),
+    );
+    assert_eq!(expected, actual);
 }

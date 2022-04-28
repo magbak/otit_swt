@@ -1,11 +1,7 @@
 extern crate nom;
 
-use crate::ast::{
-    Aggregation, BooleanOperator, ConditionedPath, Connective, ConnectiveType, DataType,
-    ElementConstraint, Glue, GraphPattern, Group, Literal, Output, Outputs, Path, PathElement,
-    PathElementOrConnective, PathOrLiteral, TsQuery,
-};
-use chrono::{DateTime, FixedOffset, Utc};
+use crate::ast::{Aggregation, ArrowType, BooleanOperator, ConditionedPath, Connective, ConnectiveType, DataType, ElementConstraint, Glue, GraphPattern, Group, InputOutput, Literal, Path, PathElement, PathElementOrConnective, PathOrLiteral, TsApi, TsQuery, TypedLabel};
+use chrono::{DateTime, Utc};
 use dateparser::DateTimeUtc;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
@@ -64,8 +60,13 @@ fn type_constraint(t: &str) -> IResult<&str, ElementConstraint> {
     Ok((t, ElementConstraint::TypeName(f.to_string() + s)))
 }
 
+fn type_and_name_constraint(tn:&str) -> IResult<&str, ElementConstraint> {
+    let (tn, (_,n,_,_,t)) = tuple((tag("\""), alphanumeric1, tag("\""), char(':'), alpha1))(tn)?;
+    Ok((tn, ElementConstraint::TypeNameAndName(n.to_string(), t.to_string())))
+}
+
 fn element_constraint(e: &str) -> IResult<&str, PathElement> {
-    let (e, c) = alt((name_constraint, type_constraint))(e)?;
+    let (e, c) = alt((type_and_name_constraint, name_constraint, type_constraint))(e)?;
     Ok((e, PathElement::new(None, Some(c))))
 }
 
@@ -266,14 +267,24 @@ fn data_type(d: &str) -> IResult<&str, DataType> {
     Ok((d, DataType::new(dt)))
 }
 
-fn output(o: &str) -> IResult<&str, Output> {
-    let (o, (outputs, _, dt)) = tuple((many1(path_element), char(':'), data_type))(o)?;
-    Ok((o, Output::new(outputs, dt)))
+fn arrow(a: &str) -> IResult<&str, ArrowType> {
+    let (a, arrow) = alt((tag("->"), tag("<-")))(a)?;
+    Ok((a, ArrowType::new(arrow)))
 }
 
-fn outputs(o: &str) -> IResult<&str, Outputs> {
-    let (o, outs) = many1(output)(o)?;
-    Ok((o, Outputs::new(outs)))
+fn typed_label(t:&str) -> IResult<&str, TypedLabel> {
+    let (t, (label,_,data_type)) = tuple((alpha1, char(':'), data_type))(t)?;
+    Ok((t, TypedLabel::new(label, data_type)))
+}
+
+fn input_output(io: &str) -> IResult<&str, InputOutput> {
+    let (io, (_, path, _, arrow_type,_, label,_,_)) = tuple((space0, path, space1, arrow, space1, typed_label, space0, many0(newline)))(io)?;
+    Ok((io, InputOutput::new(path, arrow_type, label)))
+}
+
+pub fn ts_api(a: &str) -> IResult<&str, TsApi> {
+    let (a, (_,_,inputs_outputs, group)) = tuple((space0, many0(newline), many1(input_output), group))(a)?;
+    Ok((a,TsApi::new(inputs_outputs, group)))
 }
 
 #[test]
