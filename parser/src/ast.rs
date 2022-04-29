@@ -61,11 +61,16 @@ impl PathElement {
 #[derive(PartialEq, Debug)]
 pub struct Path {
     path: Vec<PathElementOrConnective>,
+    pub optional: bool
 }
 
 impl Path {
-    pub fn new(p: Vec<PathElementOrConnective>) -> Path {
-        Path { path: p }
+    pub fn from_vec(path: Vec<PathElementOrConnective>) -> Path {
+        Path { path, optional: false }
+    }
+
+    pub fn new(path:Vec<PathElementOrConnective>, optional:bool) -> Path {
+        Path { path, optional }
     }
 
     pub fn prepend(&mut self, pe: PathElementOrConnective) {

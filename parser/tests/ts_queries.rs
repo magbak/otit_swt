@@ -19,7 +19,7 @@ fn test_basic_multiline_query() {
     let expected = TsQuery::new(
         GraphPattern::new(vec![
             ConditionedPath::from_path(
-                Path::new(vec![
+                Path::from_vec(vec![
                     PathElementOrConnective::PathElement(PathElement::new(
                         None,
                         Some(ElementConstraint::TypeName("ABC".to_string())),
@@ -42,7 +42,7 @@ fn test_basic_multiline_query() {
                 ])
             ),
             ConditionedPath::from_path(
-                Path::new(vec![
+                Path::from_vec(vec![
                     PathElementOrConnective::PathElement(PathElement::new(
                         Some(Glue::new("valve")),
                         None,
@@ -82,7 +82,7 @@ fn test_conditioned_multiline_query() {
     let expected = TsQuery::new(
         GraphPattern::new(vec![
             ConditionedPath::new(
-                Path::new(vec![
+                Path::from_vec(vec![
                     PathElementOrConnective::PathElement(PathElement::new(
                         None,
                         Some(ElementConstraint::TypeName("ABC".to_string())),
@@ -107,7 +107,7 @@ fn test_conditioned_multiline_query() {
                 PathOrLiteral::Literal(Literal::Boolean(true)),
             ),
             ConditionedPath::new(
-                Path::new(vec![
+                Path::from_vec(vec![
                     PathElementOrConnective::PathElement(PathElement::new(
                         Some(Glue::new("valve")),
                         None,

@@ -81,7 +81,7 @@ fn path_element(p: &str) -> IResult<&str, PathElement> {
 
 fn singleton_path(p: &str) -> IResult<&str, Path> {
     let (p, el) = path_element(p)?;
-    Ok((p, Path::new(vec![PathElementOrConnective::PathElement(el)])))
+    Ok((p, Path::from_vec(vec![PathElementOrConnective::PathElement(el)])))
 }
 
 fn path_triple(p: &str) -> IResult<&str, Path> {
@@ -95,6 +95,14 @@ fn path_triple(p: &str) -> IResult<&str, Path> {
 
 fn path(p: &str) -> IResult<&str, Path> {
     alt((path_triple, singleton_path))(p)
+}
+
+fn questionable_path(p: &str) -> IResult<&str, Path> {
+    let (p, (mut pa, qm)) = tuple((path,opt(pair(space0, char('?')))))(p)?;
+    if qm.is_some() {
+        pa.optional = true;
+    }
+    Ok((p,pa))
 }
 
 fn numeric_literal(l: &str) -> IResult<&str, Literal> {
@@ -157,7 +165,7 @@ fn path_or_literal(pl: &str) -> IResult<&str, PathOrLiteral> {
 
 fn conditioned_path(cp: &str) -> IResult<&str, ConditionedPath> {
     let (cp, (p, _, bop, _, pol)) =
-        tuple((path, space0, boolean_operator, space0, path_or_literal))(cp)?;
+        tuple((questionable_path, space0, boolean_operator, space0, path_or_literal))(cp)?;
     Ok((cp, ConditionedPath::new(p, bop, pol)))
 }
 
@@ -278,7 +286,7 @@ fn typed_label(t:&str) -> IResult<&str, TypedLabel> {
 }
 
 fn input_output(io: &str) -> IResult<&str, InputOutput> {
-    let (io, (_, path, _, arrow_type,_, label,_,_)) = tuple((space0, path, space1, arrow, space1, typed_label, space0, many0(newline)))(io)?;
+    let (io, (_, path, _, arrow_type,_, label,_,_)) = tuple((space0, questionable_path, space1, arrow, space1, typed_label, space0, many0(newline)))(io)?;
     Ok((io, InputOutput::new(path, arrow_type, label)))
 }
 
@@ -297,7 +305,7 @@ fn test_parse_path() {
         path("Abc.\"cda\""),
         Ok((
             "",
-            Path::new(vec![
+            Path::from_vec(vec![
                 PathElementOrConnective::PathElement(PathElement::new(
                     None,
                     Some(ElementConstraint::TypeName("Abc".to_string()))
@@ -317,7 +325,7 @@ fn test_parse_path() {
 
 #[test]
 fn test_parse_conditioned_path_literal() {
-    let lhs = Path::new(vec![
+    let lhs = Path::from_vec(vec![
         PathElementOrConnective::PathElement(PathElement::new(
             None,
             Some(ElementConstraint::TypeName("Abc".to_string())),
@@ -346,7 +354,7 @@ fn test_parse_conditioned_path_literal() {
 
 #[test]
 fn test_parse_conditioned_path_other_path() {
-    let lhs = Path::new(vec![
+    let lhs = Path::from_vec(vec![
         PathElementOrConnective::PathElement(PathElement::new(
             None,
             Some(ElementConstraint::TypeName("Abc".to_string())),
@@ -360,7 +368,7 @@ fn test_parse_conditioned_path_other_path() {
             Some(ElementConstraint::TypeName("cda".to_string())),
         )),
     ]);
-    let rhs = Path::new(vec![
+    let rhs = Path::from_vec(vec![
         PathElementOrConnective::PathElement(PathElement::new(
             None,
             Some(ElementConstraint::TypeName("acadadad".to_string())),
