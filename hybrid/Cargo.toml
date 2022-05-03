@@ -1,10 +1,10 @@
 [package]
-name = "quarry_translator"
+name = "hybrid"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-datafusion="7.0.0"
+polars = "0.21.0"
 arrow-flight="9.1.0"
 tokio = {version="1.17.0", features = ["rt-multi-thread"] }
 log="0.4.14"
