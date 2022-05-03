@@ -62,3 +62,4 @@ pub fn parse_sparql_select_query(query_str:&str) -> Result<GraphPattern, SelectQ
         _ => {Err(SelectQueryError{kind: SelectQueryErrorKind::NotSelectQuery}) }
     }
 }
+
