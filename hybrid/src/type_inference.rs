@@ -2,22 +2,8 @@ use polars::export::arrow::compute::arithmetics::sub;
 use spargebra::algebra::{GraphPattern, PropertyPathExpression};
 use spargebra::term::{NamedNode, NamedNodePattern, TermPattern, TriplePattern};
 use std::collections::BTreeMap;
-
-const HAS_TIMESTAMP: NamedNode =
-    NamedNode::new("https://github.com/magbak/quarry-rs#hasTimestamp").unwrap();
-const HAS_TIMESERIES: NamedNode =
-    NamedNode::new("https://github.com/magbak/quarry-rs#hasTimeseries").unwrap();
-const HAS_DATA_POINT: NamedNode =
-    NamedNode::new("https://github.com/magbak/quarry-rs#hasDataPoint").unwrap();
-const HAS_VALUE: NamedNode =
-    NamedNode::new("https://github.com/magbak/quarry-rs#hasValue").unwrap();
-
-pub enum Constraint {
-    ExternalTimeseries,
-    ExternalDataPoint,
-    ExternalDataValue,
-    ExternalTimestamp,
-}
+use crate::const_uris::{HAS_DATA_POINT, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE};
+use crate::constraints::Constraint;
 
 pub fn infer_types(&graph_pattern: GraphPattern) -> BTreeMap<TermPattern, Constraint> {
     let mut tree = BTreeMap::new();
