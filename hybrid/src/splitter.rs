@@ -1,23 +1,23 @@
-use std::fmt;
-use std::fmt::{Debug, Display, Formatter, Pointer};
-use spargebra::{ParseError, Query};
-use spargebra::algebra::GraphPattern;
 use crate::splitter::SelectQueryErrorKind::Unsupported;
+use spargebra::algebra::GraphPattern;
+use spargebra::Query::Select;
+use spargebra::{ParseError, Query};
+use std::fmt::{Debug, Display, Formatter, Pointer};
 
 pub enum SelectQueryErrorKind {
     Parse(ParseError),
     NotSelectQuery,
-    Unsupported(String)
+    Unsupported(String),
 }
 
 struct SelectQueryError {
-    kind: SelectQueryErrorKind
+    kind: SelectQueryErrorKind,
 }
 
 impl Display for SelectQueryError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match &self.kind {
-            SelectQueryErrorKind::Parse(pe) => {pe.fmt(f)}
+            SelectQueryErrorKind::Parse(pe) => std::fmt::Display::fmt(&pe, f),
             SelectQueryErrorKind::NotSelectQuery => {
                 write!(f, "Not a select query")
             }
@@ -29,9 +29,9 @@ impl Display for SelectQueryError {
 }
 
 impl Debug for SelectQueryError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match &self.kind {
-            SelectQueryErrorKind::Parse(pe) => {pe.fmt(f)}
+            SelectQueryErrorKind::Parse(pe) => Debug::fmt(&pe, f),
             SelectQueryErrorKind::NotSelectQuery => {
                 write!(f, "Not a select query")
             }
@@ -42,24 +42,40 @@ impl Debug for SelectQueryError {
     }
 }
 
-pub fn parse_sparql_select_query(query_str:&str) -> Result<GraphPattern, SelectQueryError> {
-    let q = Query::parse(query_str, None)?;
-    match q {
-        Query::Select { dataset, pattern, base_iri } => {
-            let mut unsupported_constructs = vec![];
-            if dataset.is_some() {
-                unsupported_constructs.push("Dataset")
+pub fn parse_sparql_select_query(query_str: &str) -> Result<Query, SelectQueryError> {
+    let q_res = Query::parse(query_str, None);
+    match q_res {
+        Ok(q) => match q {
+            Query::Select {
+                dataset,
+                pattern,
+                base_iri,
+            } => {
+                let mut unsupported_constructs = vec![];
+                if dataset.is_some() {
+                    unsupported_constructs.push("Dataset")
+                }
+                if base_iri.is_some() {
+                    unsupported_constructs.push("BaseIri")
+                }
+                if unsupported_constructs.len() > 0 {
+                    Err(SelectQueryError {
+                        kind: SelectQueryErrorKind::Unsupported(unsupported_constructs.join(",")),
+                    })
+                } else {
+                    Ok(Query::Select {
+                        dataset,
+                        pattern,
+                        base_iri,
+                    })
+                }
             }
-            if base_iri.is_some() {
-                unsupported_constructs.push("BaseIri")
-            }
-            if unsupported_constructs.len() > 0 {
-                Err(SelectQueryError { kind: SelectQueryErrorKind::Unsupported(unsupported_constructs.join(",")) })
-            } else {
-                Ok(pattern)
-            }
-        }
-        _ => {Err(SelectQueryError{kind: SelectQueryErrorKind::NotSelectQuery}) }
+            _ => Err(SelectQueryError {
+                kind: SelectQueryErrorKind::NotSelectQuery,
+            }),
+        },
+        Err(e) => Err(SelectQueryError {
+            kind: SelectQueryErrorKind::Parse(e),
+        }),
     }
 }
-

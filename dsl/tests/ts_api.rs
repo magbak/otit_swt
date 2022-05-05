@@ -1,8 +1,8 @@
-use otit_dsl_parser::ast::{
+use otit_dsl::ast::{
     ArrowType, Connective, ConnectiveType, DataType, ElementConstraint, Glue, Group, InputOutput,
     Path, PathElement, PathElementOrConnective, TsApi, TypedLabel,
 };
-use otit_dsl_parser::parser::ts_api;
+use otit_dsl::parser::ts_api;
 
 #[test]
 fn test_basic_api() {
