@@ -49,9 +49,15 @@ pub fn rewrite_static_graph_pattern(
             right,
             expression,
         } => rewrite_static_left_join(left, right, expression, external_ids_in_scope),
-        GraphPattern::Filter { expr, inner } => rewrite_static_filter(expr, inner, tree, external_ids_in_scope),
-        GraphPattern::Union { left, right } => rewrite_static_union(left, right, tree, external_ids_in_scope),
-        GraphPattern::Graph { name, inner } => rewrite_static_graph(name, inner, tree, external_ids_in_scope),
+        GraphPattern::Filter { expr, inner } => {
+            rewrite_static_filter(expr, inner, tree, external_ids_in_scope)
+        }
+        GraphPattern::Union { left, right } => {
+            rewrite_static_union(left, right, tree, external_ids_in_scope)
+        }
+        GraphPattern::Graph { name, inner } => {
+            rewrite_static_graph(name, inner, tree, external_ids_in_scope)
+        }
         GraphPattern::Extend {
             inner,
             variable,
@@ -67,12 +73,14 @@ pub fn rewrite_static_graph_pattern(
             bindings,
         } => rewrite_static_values(variables, bindings, tree),
         GraphPattern::OrderBy { inner, expression } => {
-            rewrite_static_order_by(inner, expression, tree)
+            rewrite_static_order_by(inner, expression, tree, external_ids_in_scope)
         }
         GraphPattern::Project { inner, variables } => {
             rewrite_static_project(inner, variables, tree)
         }
-        GraphPattern::Distinct { inner } => rewrite_static_distinct(inner, tree),
+        GraphPattern::Distinct { inner } => {
+            rewrite_static_distinct(inner, tree, external_ids_in_scope)
+        }
         GraphPattern::Reduced { inner } => {
             todo!()
         }
@@ -105,7 +113,7 @@ fn rewrite_static_graph(
     external_ids_in_scope: &mut BTreeMap<Variable, Variable>,
 ) -> GraphPattern {
     todo!()
-    }
+}
 
 fn rewrite_static_union(
     left: &Box<GraphPattern>,
@@ -193,7 +201,8 @@ fn rewrite_static_filter(
 ) -> Option<GraphPattern> {
     let inner_rewrite_opt = rewrite_static_graph_pattern(inner, tree, external_ids_in_scope);
     if let Some(inner_rewrite) = inner_rewrite_opt {
-        let expression_rewrite_opt = rewrite_static_expression(expression, tree, external_ids_in_scope);
+        let expression_rewrite_opt =
+            rewrite_static_expression(expression, tree, external_ids_in_scope);
         if let Some(expression_rewrite) = expression_rewrite_opt {
             Some(GraphPattern::Filter {
                 expr: expression_rewrite,
@@ -223,76 +232,142 @@ fn rewrite_static_group(
                 rewrite_static_aggregate_expression(a, tree, external_ids_in_scope),
             )
         });
-        let aggregates_rewrite = aggregates_rewrite.into_iter().filter(|(x,y)|x.is_some() && y.is_some());
-        let variables_rewritten = variables.iter().map(|v|rewrite_static_variable(v, tree)).filter(|x|x.is_some());
+        let aggregates_rewrite = aggregates_rewrite
+            .into_iter()
+            .filter(|(x, y)| x.is_some() && y.is_some());
+        let variables_rewritten = variables
+            .iter()
+            .map(|v| rewrite_static_variable(v, tree))
+            .filter(|x| x.is_some());
         if aggregates_rewrite.len() > 0 {
             Some(GraphPattern::Group {
                 inner: Box::new(graph_pattern_rewrite),
-                variables: variables_rewritten.map(|x|x.unwrap()).collect(),
-                aggregates: vec![]
+                variables: variables_rewritten.map(|x| x.unwrap()).collect(),
+                aggregates: vec![],
             })
         }
         None
     }
 }
 
-fn rewrite_static_aggregate_expression(aggregate_expression: &AggregateExpression, tree: &BTreeMap<Variable, Constraint>, external_ids_in_scope: &BTreeMap<Variable, Variable>) -> Option<AggregateExpression> {
+fn rewrite_static_aggregate_expression(
+    aggregate_expression: &AggregateExpression,
+    tree: &BTreeMap<Variable, Constraint>,
+    external_ids_in_scope: &BTreeMap<Variable, Variable>,
+) -> Option<AggregateExpression> {
     match aggregate_expression {
         AggregateExpression::Count { expr, distinct } => {
             if let Some(boxed_expression) = expr {
-                if let Some(expr_rewritten) = rewrite_static_expression(boxed_expression, tree, external_ids_in_scope) {
-                    Some(AggregateExpression::Count { expr: Some(Box::new(expr_rewritten)), distinct: *distinct })
+                if let Some(expr_rewritten) =
+                    rewrite_static_expression(boxed_expression, tree, external_ids_in_scope)
+                {
+                    Some(AggregateExpression::Count {
+                        expr: Some(Box::new(expr_rewritten)),
+                        distinct: *distinct,
+                    })
                 } else {
-                    Some(AggregateExpression::Count { expr: None, distinct: *distinct})
+                    Some(AggregateExpression::Count {
+                        expr: None,
+                        distinct: *distinct,
+                    })
                 }
             } else {
-                Some(AggregateExpression::Count {expr:None, distinct:*distinct})
+                Some(AggregateExpression::Count {
+                    expr: None,
+                    distinct: *distinct,
+                })
             }
         }
         AggregateExpression::Sum { expr, distinct } => {
-            if let Some(rewritten_expression) = rewrite_static_expression(expr, tree, external_ids_in_scope) {
-                Some(AggregateExpression::Sum {expr:Box::new(rewritten_expression), distinct:*distinct})
+            if let Some(rewritten_expression) =
+                rewrite_static_expression(expr, tree, external_ids_in_scope)
+            {
+                Some(AggregateExpression::Sum {
+                    expr: Box::new(rewritten_expression),
+                    distinct: *distinct,
+                })
             } else {
                 None
             }
         }
         AggregateExpression::Avg { expr, distinct } => {
-            if let Some(rewritten_expression) = rewrite_static_expression(expr, tree, external_ids_in_scope) {
-                Some(AggregateExpression::Avg {expr:Box::new(rewritten_expression), distinct:*distinct})
+            if let Some(rewritten_expression) =
+                rewrite_static_expression(expr, tree, external_ids_in_scope)
+            {
+                Some(AggregateExpression::Avg {
+                    expr: Box::new(rewritten_expression),
+                    distinct: *distinct,
+                })
             } else {
                 None
             }
         }
         AggregateExpression::Min { expr, distinct } => {
-            if let Some(rewritten_expression) = rewrite_static_expression(expr, tree, external_ids_in_scope) {
-                Some(AggregateExpression::Min {expr:Box::new(rewritten_expression), distinct:*distinct})
+            if let Some(rewritten_expression) =
+                rewrite_static_expression(expr, tree, external_ids_in_scope)
+            {
+                Some(AggregateExpression::Min {
+                    expr: Box::new(rewritten_expression),
+                    distinct: *distinct,
+                })
             } else {
                 None
             }
         }
         AggregateExpression::Max { expr, distinct } => {
-            if let Some(rewritten_expression) = rewrite_static_expression(expr, tree, external_ids_in_scope) {
-                Some(AggregateExpression::Max {expr:Box::new(rewritten_expression), distinct:*distinct})
+            if let Some(rewritten_expression) =
+                rewrite_static_expression(expr, tree, external_ids_in_scope)
+            {
+                Some(AggregateExpression::Max {
+                    expr: Box::new(rewritten_expression),
+                    distinct: *distinct,
+                })
             } else {
                 None
             }
         }
-        AggregateExpression::GroupConcat { expr, distinct, separator } => {
-            if let Some(rewritten_expression) = rewrite_static_expression(expr, tree, external_ids_in_scope) {
-                Some(AggregateExpression::GroupConcat {expr:Box::new(rewritten_expression), distinct:*distinct, separator:separator.clone()})
+        AggregateExpression::GroupConcat {
+            expr,
+            distinct,
+            separator,
+        } => {
+            if let Some(rewritten_expression) =
+                rewrite_static_expression(expr, tree, external_ids_in_scope)
+            {
+                Some(AggregateExpression::GroupConcat {
+                    expr: Box::new(rewritten_expression),
+                    distinct: *distinct,
+                    separator: separator.clone(),
+                })
             } else {
                 None
-            }        }
+            }
+        }
         AggregateExpression::Sample { expr, distinct } => {
-            if let Some(rewritten_expression) = rewrite_static_expression(expr, tree, external_ids_in_scope) {
-                Some(AggregateExpression::Sample {expr:Box::new(rewritten_expression), distinct:*distinct})
+            if let Some(rewritten_expression) =
+                rewrite_static_expression(expr, tree, external_ids_in_scope)
+            {
+                Some(AggregateExpression::Sample {
+                    expr: Box::new(rewritten_expression),
+                    distinct: *distinct,
+                })
             } else {
                 None
             }
         }
-        AggregateExpression::Custom { name, expr, distinct } => {
-            if let Some(rewritten_expression) = rewrite_static_expression(expr, tree, external_ids_in_scope) {
-                Some(AggregateExpression::Custom {name: name.clone(), expr:Box::new(rewritten_expression), distinct:*distinct})
+        AggregateExpression::Custom {
+            name,
+            expr,
+            distinct,
+        } => {
+            if let Some(rewritten_expression) =
+                rewrite_static_expression(expr, tree, external_ids_in_scope)
+            {
+                Some(AggregateExpression::Custom {
+                    name: name.clone(),
+                    expr: Box::new(rewritten_expression),
+                    distinct: *distinct,
+                })
             } else {
                 None
             }
@@ -303,34 +378,123 @@ fn rewrite_static_aggregate_expression(aggregate_expression: &AggregateExpressio
 fn rewrite_static_distinct(
     inner: &Box<GraphPattern>,
     tree: &BTreeMap<Variable, Constraint>,
-) -> GraphPattern {
-    todo!()
+    external_ids_in_scope: &mut BTreeMap<Variable, Variable>,
+) -> Option<GraphPattern> {
+    if let Some(inner_rewrite) = rewrite_static_graph_pattern(inner, tree, external_ids_in_scope) {
+        Some(GraphPattern::Distinct {
+            inner: Box::new(inner_rewrite),
+        })
+    } else {
+        None
+    }
 }
 
 fn rewrite_static_project(
     inner: &Box<GraphPattern>,
     variables: &Vec<Variable>,
     tree: &BTreeMap<Variable, Constraint>,
-) -> GraphPattern {
-    todo!()
+) -> Option<GraphPattern> {
+    if let Some(inner_rewrite) = rewrite_static_graph_pattern(inner, tree, external_ids_in_scope) {
+        let variables_rewrite = variables
+            .iter()
+            .map(|v| rewrite_static_variable(v, tree))
+            .filter(|x| x.is_some())
+            .map(|x| x.unwrap())
+            .collect::<Vec<Variable>>();
+        if variables_rewrite.len() > 0 {
+            Some(GraphPattern::Project {
+                inner: Box::new(inner_rewrite),
+                variables: variables_rewrite,
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    }
 }
 
 fn rewrite_static_order_by(
     inner: &Box<GraphPattern>,
-    expression: &Vec<OrderExpression>,
+    order_expressions: &Vec<OrderExpression>,
     tree: &BTreeMap<Variable, Constraint>,
-) -> GraphPattern {
-    todo!()
+    external_ids_in_scope: &mut BTreeMap<Variable, Variable>,
+) -> Option<GraphPattern> {
+    if let Some(inner_rewrite) = rewrite_static_graph_pattern(inner, tree, external_ids_in_scope) {
+        let expressions_rewrite = order_expressions
+            .iter()
+            .map(|e| rewrite_static_order_expression(e, tree, &external_ids_in_scope))
+            .filter(|x| x.is_some())
+            .map(|x| x.unwrap())
+            .collect::<Vec<OrderExpression>>();
+        if variables_rewrite.len() > 0 {
+            Some(GraphPattern::OrderBy {
+                inner: Box::new(inner_rewrite),
+                expression: expressions_rewrite,
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+fn rewrite_static_order_expression(
+    order_expression: &OrderExpression,
+    tree: &BTreeMap<Variable, Constraint>,
+    external_ids_in_scope: &BTreeMap<Variable, Variable>,
+) -> Option<OrderExpression> {
+    match order_expression {
+        OrderExpression::Asc(e) => {
+            if let Some(e_rewrite) = rewrite_static_expression(e, tree, external_ids_in_scope) {
+                Some(OrderExpression::Asc(e_rewrite))
+            } else {
+                None
+            }
+        }
+        OrderExpression::Desc(e) => {
+            if let Some(e_rewrite) = rewrite_static_expression(e, tree, external_ids_in_scope) {
+                Some(OrderExpression::Desc(e_rewrite))
+            } else {
+                None
+            }
+        }
+    }
 }
 
 fn rewrite_static_minus(
     left: &Box<GraphPattern>,
     right: &Box<GraphPattern>,
     tree: &BTreeMap<Variable, Constraint>,
-    external_ids_in_scope: &BTreeMap<Variable, Variable>,
-) -> GraphPattern {
-    //external_ids_in_scope are not mutated by minus, since this graph pattern does not introduce variables to scope.
-    todo!()
+    external_ids_in_scope: &mut BTreeMap<Variable, Variable>,
+) -> Option<GraphPattern> {
+    let mut left_external_ids_in_scope = external_ids_in_scope.clone();
+    let left_rewrite_opt =
+        rewrite_static_graph_pattern(left, tree, &mut left_external_ids_in_scope);
+    let mut right_external_ids_in_scope = external_ids_in_scope.clone();
+    let right_rewrite_opt =
+        rewrite_static_graph_pattern(right, tree, &mut right_external_ids_in_scope);
+    //Only append left side since minus does not introduce these..
+    external_ids_in_scope.append(&mut left_external_ids_in_scope);
+
+    let mut expression_rewrite_opt = None;
+    if let Some(expression) = expression_opt {
+        expression_rewrite_opt = rewrite_static_expression(expression, tree, external_ids_in_scope);
+    }
+
+    if let Some(left_rewrite) = left_rewrite_opt {
+        if let Some(right_rewrite) = right_rewrite_opt {
+            Some(GraphPattern::Minus {
+                left: Box::new(left_rewrite),
+                right: Box::new(right_rewrite),
+            })
+        } else {
+            Some(left_rewrite)
+        }
+    } else {
+        None
+    }
 }
 
 pub fn rewrite_static_bgp(
@@ -340,44 +504,44 @@ pub fn rewrite_static_bgp(
 ) -> Option<GraphPattern> {
     let mut new_triples = BTreeSet::new();
     for t in patterns {
-            if let TermPattern::Variable(object_var) = &t.object {
-                let obj_constr_opt = tree.get(object_var);
-                if let Some(obj_constr) = obj_constr_opt {
-                    if obj_constr == Constraint::ExternalTimeseries {
-                        let obj_variable = match &t.object {
-                            TermPattern::Variable(var) => var,
-                            anything_else => {
-                                panic!("No support for term pattern {}", anything_else)
-                            }
-                        };
-                        if !external_ids_in_scope.contains_key(&obj_variable) {
-                            let external_id_var =
-                                Variable::new(obj_variable.to_string() + "_external_id").unwrap();
-                            let new_triple = TriplePattern {
-                                subject: TermPattern::Variable(obj_variable.clone()),
-                                predicate: NamedNodePattern::NamedNode(HAS_EXTERNAL_ID.clone()),
-                                object: TermPattern::Variable(external_id_var),
-                            };
-                            new_triples.insert(new_triple);
-                            external_ids_in_scope.insert(obj_variable.clone(), external_id_var.clone())
+        if let TermPattern::Variable(object_var) = &t.object {
+            let obj_constr_opt = tree.get(object_var);
+            if let Some(obj_constr) = obj_constr_opt {
+                if obj_constr == Constraint::ExternalTimeseries {
+                    let obj_variable = match &t.object {
+                        TermPattern::Variable(var) => var,
+                        anything_else => {
+                            panic!("No support for term pattern {}", anything_else)
                         }
+                    };
+                    if !external_ids_in_scope.contains_key(&obj_variable) {
+                        let external_id_var =
+                            Variable::new(obj_variable.to_string() + "_external_id").unwrap();
+                        let new_triple = TriplePattern {
+                            subject: TermPattern::Variable(obj_variable.clone()),
+                            predicate: NamedNodePattern::NamedNode(HAS_EXTERNAL_ID.clone()),
+                            object: TermPattern::Variable(external_id_var),
+                        };
+                        new_triples.insert(new_triple);
+                        external_ids_in_scope.insert(obj_variable.clone(), external_id_var.clone())
                     }
                 }
             }
+        }
         if let TermPattern::Variable(subject_var) = &t.subject {
             let subj_constr_opt = tree.get(subject_var);
 
-                if subj_constr_opt != Some(Constraint::ExternalDataPoint)
-                    && subj_constr_opt != Some(Constraint::ExternalDataValue)
-                    && subj_constr_opt != Some(Constraint::ExternalTimestamp)
-                    && obj_constr_opt != Some(Constraint::ExternalDataPoint)
-                    && obj_constr_opt != Some(Constraint::ExternalDataValue)
-                    && obj_constr_opt != Some(Constraint::ExternalTimestamp)
-                {
-                    new_triples.insert(t.clone());
-                }
+            if subj_constr_opt != Some(Constraint::ExternalDataPoint)
+                && subj_constr_opt != Some(Constraint::ExternalDataValue)
+                && subj_constr_opt != Some(Constraint::ExternalTimestamp)
+                && obj_constr_opt != Some(Constraint::ExternalDataPoint)
+                && obj_constr_opt != Some(Constraint::ExternalDataValue)
+                && obj_constr_opt != Some(Constraint::ExternalTimestamp)
+            {
+                new_triples.insert(t.clone());
             }
         }
+    }
 
     if new_triples.is_empty() {
         None
@@ -474,7 +638,7 @@ pub fn rewrite_static_expression(
             let right_trans_opt = rewrite_static_expression(right, tree, external_ids_in_scope);
             if let Some(left_trans) = left_trans_opt {
                 if let Some(right_trans) = right_trans_opt {
-                    Expression::And(Box::new(left_trans), Box::new(right_trans))
+                    Expression::GreaterOrEqual(Box::new(left_trans), Box::new(right_trans))
                 }
             } else {
                 None
@@ -524,7 +688,7 @@ pub fn rewrite_static_expression(
                 .collect::<Vec<Expression>>();
             if let Some(left_trans) = left_trans_opt {
                 if rights_trans.iter().map(|x| x.is_some()) {
-                    Expression::In(Box::new(left_trans), rights_trans)
+                    Expression::Add(Box::new(left_trans), rights_trans)
                 }
             } else {
                 None
@@ -591,7 +755,8 @@ pub fn rewrite_static_expression(
             }
         }
         Expression::Exists(wrapped) => {
-            let wrapped_trans_opt = rewrite_static_graph_pattern(&wrapped, tree, &mut external_ids_in_scope.clone());
+            let wrapped_trans_opt =
+                rewrite_static_graph_pattern(&wrapped, tree, &mut external_ids_in_scope.clone());
             if let Some(wrapped_trans) = wrapped_trans_opt {
                 Expression::Exists(Box::new(wrapped_trans))
             }
@@ -622,7 +787,9 @@ pub fn rewrite_static_expression(
             }
         }
         Expression::Coalesce(wrapped) => {
-            let rewritten = wrapped.iter().map(|e| rewrite_static_expression(e, tree, external_ids_in_scope));
+            let rewritten = wrapped
+                .iter()
+                .map(|e| rewrite_static_expression(e, tree, external_ids_in_scope));
             if (&rewritten).all(|x| x.is_some()) {
                 Expression::Coalesce(rewritten.into_iter().map(|x| x.unwrap()).collect())
             } else {
@@ -630,7 +797,9 @@ pub fn rewrite_static_expression(
             }
         }
         Expression::FunctionCall(fun, args) => {
-            let args_rewritten = args.iter().map(|e| rewrite_static_expression(e, tree, external_ids_in_scope));
+            let args_rewritten = args
+                .iter()
+                .map(|e| rewrite_static_expression(e, tree, external_ids_in_scope));
             if (&args_rewritten).all(|x| x.is_some()) {
                 Expression::FunctionCall(fun.clone(), args_rewritten.map(|x| x.unwrap()).collect())
             } else {
