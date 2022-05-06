@@ -7,7 +7,7 @@ use crate::const_uris::{HAS_DATA_POINT, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE
 use crate::constraints::Constraint;
 
 pub fn infer_types(select_query:&Query) -> HashMap<TermPattern, Constraint> {
-    if let Query::Select { dataset, pattern, base_iri } = &select_query {
+    if let Query::Select { dataset:_, pattern, base_iri:_ } = &select_query {
         let mut has_constraint = HashMap::new();
         infer_graph_pattern(&pattern, &mut has_constraint);
         has_constraint
@@ -40,25 +40,25 @@ pub fn infer_graph_pattern(
         GraphPattern::LeftJoin {
             left,
             right,
-            expression,
+            expression:_,
         } => {
             infer_graph_pattern(left, has_constraint);
             infer_graph_pattern(right, has_constraint);
         }
-        GraphPattern::Filter { expr, inner } => {
+        GraphPattern::Filter { expr:_, inner } => {
             infer_graph_pattern(inner, has_constraint);
         }
         GraphPattern::Union { left, right } => {
             infer_graph_pattern(left, has_constraint);
             infer_graph_pattern(right, has_constraint);
         }
-        GraphPattern::Graph { name, inner } => {
+        GraphPattern::Graph { name:_, inner } => {
             infer_graph_pattern(inner, has_constraint);
         }
         GraphPattern::Extend {
             inner,
-            variable,
-            expression,
+            variable:_,
+            expression:_,
         } => {
             infer_graph_pattern(inner, has_constraint);
         }
@@ -67,15 +67,15 @@ pub fn infer_graph_pattern(
             infer_graph_pattern(right, has_constraint);
         }
         GraphPattern::Values {
-            variables,
-            bindings,
+            variables:_,
+            bindings:_,
         } => {
             //No action
         }
-        GraphPattern::OrderBy { inner, expression } => {
+        GraphPattern::OrderBy { inner, expression:_ } => {
             infer_graph_pattern(inner, has_constraint);
         }
-        GraphPattern::Project { inner, variables } => {
+        GraphPattern::Project { inner, variables:_ } => {
             infer_graph_pattern(inner, has_constraint);
         }
         GraphPattern::Distinct { inner } => {
@@ -86,22 +86,22 @@ pub fn infer_graph_pattern(
         }
         GraphPattern::Slice {
             inner,
-            start,
-            length,
+            start:_,
+            length:_,
         } => {
             infer_graph_pattern(inner, has_constraint);
         }
         GraphPattern::Group {
             inner,
-            variables,
-            aggregates,
+            variables:_,
+            aggregates:_,
         } => {
             infer_graph_pattern(inner, has_constraint);
         }
         GraphPattern::Service {
-            name,
+            name:_,
             inner,
-            silent,
+            silent:_,
         } => {
             infer_graph_pattern(inner, has_constraint);
         }
