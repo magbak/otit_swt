@@ -556,7 +556,7 @@ pub fn rewrite_static_bgp(
     has_constraint: &HashMap<TermPattern, Constraint>,
     external_ids_in_scope: &mut HashMap<Variable, Variable>,
 ) -> Option<GraphPattern> {
-    let mut new_triples = HashSet::new();
+    let mut new_triples = vec![];
     for t in patterns {
         let obj_constr_opt = has_constraint.get(&t.object);
         if let TermPattern::Variable(object_var) = &t.object {
@@ -576,7 +576,9 @@ pub fn rewrite_static_bgp(
                             predicate: NamedNodePattern::NamedNode(NamedNode::new(HAS_EXTERNAL_ID).unwrap()),
                             object: TermPattern::Variable(external_id_var.clone()),
                         };
-                        new_triples.insert(new_triple);
+                        if !new_triples.contains(&new_triple) {
+                            new_triples.push(new_triple);
+                        }
                         external_ids_in_scope.insert(obj_variable.clone(), external_id_var.clone());
                     }
                 }
@@ -592,7 +594,9 @@ pub fn rewrite_static_bgp(
                 && obj_constr_opt != Some(&Constraint::ExternalDataValue)
                 && obj_constr_opt != Some(&Constraint::ExternalTimestamp)
             {
-                new_triples.insert(t.clone());
+                if !new_triples.contains(t) {
+                            new_triples.push(t.clone());
+                }
             }
         }
     }
@@ -601,7 +605,7 @@ pub fn rewrite_static_bgp(
         None
     } else {
         Some(GraphPattern::Bgp {
-            patterns: new_triples.into_iter().collect(),
+            patterns: new_triples,
         })
     }
 }
