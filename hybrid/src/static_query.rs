@@ -570,7 +570,7 @@ pub fn rewrite_static_bgp(
                     };
                     if !external_ids_in_scope.contains_key(&obj_variable) {
                         let external_id_var =
-                            Variable::new(obj_variable.to_string() + "_external_id").unwrap();
+                            Variable::new(obj_variable.as_str().to_string() + "_external_id").unwrap();
                         let new_triple = TriplePattern {
                             subject: TermPattern::Variable(obj_variable.clone()),
                             predicate: NamedNodePattern::NamedNode(NamedNode::new(HAS_EXTERNAL_ID).unwrap()),
