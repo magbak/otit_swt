@@ -5,7 +5,7 @@ use spargebra::algebra::{
 };
 use spargebra::term::{GroundTerm, NamedNode, NamedNodePattern, TermPattern, TriplePattern, Variable};
 use spargebra::Query;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 
 pub fn rewrite_static_query(
     query: Query,
@@ -652,6 +652,8 @@ pub fn rewrite_static_expression(
             }
         }
         Expression::And(left, right) => {
+            // We allow translations of left- or right hand sides of And-expressions to be None.
+            // This allows us to enforce the remaining conditions that were not removed due to a rewrite
             let left_trans_opt =
                 rewrite_static_expression(left, has_constraint, external_ids_in_scope);
             let right_trans_opt =
@@ -660,8 +662,10 @@ pub fn rewrite_static_expression(
                 if let Some(right_trans) = right_trans_opt {
                     Some(Expression::And(Box::new(left_trans), Box::new(right_trans)))
                 } else {
-                    None
+                    Some(left_trans)
                 }
+            } else if let Some(right_trans) = right_trans_opt {
+                Some(right_trans)
             } else {
                 None
             }
