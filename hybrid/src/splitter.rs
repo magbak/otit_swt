@@ -1,8 +1,5 @@
-use crate::splitter::SelectQueryErrorKind::Unsupported;
-use spargebra::algebra::GraphPattern;
-use spargebra::Query::Select;
 use spargebra::{ParseError, Query};
-use std::fmt::{Debug, Display, Formatter, Pointer};
+use std::fmt::{Debug, Display, Formatter};
 
 pub enum SelectQueryErrorKind {
     Parse(ParseError),
@@ -10,7 +7,7 @@ pub enum SelectQueryErrorKind {
     Unsupported(String),
 }
 
-struct SelectQueryError {
+pub struct SelectQueryError {
     kind: SelectQueryErrorKind,
 }
 

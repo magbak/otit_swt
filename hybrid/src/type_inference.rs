@@ -1,6 +1,5 @@
-use polars::export::arrow::compute::arithmetics::sub;
 use spargebra::algebra::{GraphPattern, PropertyPathExpression};
-use spargebra::term::{NamedNode, NamedNodePattern, TermPattern, TriplePattern};
+use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use std::collections::HashMap;
 use std::ops::Deref;
 use spargebra::Query;
@@ -8,10 +7,13 @@ use crate::const_uris::{HAS_DATA_POINT, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE
 use crate::constraints::Constraint;
 
 pub fn infer_types(select_query:&Query) -> HashMap<TermPattern, Constraint> {
-    let Query::Select { dataset, pattern, base_iri } = &select_query;
-    let mut has_constraint = HashMap::new();
-    infer_graph_pattern(&pattern, &mut has_constraint);
-    has_constraint
+    if let Query::Select { dataset, pattern, base_iri } = &select_query {
+        let mut has_constraint = HashMap::new();
+        infer_graph_pattern(&pattern, &mut has_constraint);
+        has_constraint
+    } else {
+        panic!("Should only be called with Select")
+    }
 }
 
 pub fn infer_graph_pattern(
@@ -132,11 +134,14 @@ pub fn infer_property_path(
 }
 
 fn get_last_elem(p: &PropertyPathExpression) -> &PropertyPathExpression {
-    let PropertyPathExpression::Sequence(_, last) = p;
-    if let PropertyPathExpression::Sequence(_, _) = last.deref() {
-        get_last_elem(last)
+    if let PropertyPathExpression::Sequence(_, last) = p {
+        if let PropertyPathExpression::Sequence(_, _) = last.deref() {
+            get_last_elem(last)
+        } else {
+            last
+        }
     } else {
-        last
+        panic!("Should only be called with sequence")
     }
 }
 
