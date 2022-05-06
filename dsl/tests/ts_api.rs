@@ -1,8 +1,8 @@
-use otit_dsl::ast::{
+use dsl::ast::{
     ArrowType, Connective, ConnectiveType, DataType, ElementConstraint, Glue, Group, InputOutput,
     Path, PathElement, PathElementOrConnective, TsApi, TypedLabel,
 };
-use otit_dsl::parser::ts_api;
+use dsl::parser::ts_api;
 
 #[test]
 fn test_basic_api() {

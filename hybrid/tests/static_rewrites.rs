@@ -2,7 +2,8 @@ use hybrid::splitter::parse_sparql_select_query;
 use hybrid::static_query::rewrite_static_query;
 use hybrid::type_inference::infer_types;
 
-pub fn test_simple_query() {
+#[test]
+fn test_simple_query() {
     let sparql = r#"SELECT ?var1 ?var2 FROM {?var1 a ?var2}"#;
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let tree = infer_types(&parsed);

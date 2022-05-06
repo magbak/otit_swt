@@ -1,5 +1,5 @@
 [package]
-name = "otit_dsl"
+name = "dsl"
 version = "0.1.0"
 edition = "2021"
 

@@ -1,7 +1,7 @@
 use chrono::{DateTime};
-use otit_dsl::ast::ElementConstraint::{Name};
-use otit_dsl::ast::{Aggregation, BooleanOperator, ConditionedPath, Connective, ConnectiveType, ElementConstraint, Glue, GraphPattern, Group, Literal, Path, PathElement, PathElementOrConnective, PathOrLiteral, TsQuery};
-use otit_dsl::parser::ts_query;
+use dsl::ast::ElementConstraint::{Name};
+use dsl::ast::{Aggregation, BooleanOperator, ConditionedPath, Connective, ConnectiveType, ElementConstraint, Glue, GraphPattern, Group, Literal, Path, PathElement, PathElementOrConnective, PathOrLiteral, TsQuery};
+use dsl::parser::ts_query;
 use std::str::FromStr;
 use std::time::Duration;
 
