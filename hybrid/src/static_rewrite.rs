@@ -141,7 +141,7 @@ fn rewrite_static_values(
     variables: &Vec<Variable>,
     ground_term_vecs: &Vec<Vec<Option<GroundTerm>>>,
     has_constraint: &HashMap<TermPattern, Constraint>,
-) -> Option<GraphPattern> {
+) -> Option<(GraphPattern, GraphPatternChangeType)> {
     todo!()
 }
 
@@ -150,7 +150,7 @@ fn rewrite_static_graph(
     inner: &Box<GraphPattern>,
     has_constraint: &HashMap<TermPattern, Constraint>,
     external_ids_in_scope: &mut HashMap<Variable, Variable>,
-) -> Option<GraphPattern> {
+) -> Option<(GraphPattern, GraphPatternChangeType)> {
     todo!()
 }
 
@@ -159,7 +159,7 @@ fn rewrite_static_union(
     right: &Box<GraphPattern>,
     has_constraint: &HashMap<TermPattern, Constraint>,
     external_ids_in_scope: &mut HashMap<Variable, Variable>,
-) -> Option<GraphPattern> {
+) -> Option<(GraphPattern, GraphPatternChangeType)> {
     todo!()
 }
 
@@ -168,7 +168,7 @@ fn rewrite_static_join(
     right: &Box<GraphPattern>,
     has_constraint: &HashMap<TermPattern, Constraint>,
     external_ids_in_scope: &mut HashMap<Variable, Variable>,
-) -> Option<GraphPattern> {
+) -> Option<(GraphPattern, GraphPatternChangeType)> {
     let mut left_external_ids_in_scope = external_ids_in_scope.clone();
     let left_rewrite_opt =
         rewrite_static_graph_pattern(left, has_constraint, &mut left_external_ids_in_scope);
@@ -182,20 +182,37 @@ fn rewrite_static_join(
         external_ids_in_scope.insert(k, v);
     }
 
-    if let Some(left_rewrite) = left_rewrite_opt {
-        if let Some(right_rewrite) = right_rewrite_opt {
-            Some(GraphPattern::Join {
-                left: Box::from(left_rewrite),
-                right: Box::from(right_rewrite),
-            })
-        } else {
-            Some(left_rewrite)
-        }
-    } else if let Some(right_rewrite) = right_rewrite_opt {
-        Some(right_rewrite)
-    } else {
-        None
+    if let (Some((left_rewrite, left_change)), Some((right_rewrite, right_change))) = (&left_rewrite_opt, &right_rewrite_opt) {
+        let use_change;
+        if  left_change == GraphPatternChangeType::NoChange &&
+            right_change == GraphPatternChangeType::NoChange {
+            use_change = GraphPatternChangeType::NoChange;
+        } else if
+                (left_change == GraphPatternChangeType::NoChange || left_change == GraphPatternChangeType::Relaxed) &&
+                (right_change == GraphPatternChangeType::NoChange || right_change == GraphPatternChangeType::Relaxed) {
+                use_change = GraphPatternChangeType::Relaxed;
+        } else if (left_change == GraphPatternChangeType::NoChange || left_change == GraphPatternChangeType::Constrained) &&
+                (right_change == GraphPatternChangeType::NoChange || right_change == GraphPatternChangeType::Constrained){
+        use_change = GraphPatternChangeType::Constrained;
+            } else {
+                return None;
+            }
+                return Some((GraphPattern::Join {
+                    left: Box::new(left_rewrite.clone()),
+                    right: Box::new(right_rewrite.clone()),
+                },use_change));
     }
+    if let (Some((left_rewrite, left_change)), None) = (&left_rewrite_opt, &right_rewrite_opt) {
+        if (left_change == GraphPatternChangeType::NoChange || left_change == GraphPatternChangeType::Relaxed) {
+            return Some((left_rewrite.clone(), GraphPatternChangeType::Relaxed))
+        }
+    }
+    if let (None, Some((right_rewrite, right_change))) = (&left_rewrite_opt, &right_rewrite_opt) {
+        if (right_change == GraphPatternChangeType::NoChange || right_change == GraphPatternChangeType::Relaxed) {
+            return Some((right_rewrite.clone(), GraphPatternChangeType::Relaxed))
+        }
+    }
+    None
 }
 
 fn rewrite_static_left_join(
@@ -204,7 +221,7 @@ fn rewrite_static_left_join(
     expression_opt: &Option<Expression>,
     has_constraint: &HashMap<TermPattern, Constraint>,
     external_ids_in_scope: &mut HashMap<Variable, Variable>,
-) -> Option<GraphPattern> {
+) -> Option<(GraphPattern, GraphPatternChangeType)> {
     let mut left_external_ids_in_scope = external_ids_in_scope.clone();
     let left_rewrite_opt =
         rewrite_static_graph_pattern(left, has_constraint, &mut left_external_ids_in_scope);
@@ -223,24 +240,96 @@ fn rewrite_static_left_join(
         expression_rewrite_opt =
             rewrite_static_expression(expression, has_constraint, external_ids_in_scope);
     }
-    if let Some(left_rewrite) = left_rewrite_opt {
-        if let Some(right_rewrite) = right_rewrite_opt {
-            Some(GraphPattern::LeftJoin {
-                left: Box::new(left_rewrite),
-                right: Box::new(right_rewrite),
-                expression: expression_rewrite_opt,
-            })
-        } else if let Some(expression_rewrite) = expression_rewrite_opt {
-            Some(GraphPattern::Filter {
-                expr: expression_rewrite,
-                inner: Box::new(left_rewrite),
-            })
-        } else {
-            None
-        }
-    } else {
-        None
+    if let (Some((left_rewrite, left_change)), Some((right_rewrite, right_change))) = (&left_rewrite_opt, &right_rewrite_opt) {
+            if let Some((expression_rewrite, expression_change)) = expression_rewrite_opt {
+                let use_change;
+                if expression_change == ExpressionChangeType::NoChange &&
+                    left_change == GraphPatternChangeType::NoChange &&
+                    right_change == GraphPatternChangeType::NoChange {
+                    use_change = GraphPatternChangeType::NoChange;
+                } else if
+                    (expression_change == ExpressionChangeType::NoChange || expression_change == ExpressionChangeType::Weaker) &&
+                        (left_change == GraphPatternChangeType::NoChange || left_change == GraphPatternChangeType::Relaxed) &&
+                        (right_change == GraphPatternChangeType::NoChange || right_change == GraphPatternChangeType::Relaxed) {
+                        use_change = GraphPatternChangeType::Relaxed;
+                } else if (expression_change == ExpressionChangeType::NoChange || expression_change == ExpressionChangeType::Stronger) &&
+                        (left_change == GraphPatternChangeType::NoChange || left_change == GraphPatternChangeType::Constrained) &&
+                        (right_change == GraphPatternChangeType::NoChange || right_change == GraphPatternChangeType::Constrained){
+                use_change = GraphPatternChangeType::Constrained;
+            } else {
+                return None;
+            }
+                return Some((GraphPattern::LeftJoin {
+                    left: Box::new(left_rewrite.clone()),
+                    right: Box::new(right_rewrite.clone()),
+                    expression: Some(expression_rewrite),
+                },use_change));
+            } else if expression_opt.is_some() && expression_rewrite_opt.is_none() {
+                if (left_change == GraphPatternChangeType::NoChange || left_change == GraphPatternChangeType::Relaxed) &&
+                        (right_change == GraphPatternChangeType::NoChange || right_change == GraphPatternChangeType::Relaxed) {
+                    return Some((GraphPattern::LeftJoin {
+                        left: Box::new(left_rewrite.clone()),
+                        right: Box::new(right_rewrite.clone()),
+                        expression: None
+                    },GraphPatternChangeType::Relaxed));
+                } else {
+                    return None
+                }
+            } else if expression_opt.is_none() {
+                if (left_change == GraphPatternChangeType::NoChange && right_change == GraphPatternChangeType::NoChange) {
+                    return Some((GraphPattern::LeftJoin {
+                        left: Box::new(left_rewrite.clone()),
+                        right: Box::new(right_rewrite.clone()),
+                        expression: None
+                    }, GraphPatternChangeType::NoChange))
+                } else if (left_change == GraphPatternChangeType::NoChange || left_change == GraphPatternChangeType::Relaxed) &&
+                        (right_change == GraphPatternChangeType::NoChange || right_change == GraphPatternChangeType::Relaxed) {
+                    return Some((GraphPattern::LeftJoin {
+                        left: Box::new(left_rewrite.clone()),
+                        right: Box::new(right_rewrite.clone()),
+                        expression: None
+                    }, GraphPatternChangeType::Relaxed))
+                } else if (left_change == GraphPatternChangeType::NoChange || left_change == GraphPatternChangeType::Constrained) &&
+                        (right_change == GraphPatternChangeType::NoChange || right_change == GraphPatternChangeType::Constrained) {
+                    return Some((GraphPattern::LeftJoin {
+                        left: Box::new(left_rewrite.clone()),
+                        right: Box::new(right_rewrite.clone()),
+                        expression: None
+                    }, GraphPatternChangeType::Constrained))
+                }
+            }
     }
+    if let (Some((left_rewrite, left_change)), None) = (&left_rewrite_opt, &right_rewrite_opt) {
+        if let Some((expression_rewrite, expression_change)) = &expression_rewrite_opt {
+                if (expression_change == ExpressionChangeType::NoChange || expression_change == ExpressionChangeType::Weaker) &&
+                        (left_change == GraphPatternChangeType::NoChange || left_change == GraphPatternChangeType::Relaxed) {
+                    return Some((GraphPattern::Filter {
+                        expr: expression_rewrite.clone(),
+                        inner: Box::new(left_rewrite.clone()),
+                    }, GraphPatternChangeType::Relaxed));
+                }
+            } else if expression_opt.is_some() && expression_rewrite_opt.is_none() {
+                if (left_change == GraphPatternChangeType::NoChange || left_change == GraphPatternChangeType::Relaxed) {
+                    return Some((left_rewrite.clone(), GraphPatternChangeType::Relaxed))
+                }
+            }
+    }
+    if let (None, Some((right_rewrite, right_change))) = (&left_rewrite_opt, &right_rewrite_opt) {
+        if let Some((expression_rewrite, expression_change)) = &expression_rewrite_opt {
+                if (expression_change == ExpressionChangeType::NoChange || expression_change == ExpressionChangeType::Weaker) &&
+                        (right_change == GraphPatternChangeType::NoChange || right_change == GraphPatternChangeType::Relaxed) {
+                    return Some((GraphPattern::Filter {
+                        inner: Box::new(right_rewrite.clone()),
+                        expr: expression_rewrite.clone(),
+                    }, GraphPatternChangeType::Relaxed));
+                }
+            } else if expression_opt.is_some() && expression_rewrite_opt.is_none() {
+                if (right_change == GraphPatternChangeType::NoChange || right_change == GraphPatternChangeType::Relaxed) {
+                    return Some((right_rewrite.clone(), GraphPatternChangeType::Relaxed))
+                }
+            }
+    }
+    None
 }
 
 fn rewrite_static_filter(
@@ -248,23 +337,40 @@ fn rewrite_static_filter(
     inner: &Box<GraphPattern>,
     has_constraint: &HashMap<TermPattern, Constraint>,
     external_ids_in_scope: &mut HashMap<Variable, Variable>,
-) -> Option<GraphPattern> {
+) -> Option<(GraphPattern, GraphPatternChangeType)> {
     let inner_rewrite_opt =
         rewrite_static_graph_pattern(inner, has_constraint, external_ids_in_scope);
-    if let Some(inner_rewrite) = inner_rewrite_opt {
+    if let Some((inner_rewrite, inner_change)) = inner_rewrite_opt {
         let expression_rewrite_opt =
             rewrite_static_expression(expression, has_constraint, external_ids_in_scope);
-        if let Some(expression_rewrite) = expression_rewrite_opt {
-            Some(GraphPattern::Filter {
+        if let Some((expression_rewrite, expression_change)) = expression_rewrite_opt {
+            let use_change;
+            if expression_change == ExpressionChangeType::NoChange {
+                use_change = inner_change;
+            } else if expression_change == ExpressionChangeType::Weaker {
+                if inner_change == GraphPatternChangeType::Relaxed {
+                    use_change = GraphPatternChangeType::Relaxed;
+                } else {
+                    return None;
+                }
+            } else if expression_change == ExpressionChangeType::Stronger {
+                if inner_change == GraphPatternChangeType::Constrained {
+                    use_change = GraphPatternChangeType::Constrained;
+                } else {
+                    return None;
+                }
+            } else {
+                panic!("Should never happen");
+            }
+            return Some((GraphPattern::Filter {
                 expr: expression_rewrite,
                 inner: Box::new(inner_rewrite),
-            })
+            }, use_change))
         } else {
-            Some(inner_rewrite)
+            Some((inner_rewrite, inner_change))
         }
-    } else {
-        None
     }
+    None
 }
 
 fn rewrite_static_group(
@@ -273,10 +379,10 @@ fn rewrite_static_group(
     aggregates: &Vec<(Variable, AggregateExpression)>,
     has_constraint: &HashMap<TermPattern, Constraint>,
     external_ids_in_scope: &mut HashMap<Variable, Variable>,
-) -> Option<GraphPattern> {
+) -> Option<(GraphPattern, GraphPatternChangeType)> {
     let graph_pattern_rewrite_opt =
         rewrite_static_graph_pattern(graph_pattern, has_constraint, external_ids_in_scope);
-    if let Some(graph_pattern_rewrite) = graph_pattern_rewrite_opt {
+    if let Some((graph_pattern_rewrite, graph_pattern_change)) = graph_pattern_rewrite_opt {
         let aggregates_rewrite = aggregates.iter().map(|(v, a)| {
             (
                 rewrite_static_variable(v, has_constraint),
@@ -288,22 +394,22 @@ fn rewrite_static_group(
             .filter(|(x, y)| x.is_some() && y.is_some())
             .map(|(x, y)| (x.unwrap(), y.unwrap()))
             .collect::<Vec<(Variable, AggregateExpression)>>();
+        //TODO! Check if we need to handle variables_rewritten len=0
         let variables_rewritten = variables
             .iter()
             .map(|v| rewrite_static_variable(v, has_constraint))
             .filter(|x| x.is_some());
         if aggregates_rewrite.len() > 0 {
-            Some(GraphPattern::Group {
+            Some((GraphPattern::Group {
                 inner: Box::new(graph_pattern_rewrite),
                 variables: variables_rewritten.map(|x| x.unwrap()).collect(),
                 aggregates: vec![],
-            })
+            },graph_pattern_change))
         } else {
-            None
+            Some((graph_pattern_rewrite, graph_pattern_change))
         }
-    } else {
-        None
     }
+    None
 }
 
 fn rewrite_static_aggregate_expression(
@@ -314,7 +420,7 @@ fn rewrite_static_aggregate_expression(
     match aggregate_expression {
         AggregateExpression::Count { expr, distinct } => {
             if let Some(boxed_expression) = expr {
-                if let Some(expr_rewritten) = rewrite_static_expression(
+                if let Some((expr_rewritten,  ExpressionChangeType::NoChange)) = rewrite_static_expression(
                     boxed_expression,
                     has_constraint,
                     external_ids_in_scope,
@@ -337,7 +443,7 @@ fn rewrite_static_aggregate_expression(
             }
         }
         AggregateExpression::Sum { expr, distinct } => {
-            if let Some(rewritten_expression) =
+            if let Some((rewritten_expression,  ExpressionChangeType::NoChange)) =
                 rewrite_static_expression(expr, has_constraint, external_ids_in_scope)
             {
                 Some(AggregateExpression::Sum {
@@ -349,7 +455,7 @@ fn rewrite_static_aggregate_expression(
             }
         }
         AggregateExpression::Avg { expr, distinct } => {
-            if let Some(rewritten_expression) =
+            if let Some((rewritten_expression, ExpressionChangeType::NoChange)) =
                 rewrite_static_expression(expr, has_constraint, external_ids_in_scope)
             {
                 Some(AggregateExpression::Avg {
@@ -361,7 +467,7 @@ fn rewrite_static_aggregate_expression(
             }
         }
         AggregateExpression::Min { expr, distinct } => {
-            if let Some(rewritten_expression) =
+            if let Some((rewritten_expression, ExpressionChangeType::NoChange)) =
                 rewrite_static_expression(expr, has_constraint, external_ids_in_scope)
             {
                 Some(AggregateExpression::Min {
@@ -373,7 +479,7 @@ fn rewrite_static_aggregate_expression(
             }
         }
         AggregateExpression::Max { expr, distinct } => {
-            if let Some(rewritten_expression) =
+            if let Some((rewritten_expression, ExpressionChangeType::NoChange)) =
                 rewrite_static_expression(expr, has_constraint, external_ids_in_scope)
             {
                 Some(AggregateExpression::Max {
@@ -389,7 +495,7 @@ fn rewrite_static_aggregate_expression(
             distinct,
             separator,
         } => {
-            if let Some(rewritten_expression) =
+            if let Some((rewritten_expression,  ExpressionChangeType::NoChange)) =
                 rewrite_static_expression(expr, has_constraint, external_ids_in_scope)
             {
                 Some(AggregateExpression::GroupConcat {
@@ -402,7 +508,7 @@ fn rewrite_static_aggregate_expression(
             }
         }
         AggregateExpression::Sample { expr, distinct } => {
-            if let Some(rewritten_expression) =
+            if let Some((rewritten_expression,  ExpressionChangeType::NoChange)) =
                 rewrite_static_expression(expr, has_constraint, external_ids_in_scope)
             {
                 Some(AggregateExpression::Sample {
@@ -418,7 +524,7 @@ fn rewrite_static_aggregate_expression(
             expr,
             distinct,
         } => {
-            if let Some(rewritten_expression) =
+            if let Some((rewritten_expression,  ExpressionChangeType::NoChange)) =
                 rewrite_static_expression(expr, has_constraint, external_ids_in_scope)
             {
                 Some(AggregateExpression::Custom {
@@ -437,13 +543,13 @@ fn rewrite_static_distinct(
     inner: &Box<GraphPattern>,
     has_constraint: &HashMap<TermPattern, Constraint>,
     external_ids_in_scope: &mut HashMap<Variable, Variable>,
-) -> Option<GraphPattern> {
-    if let Some(inner_rewrite) =
+) -> Option<(GraphPattern, GraphPatternChangeType)> {
+    if let Some((inner_rewrite, inner_change_type)) =
         rewrite_static_graph_pattern(inner, has_constraint, external_ids_in_scope)
     {
-        Some(GraphPattern::Distinct {
+        Some((GraphPattern::Distinct {
             inner: Box::new(inner_rewrite),
-        })
+        }, inner_change_type))
     } else {
         None
     }
@@ -454,8 +560,8 @@ fn rewrite_static_project(
     variables: &Vec<Variable>,
     has_constraint: &HashMap<TermPattern, Constraint>,
     external_ids_in_scope: &mut HashMap<Variable, Variable>,
-) -> Option<GraphPattern> {
-    if let Some(inner_rewrite) =
+) -> Option<(GraphPattern, GraphPatternChangeType)> {
+    if let Some((inner_rewrite, inner_change_type)) =
         rewrite_static_graph_pattern(inner, has_constraint, external_ids_in_scope)
     {
         let variables_rewrite = variables
@@ -465,16 +571,12 @@ fn rewrite_static_project(
             .map(|x| x.unwrap())
             .collect::<Vec<Variable>>();
         if variables_rewrite.len() > 0 {
-            Some(GraphPattern::Project {
+            return Some((GraphPattern::Project {
                 inner: Box::new(inner_rewrite),
                 variables: variables_rewrite,
-            })
-        } else {
-            None
-        }
-    } else {
-        None
-    }
+            }, inner_change_type))
+        }}
+    None
 }
 
 fn rewrite_static_order_by(
@@ -482,8 +584,8 @@ fn rewrite_static_order_by(
     order_expressions: &Vec<OrderExpression>,
     has_constraint: &HashMap<TermPattern, Constraint>,
     external_ids_in_scope: &mut HashMap<Variable, Variable>,
-) -> Option<GraphPattern> {
-    if let Some(inner_rewrite) =
+) -> Option<(GraphPattern, GraphPatternChangeType)> {
+    if let Some((inner_rewrite, inner_change)) =
         rewrite_static_graph_pattern(inner, has_constraint, external_ids_in_scope)
     {
         let expressions_rewrite = order_expressions
@@ -493,16 +595,12 @@ fn rewrite_static_order_by(
             .map(|x| x.unwrap())
             .collect::<Vec<OrderExpression>>();
         if expressions_rewrite.len() > 0 {
-            Some(GraphPattern::OrderBy {
+            return Some((GraphPattern::OrderBy {
                 inner: Box::new(inner_rewrite),
                 expression: expressions_rewrite,
-            })
-        } else {
-            None
-        }
-    } else {
-        None
-    }
+            }, inner_change))
+        }}
+    None
 }
 
 fn rewrite_static_order_expression(
