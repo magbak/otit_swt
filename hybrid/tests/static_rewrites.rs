@@ -1,6 +1,5 @@
+use log::debug;
 use spargebra::Query;
-use spargebra::term::TermPattern;
-use hybrid::constraints::Constraint;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::static_rewrite::rewrite_static_query;
 use hybrid::type_inference::infer_types;
@@ -76,6 +75,7 @@ fn test_complex_expression_filter() {
         }
     "#;
     let parsed = parse_sparql_select_query(sparql).unwrap();
+    debug!("Hello test");
     let tree = infer_types(&parsed);
     let static_rewrite = rewrite_static_query(parsed, &tree).unwrap();
     let expected_str = r#"
@@ -108,13 +108,14 @@ fn test_complex_nested_expression_filter() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let tree = infer_types(&parsed);
     let static_rewrite = rewrite_static_query(parsed, &tree).unwrap();
+    println!("{}",static_rewrite);
     let expected_str = r#"
     SELECT ?var1 ?var2 WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
     ?var2 <https://example.com/hasPropertyValue> ?pv .
     ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id .
     ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
-    FILTER(?pv) }"#;
+     }"#;
     let expected_query = Query::parse(expected_str, None).unwrap();
     assert_eq!(static_rewrite, expected_query);
 }
