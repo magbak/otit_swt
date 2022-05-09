@@ -487,9 +487,9 @@ fn rewrite_static_group(
                     aggregates: vec![],
                 },
                 graph_pattern_change,
-            ))
+            ));
         } else {
-            return Some((graph_pattern_rewrite, graph_pattern_change))
+            return Some((graph_pattern_rewrite, graph_pattern_change));
         }
     }
     None
@@ -743,18 +743,56 @@ fn rewrite_static_minus(
         external_ids_in_scope.insert(k, v);
     }
 
-    if let Some((left_rewrite, left_change)) = left_rewrite_opt {
-        if let Some((right_rewrite, right_change)) = right_rewrite_opt {
-            return Some(GraphPattern::Minus {
-                left: Box::new(left_rewrite),
-                right: Box::new(right_rewrite),
-            });
-        } else {
-            Some(left_rewrite)
+    if let (Some((left_rewrite, left_change)), Some((right_rewrite, right_change))) =
+        (&left_rewrite_opt, &right_rewrite_opt)
+    {
+        if left_change == &GraphPatternChangeType::NoChange
+            && right_change == &GraphPatternChangeType::NoChange
+        {
+            return Some((
+                GraphPattern::Minus {
+                    left: Box::new(left_rewrite.clone()),
+                    right: Box::new(right_rewrite.clone()),
+                },
+                GraphPatternChangeType::NoChange,
+            ));
+        } else if (left_change == &GraphPatternChangeType::Relaxed
+            || left_change == &GraphPatternChangeType::NoChange)
+            && (right_change == &GraphPatternChangeType::Constrained
+                || right_change == &GraphPatternChangeType::NoChange)
+        {
+            return Some((
+                GraphPattern::Minus {
+                    left: Box::new(left_rewrite.clone()),
+                    right: Box::new(right_rewrite.clone()),
+                },
+                GraphPatternChangeType::Relaxed,
+            ));
+        } else if (left_change == &GraphPatternChangeType::Constrained
+            || left_change == &GraphPatternChangeType::NoChange)
+            && (right_change == &GraphPatternChangeType::Relaxed
+                || right_change == &GraphPatternChangeType::NoChange)
+        {
+            return Some((
+                GraphPattern::Minus {
+                    left: Box::new(left_rewrite.clone()),
+                    right: Box::new(right_rewrite.clone()),
+                },
+                GraphPatternChangeType::Constrained,
+            ));
         }
-    } else {
-        None
     }
+    if let (None, Some((right_rewrite, right_change))) = (&left_rewrite_opt, &right_rewrite_opt) {
+        return None;
+    }
+    if let (Some((left_rewrite, left_change)), None) = (&left_rewrite_opt, &right_rewrite_opt) {
+        if left_change == &GraphPatternChangeType::NoChange
+            || left_change == &GraphPatternChangeType::Relaxed
+        {
+            return Some((left_rewrite.clone(), GraphPatternChangeType::Relaxed));
+        }
+    }
+    None
 }
 
 pub fn rewrite_static_bgp(
@@ -977,7 +1015,7 @@ pub fn rewrite_static_expression(
                     return Some((
                         Expression::Equal(Box::new(left_rewrite), Box::new(right_rewrite)),
                         ExpressionChangeType::NoChange,
-                    ))
+                    ));
                 }
             }
             None
@@ -992,7 +1030,7 @@ pub fn rewrite_static_expression(
                     return Some((
                         Expression::SameTerm(Box::new(left_rewrite), Box::new(right_rewrite)),
                         ExpressionChangeType::NoChange,
-                    ))
+                    ));
                 }
             }
             None
