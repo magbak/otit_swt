@@ -211,3 +211,39 @@ fn test_union_expression() {
     let expected_query = Query::parse(expected_str, None).unwrap();
     assert_eq!(static_rewrite, expected_query);
 }
+
+#[test]
+fn test_bind_expression() {
+    let sparql = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX qry:<https://github.com/magbak/quarry-rs#>
+    PREFIX ex:<https://example.com/>
+    SELECT ?var1 ?var2 ?val3 WHERE {
+        ?var1 a ?var2 .
+        ?var1 qry:hasTimeseries ?ts1 .
+        ?ts1 qry:hasDataPoint ?dp1 .
+        ?dp1 qry:hasValue ?val1 .
+        ?dp1 qry:hasTimestamp ?t .
+        ?var2 qry:hasTimeseries ?ts2 .
+        ?ts2 qry:hasDataPoint ?dp2 .
+        ?dp2 qry:hasValue ?val2 .
+        ?dp2 qry:hasTimestamp ?t .
+        BIND((?val1 + ?val2) as ?val3)
+        }
+    "#;
+    let parsed = parse_sparql_select_query(sparql).unwrap();
+    let tree = infer_types(&parsed);
+    let mut rewriter = StaticQueryRewriter::new();
+    let static_rewrite = rewriter.rewrite_static_query(parsed, &tree).unwrap();
+    println!("{}", static_rewrite);
+    let expected_str = r#"
+    SELECT ?var1 ?var2 ?val3 ?ts1_external_id_0 ?ts2_external_id_1 WHERE {
+    ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
+    ?ts1 <https://github.com/magbak/quarry-rs#hasExternalId> ?ts1_external_id_0 .
+    ?var1 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts1 .
+    ?ts2 <https://github.com/magbak/quarry-rs#hasExternalId> ?ts2_external_id_1 .
+    ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts2 . }
+    "#;
+    let expected_query = Query::parse(expected_str, None).unwrap();
+    assert_eq!(static_rewrite, expected_query);
+}
