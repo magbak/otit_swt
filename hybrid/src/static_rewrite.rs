@@ -83,12 +83,9 @@ impl StaticQueryRewriter {
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
         match graph_pattern {
-            GraphPattern::Bgp { patterns } => self.rewrite_static_bgp(
-                patterns,
-                has_constraint,
-                required_change_direction,
-                external_ids_in_scope,
-            ),
+            GraphPattern::Bgp { patterns } => {
+                self.rewrite_static_bgp(patterns, has_constraint, external_ids_in_scope)
+            }
             GraphPattern::Path {
                 subject,
                 path,
@@ -165,9 +162,7 @@ impl StaticQueryRewriter {
                 bindings,
             } => self.rewrite_static_values(
                 variables,
-                bindings,
-                required_change_direction,
-                has_constraint,
+                bindings
             ),
             GraphPattern::OrderBy { inner, expression } => self.rewrite_static_order_by(
                 inner,
@@ -190,15 +185,20 @@ impl StaticQueryRewriter {
                 external_ids_in_scope,
             ),
             GraphPattern::Reduced { inner } => {
-                todo!()
+                self.rewrite_static_reduced(inner, has_constraint, required_change_direction, external_ids_in_scope)
             }
             GraphPattern::Slice {
                 inner,
                 start,
                 length,
-            } => {
-                todo!()
-            }
+            } => self.rewrite_static_slice(
+                inner,
+                start,
+                length,
+                has_constraint,
+                required_change_direction,
+                external_ids_in_scope,
+            ),
             GraphPattern::Group {
                 inner,
                 variables,
@@ -216,7 +216,7 @@ impl StaticQueryRewriter {
                 inner,
                 silent,
             } => {
-                todo!()
+                self.rewrite_static_service(name, inner, silent, has_constraint, required_change_direction, external_ids_in_scope)
             }
         }
     }
@@ -224,11 +224,9 @@ impl StaticQueryRewriter {
     fn rewrite_static_values(
         &mut self,
         variables: &Vec<Variable>,
-        ground_term_vecs: &Vec<Vec<Option<GroundTerm>>>,
-        required_change_direction: &ChangeType,
-        has_constraint: &HashMap<TermPattern, Constraint>,
+        bindings: &Vec<Vec<Option<GroundTerm>>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        todo!()
+        return Some((GraphPattern::Values {variables:variables.iter().map(|v|v.clone()).collect(), bindings: bindings.iter().map(|b|b.clone()).collect()}, ChangeType::NoChange))
     }
 
     fn rewrite_static_graph(
@@ -239,7 +237,10 @@ impl StaticQueryRewriter {
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        todo!()
+        if let Some((inner_rewrite, inner_change)) = self.rewrite_static_graph_pattern(inner, has_constraint, required_change_direction, external_ids_in_scope) {
+            return Some((GraphPattern::Graph { name: name.clone(), inner: Box::new(inner_rewrite) }, inner_change))
+        }
+        None
     }
 
     fn rewrite_static_union(
@@ -942,7 +943,7 @@ impl StaticQueryRewriter {
                 .filter(|x| x.is_some())
                 .map(|x| x.unwrap())
                 .collect::<Vec<Variable>>();
-            for (k, vs) in external_ids_in_scope {
+            for (_, vs) in external_ids_in_scope {
                 for v in vs {
                     variables_rewrite.push(v.clone());
                 }
@@ -1104,7 +1105,6 @@ impl StaticQueryRewriter {
         &mut self,
         patterns: &Vec<TriplePattern>,
         has_constraint: &HashMap<TermPattern, Constraint>,
-        required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
         let mut new_triples = vec![];
@@ -1113,22 +1113,16 @@ impl StaticQueryRewriter {
             if let TermPattern::Variable(object_var) = &t.object {
                 if let Some(obj_constr) = obj_constr_opt {
                     if obj_constr == &Constraint::ExternalTimeseries {
-                        let obj_variable = match &t.object {
-                            TermPattern::Variable(var) => var,
-                            anything_else => {
-                                panic!("No support for term pattern {}", anything_else)
-                            }
-                        };
-                        if !external_ids_in_scope.contains_key(&obj_variable) {
+                        if !external_ids_in_scope.contains_key(&object_var) {
                             let external_id_var = Variable::new(
-                                obj_variable.as_str().to_string()
+                                object_var.as_str().to_string()
                                     + "_external_id_"
                                     + &self.variable_counter.to_string(),
                             )
                             .unwrap();
                             self.variable_counter += 1;
                             let new_triple = TriplePattern {
-                                subject: TermPattern::Variable(obj_variable.clone()),
+                                subject: TermPattern::Variable(object_var.clone()),
                                 predicate: NamedNodePattern::NamedNode(
                                     NamedNode::new(HAS_EXTERNAL_ID).unwrap(),
                                 ),
@@ -1138,12 +1132,12 @@ impl StaticQueryRewriter {
                                 new_triples.push(new_triple);
                             }
                             external_ids_in_scope
-                                .insert(obj_variable.clone(), vec![external_id_var.clone()]);
+                                .insert(object_var.clone(), vec![external_id_var.clone()]);
                         }
                     }
                 }
             }
-            if let TermPattern::Variable(subject_var) = &t.subject {
+            if let TermPattern::Variable(_) = &t.subject {
                 let subj_constr_opt = has_constraint.get(&t.subject);
 
                 if subj_constr_opt != Some(&Constraint::ExternalDataPoint)
@@ -1571,12 +1565,27 @@ impl StaticQueryRewriter {
                     .into_iter()
                     .map(|(e, _)| e)
                     .collect::<Vec<Expression>>();
-                todo!("Fix strengthened case here");
+
                 if let Some((left_rewrite, ChangeType::NoChange)) = left_rewrite_opt {
-                    return Some((
-                        Expression::In(Box::new(left_rewrite), expressions_rewritten_nochange),
-                        ChangeType::NoChange,
-                    ));
+                    if expressions_rewritten_nochange.len() == expressions.len() {
+                        return Some((
+                            Expression::In(Box::new(left_rewrite), expressions_rewritten_nochange),
+                            ChangeType::NoChange,
+                        ));
+                    }
+                    if required_change_direction == &ChangeType::Constrained {
+                        if expressions_rewritten_nochange.is_empty()
+                            && (expressions_rewritten_nochange.len() < expressions.len())
+                        {
+                            return Some((
+                                Expression::In(
+                                    Box::new(left_rewrite),
+                                    expressions_rewritten_nochange,
+                                ),
+                                ChangeType::Constrained,
+                            ));
+                        }
+                    }
                 }
                 None
             }
@@ -1861,18 +1870,70 @@ impl StaticQueryRewriter {
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        let inner_rewrite_opt = self.rewrite_static_graph_pattern(inner, has_constraint, required_change_direction, external_ids_in_scope);
-        let expr_rewrite_opt = self.rewrite_static_expression(expr, has_constraint, &ChangeType::NoChange, external_ids_in_scope);
+        let inner_rewrite_opt = self.rewrite_static_graph_pattern(
+            inner,
+            has_constraint,
+            required_change_direction,
+            external_ids_in_scope,
+        );
+        let expr_rewrite_opt = self.rewrite_static_expression(
+            expr,
+            has_constraint,
+            &ChangeType::NoChange,
+            external_ids_in_scope,
+        );
         if let Some((inner_rewrite, inner_change_type)) = inner_rewrite_opt {
             if let Some((expression_rewrite, _)) = expr_rewrite_opt {
-                return Some((GraphPattern::Extend {
-                    inner: Box::new(inner_rewrite),
-                    variable: var.clone(),
-                    expression: expression_rewrite
-                }, inner_change_type))
+                return Some((
+                    GraphPattern::Extend {
+                        inner: Box::new(inner_rewrite),
+                        variable: var.clone(),
+                        expression: expression_rewrite,
+                    },
+                    inner_change_type,
+                ));
             } else {
-                return Some((inner_rewrite, inner_change_type))
+                return Some((inner_rewrite, inner_change_type));
             }
+        }
+        None
+    }
+    fn rewrite_static_slice(
+        &mut self,
+        inner: &Box<GraphPattern>,
+        start: &usize,
+        length: &Option<usize>,
+        has_constraint: &HashMap<TermPattern, Constraint>,
+        required_change_direction: &ChangeType,
+        external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
+    ) -> Option<(GraphPattern, ChangeType)> {
+        let rewrite_inner_opt = self.rewrite_static_graph_pattern(
+            inner,
+            has_constraint,
+            required_change_direction,
+            external_ids_in_scope,
+        );
+        if let Some((rewrite_inner, rewrite_change)) = rewrite_inner_opt {
+            return Some((
+                GraphPattern::Slice {
+                    inner: Box::new(rewrite_inner),
+                    start: start.clone(),
+                    length: length.clone(),
+                },
+                rewrite_change,
+            ));
+        }
+        None
+    }
+    fn rewrite_static_reduced(&mut self, inner: &Box<GraphPattern>, has_constraint: &HashMap<TermPattern, Constraint>, required_change_direction: &ChangeType, external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>) -> Option<(GraphPattern, ChangeType)> {
+        if let Some((inner_rewrite, inner_change)) = self.rewrite_static_graph_pattern(inner, has_constraint, required_change_direction, external_ids_in_scope) {
+            return Some((GraphPattern::Reduced {inner:Box::new(inner_rewrite)}, inner_change))
+        }
+        None
+    }
+    fn rewrite_static_service(&mut self, name: &NamedNodePattern, inner: &Box<GraphPattern>, silent: &bool, has_constraint: &HashMap<TermPattern, Constraint>, required_change_direction: &ChangeType, external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>) -> Option<(GraphPattern, ChangeType)> {
+        if let Some((inner_rewrite, inner_change)) = self.rewrite_static_graph_pattern(inner, has_constraint, &ChangeType::NoChange, external_ids_in_scope) {
+            return Some((GraphPattern::Service { name: name.clone(), inner: Box::new(inner_rewrite), silent: silent.clone() }, inner_change))
         }
         None
     }
