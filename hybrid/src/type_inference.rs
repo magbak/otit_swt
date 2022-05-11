@@ -1,13 +1,17 @@
-use spargebra::algebra::{GraphPattern, PropertyPathExpression};
-use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
-use std::collections::HashMap;
-use std::ops::Deref;
-use spargebra::Query;
 use crate::const_uris::{HAS_DATA_POINT, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE};
 use crate::constraints::Constraint;
+use spargebra::algebra::{GraphPattern};
+use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
+use spargebra::Query;
+use std::collections::HashMap;
 
-pub fn infer_types(select_query:&Query) -> HashMap<TermPattern, Constraint> {
-    if let Query::Select { dataset:_, pattern, base_iri:_ } = &select_query {
+pub fn infer_types(select_query: &Query) -> HashMap<TermPattern, Constraint> {
+    if let Query::Select {
+        dataset: _,
+        pattern,
+        base_iri: _,
+    } = &select_query
+    {
         let mut has_constraint = HashMap::new();
         infer_graph_pattern(&pattern, &mut has_constraint);
         has_constraint
@@ -26,12 +30,7 @@ pub fn infer_graph_pattern(
                 infer_triple_pattern(p, has_constraint)
             }
         }
-        GraphPattern::Path {
-            subject,
-            path,
-            object,
-        } => {
-            infer_property_path(subject, path, object, has_constraint);
+        GraphPattern::Path { .. } => { //No handling of paths, we assume that these are first translated into triples
         }
         GraphPattern::Join { left, right } => {
             infer_graph_pattern(left, has_constraint);
@@ -40,25 +39,25 @@ pub fn infer_graph_pattern(
         GraphPattern::LeftJoin {
             left,
             right,
-            expression:_,
+            expression: _,
         } => {
             infer_graph_pattern(left, has_constraint);
             infer_graph_pattern(right, has_constraint);
         }
-        GraphPattern::Filter { expr:_, inner } => {
+        GraphPattern::Filter { expr: _, inner } => {
             infer_graph_pattern(inner, has_constraint);
         }
         GraphPattern::Union { left, right } => {
             infer_graph_pattern(left, has_constraint);
             infer_graph_pattern(right, has_constraint);
         }
-        GraphPattern::Graph { name:_, inner } => {
+        GraphPattern::Graph { name: _, inner } => {
             infer_graph_pattern(inner, has_constraint);
         }
         GraphPattern::Extend {
             inner,
-            variable:_,
-            expression:_,
+            variable: _,
+            expression: _,
         } => {
             infer_graph_pattern(inner, has_constraint);
         }
@@ -66,16 +65,19 @@ pub fn infer_graph_pattern(
             infer_graph_pattern(left, has_constraint);
             infer_graph_pattern(right, has_constraint);
         }
-        GraphPattern::Values {
-            variables:_,
-            bindings:_,
-        } => {
+        GraphPattern::Values { .. } => {
             //No action
         }
-        GraphPattern::OrderBy { inner, expression:_ } => {
+        GraphPattern::OrderBy {
+            inner,
+            expression: _,
+        } => {
             infer_graph_pattern(inner, has_constraint);
         }
-        GraphPattern::Project { inner, variables:_ } => {
+        GraphPattern::Project {
+            inner,
+            variables: _,
+        } => {
             infer_graph_pattern(inner, has_constraint);
         }
         GraphPattern::Distinct { inner } => {
@@ -86,62 +88,25 @@ pub fn infer_graph_pattern(
         }
         GraphPattern::Slice {
             inner,
-            start:_,
-            length:_,
+            start: _,
+            length: _,
         } => {
             infer_graph_pattern(inner, has_constraint);
         }
         GraphPattern::Group {
             inner,
-            variables:_,
-            aggregates:_,
+            variables: _,
+            aggregates: _,
         } => {
             infer_graph_pattern(inner, has_constraint);
         }
         GraphPattern::Service {
-            name:_,
+            name: _,
             inner,
-            silent:_,
+            silent: _,
         } => {
             infer_graph_pattern(inner, has_constraint);
         }
-    }
-}
-
-pub fn infer_property_path(
-    subject: &TermPattern,
-    property_path: &PropertyPathExpression,
-    object: &TermPattern,
-    has_constraint: &HashMap<TermPattern, Constraint>,
-) {
-    //We only support type inference for one type of property path
-    if let PropertyPathExpression::Sequence(p1, p2) = property_path {
-        let last = get_last_elem(p1);
-        if let PropertyPathExpression::NamedNode(n1) = last.deref() {
-            if let PropertyPathExpression::NamedNode(n2) = p2.deref() {
-                if n1 == &HAS_TIMESERIES && n2 == &HAS_DATA_POINT {
-                    todo!();
-                }
-                if n1 == &HAS_DATA_POINT && n2 == &HAS_VALUE {
-                    todo!();
-                }
-                if n1 == &HAS_DATA_POINT && n2 == &HAS_TIMESTAMP {
-                    todo!();
-                }
-            }
-        }
-    }
-}
-
-fn get_last_elem(p: &PropertyPathExpression) -> &PropertyPathExpression {
-    if let PropertyPathExpression::Sequence(_, last) = p {
-        if let PropertyPathExpression::Sequence(_, _) = last.deref() {
-            get_last_elem(last)
-        } else {
-            last
-        }
-    } else {
-        panic!("Should only be called with sequence")
     }
 }
 

@@ -90,14 +90,7 @@ impl StaticQueryRewriter {
                 subject,
                 path,
                 object,
-            } => self.rewrite_static_path(
-                subject,
-                path,
-                object,
-                has_constraint,
-                required_change_direction,
-                external_ids_in_scope,
-            ),
+            } => self.rewrite_static_path(subject, path, object),
             GraphPattern::Join { left, right } => self.rewrite_static_join(
                 left,
                 right,
@@ -160,10 +153,7 @@ impl StaticQueryRewriter {
             GraphPattern::Values {
                 variables,
                 bindings,
-            } => self.rewrite_static_values(
-                variables,
-                bindings
-            ),
+            } => self.rewrite_static_values(variables, bindings),
             GraphPattern::OrderBy { inner, expression } => self.rewrite_static_order_by(
                 inner,
                 expression,
@@ -184,9 +174,12 @@ impl StaticQueryRewriter {
                 required_change_direction,
                 external_ids_in_scope,
             ),
-            GraphPattern::Reduced { inner } => {
-                self.rewrite_static_reduced(inner, has_constraint, required_change_direction, external_ids_in_scope)
-            }
+            GraphPattern::Reduced { inner } => self.rewrite_static_reduced(
+                inner,
+                has_constraint,
+                required_change_direction,
+                external_ids_in_scope,
+            ),
             GraphPattern::Slice {
                 inner,
                 start,
@@ -215,9 +208,13 @@ impl StaticQueryRewriter {
                 name,
                 inner,
                 silent,
-            } => {
-                self.rewrite_static_service(name, inner, silent, has_constraint, required_change_direction, external_ids_in_scope)
-            }
+            } => self.rewrite_static_service(
+                name,
+                inner,
+                silent,
+                has_constraint,
+                external_ids_in_scope,
+            ),
         }
     }
 
@@ -226,7 +223,13 @@ impl StaticQueryRewriter {
         variables: &Vec<Variable>,
         bindings: &Vec<Vec<Option<GroundTerm>>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        return Some((GraphPattern::Values {variables:variables.iter().map(|v|v.clone()).collect(), bindings: bindings.iter().map(|b|b.clone()).collect()}, ChangeType::NoChange))
+        return Some((
+            GraphPattern::Values {
+                variables: variables.iter().map(|v| v.clone()).collect(),
+                bindings: bindings.iter().map(|b| b.clone()).collect(),
+            },
+            ChangeType::NoChange,
+        ));
     }
 
     fn rewrite_static_graph(
@@ -237,8 +240,19 @@ impl StaticQueryRewriter {
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        if let Some((inner_rewrite, inner_change)) = self.rewrite_static_graph_pattern(inner, has_constraint, required_change_direction, external_ids_in_scope) {
-            return Some((GraphPattern::Graph { name: name.clone(), inner: Box::new(inner_rewrite) }, inner_change))
+        if let Some((inner_rewrite, inner_change)) = self.rewrite_static_graph_pattern(
+            inner,
+            has_constraint,
+            required_change_direction,
+            external_ids_in_scope,
+        ) {
+            return Some((
+                GraphPattern::Graph {
+                    name: name.clone(),
+                    inner: Box::new(inner_rewrite),
+                },
+                inner_change,
+            ));
         }
         None
     }
@@ -943,8 +957,14 @@ impl StaticQueryRewriter {
                 .filter(|x| x.is_some())
                 .map(|x| x.unwrap())
                 .collect::<Vec<Variable>>();
-            for (_, vs) in external_ids_in_scope {
-                for v in vs {
+            let mut keys_sorted = external_ids_in_scope.keys().collect::<Vec<&Variable>>();
+            keys_sorted.sort_by_key(|v|v.to_string());
+            for k in keys_sorted {
+                let vs = external_ids_in_scope.get(k).unwrap();
+                let mut vars = vs.iter().collect::<Vec<&Variable>>();
+                //Sort to make rewrites deterministic
+                vars.sort_by_key(|v|v.to_string());
+                for v in vars {
                     variables_rewrite.push(v.clone());
                 }
             }
@@ -1167,17 +1187,22 @@ impl StaticQueryRewriter {
         }
     }
 
+    //We assume that all paths have been rewritten so as to not contain any datapoint, timestamp, or data value.
+    //These should have been split into ordinary triples.
     pub fn rewrite_static_path(
         &mut self,
         subject: &TermPattern,
         path: &PropertyPathExpression,
         object: &TermPattern,
-        has_constraint: &HashMap<TermPattern, Constraint>,
-        required_change_direction: &ChangeType,
-        external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        todo!()
-        //Possibly rewrite into reduced path without something and bgp...
+        return Some((
+            GraphPattern::Path {
+                subject: subject.clone(),
+                path: path.clone(),
+                object: object.clone(),
+            },
+            ChangeType::NoChange,
+        ));
     }
 
     pub fn rewrite_static_expression(
@@ -1925,15 +1950,50 @@ impl StaticQueryRewriter {
         }
         None
     }
-    fn rewrite_static_reduced(&mut self, inner: &Box<GraphPattern>, has_constraint: &HashMap<TermPattern, Constraint>, required_change_direction: &ChangeType, external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>) -> Option<(GraphPattern, ChangeType)> {
-        if let Some((inner_rewrite, inner_change)) = self.rewrite_static_graph_pattern(inner, has_constraint, required_change_direction, external_ids_in_scope) {
-            return Some((GraphPattern::Reduced {inner:Box::new(inner_rewrite)}, inner_change))
+    fn rewrite_static_reduced(
+        &mut self,
+        inner: &Box<GraphPattern>,
+        has_constraint: &HashMap<TermPattern, Constraint>,
+        required_change_direction: &ChangeType,
+        external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
+    ) -> Option<(GraphPattern, ChangeType)> {
+        if let Some((inner_rewrite, inner_change)) = self.rewrite_static_graph_pattern(
+            inner,
+            has_constraint,
+            required_change_direction,
+            external_ids_in_scope,
+        ) {
+            return Some((
+                GraphPattern::Reduced {
+                    inner: Box::new(inner_rewrite),
+                },
+                inner_change,
+            ));
         }
         None
     }
-    fn rewrite_static_service(&mut self, name: &NamedNodePattern, inner: &Box<GraphPattern>, silent: &bool, has_constraint: &HashMap<TermPattern, Constraint>, required_change_direction: &ChangeType, external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>) -> Option<(GraphPattern, ChangeType)> {
-        if let Some((inner_rewrite, inner_change)) = self.rewrite_static_graph_pattern(inner, has_constraint, &ChangeType::NoChange, external_ids_in_scope) {
-            return Some((GraphPattern::Service { name: name.clone(), inner: Box::new(inner_rewrite), silent: silent.clone() }, inner_change))
+    fn rewrite_static_service(
+        &mut self,
+        name: &NamedNodePattern,
+        inner: &Box<GraphPattern>,
+        silent: &bool,
+        has_constraint: &HashMap<TermPattern, Constraint>,
+        external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
+    ) -> Option<(GraphPattern, ChangeType)> {
+        if let Some((inner_rewrite, inner_change)) = self.rewrite_static_graph_pattern(
+            inner,
+            has_constraint,
+            &ChangeType::NoChange,
+            external_ids_in_scope,
+        ) {
+            return Some((
+                GraphPattern::Service {
+                    name: name.clone(),
+                    inner: Box::new(inner_rewrite),
+                    silent: silent.clone(),
+                },
+                inner_change,
+            ));
         }
         None
     }
