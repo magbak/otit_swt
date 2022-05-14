@@ -33,7 +33,7 @@ pub fn rewrite_path(
                                 object: o.clone(),
                             };
                             triples.push(new_trip);
-                            return (Some(new_s), None, None);
+                            (Some(new_s), None, None)
                         }
                         Some(s) => {
                             let new_trip = TriplePattern {
@@ -42,7 +42,7 @@ pub fn rewrite_path(
                                 object: o.clone(),
                             };
                             triples.push(new_trip);
-                            return (None, None, None);
+                            (None, None, None)
                         }
                     },
                 }
@@ -80,7 +80,7 @@ pub fn rewrite_path(
                 None => match b_rewrite_p {
                     None => (a_rewrite_s, None, b_rewrite_s),
                     Some(_) => {
-                        todo!("Handle this case, arises with reverse?");
+                        todo!("Handle this case, arises with reverse?")
                     }
                 },
                 Some(some_a_rewrite_p) => match b_rewrite_p {
