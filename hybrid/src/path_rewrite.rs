@@ -1,8 +1,41 @@
 use crate::const_uris::{HAS_DATA_POINT, HAS_TIMESERIES, HAS_VALUE};
-use spargebra::algebra::{PropertyPathExpression};
+use spargebra::algebra::{GraphPattern, PropertyPathExpression};
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern, Variable};
 
-pub fn rewrite_path(
+pub fn rewrite_path_graph_pattern(subject: Option<&TermPattern>,
+    path: &PropertyPathExpression,
+    object: Option<&TermPattern>) -> GraphPattern {
+    let mut triples = vec![];
+    let (subject_opt, path_opt, object_opt) = rewrite_path(subject, path, object, &mut triples);
+
+    match path_opt {
+        None => {
+            assert!(triples.len() > 0);
+            GraphPattern::Bgp { patterns: triples }
+        }
+        Some(path) => {
+            if let (Some(rewrite_subject), Some(rewrite_object)) = (subject_opt, object_opt) {
+                let property_path = GraphPattern::Path {
+                    subject: rewrite_subject,
+                    path: path,
+                    object: rewrite_object
+                };
+                if triples.len() > 0 {
+                    GraphPattern::Union {
+                        left: Box::new(property_path),
+                        right: Box::new(GraphPattern::Bgp { patterns: triples })
+                    }
+                } else {
+                    property_path
+                }
+            } else {
+                todo!("Create error!")
+            }
+        }
+    }
+}
+
+fn rewrite_path(
     subject: Option<&TermPattern>,
     path: &PropertyPathExpression,
     object: Option<&TermPattern>,
