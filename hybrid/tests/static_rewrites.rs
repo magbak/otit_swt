@@ -122,7 +122,7 @@ fn test_complex_expression_filter_projection() {
         .unwrap();
     println!("{}", static_rewrite);
     let expected_str = r#"
-    SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
+    SELECT ?var1 ?var2 ?ts_external_id_0 ?pv WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
     ?var2 <https://example.com/hasPropertyValue> ?pv .
     ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
@@ -156,7 +156,7 @@ fn test_complex_nested_expression_filter() {
         .rewrite_static_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
-    SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
+    SELECT ?var1 ?var2 ?ts_external_id_0 ?pv WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
     ?var2 <https://example.com/hasPropertyValue> ?pv .
     ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .

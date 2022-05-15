@@ -1236,6 +1236,7 @@ impl StaticQueryRewriter {
                     }
                     ChangeType::NoChange => {}
                 }
+                self.project_all_dynamic_variables(vec![left_rewrite_opt, right_rewrite_opt]);
                 None
             }
 
@@ -1327,7 +1328,7 @@ impl StaticQueryRewriter {
                     }
                     ChangeType::NoChange => {}
                 }
-
+                self.project_all_dynamic_variables(vec![left_rewrite_opt, right_rewrite_opt]);
                 None
             }
             Expression::Equal(left, right) => {
@@ -1346,11 +1347,15 @@ impl StaticQueryRewriter {
                     Some((right_rewrite, ChangeType::NoChange)),
                 ) = (&left_rewrite_opt, &right_rewrite_opt)
                 {
-                        return Some((
-                            Expression::Equal(Box::new(left_rewrite.clone()), Box::new(right_rewrite.clone())),
-                            ChangeType::NoChange,
-                        ));
+                    return Some((
+                        Expression::Equal(
+                            Box::new(left_rewrite.clone()),
+                            Box::new(right_rewrite.clone()),
+                        ),
+                        ChangeType::NoChange,
+                    ));
                 }
+                self.project_all_dynamic_variables(vec![left_rewrite_opt, right_rewrite_opt]);
                 None
             }
             Expression::SameTerm(left, right) => {
@@ -1369,11 +1374,15 @@ impl StaticQueryRewriter {
                     Some((right_rewrite, ChangeType::NoChange)),
                 ) = (&left_rewrite_opt, &right_rewrite_opt)
                 {
-                        return Some((
-                            Expression::SameTerm(Box::new(left_rewrite.clone()), Box::new(right_rewrite.clone())),
-                            ChangeType::NoChange,
-                        ));
+                    return Some((
+                        Expression::SameTerm(
+                            Box::new(left_rewrite.clone()),
+                            Box::new(right_rewrite.clone()),
+                        ),
+                        ChangeType::NoChange,
+                    ));
                 }
+                self.project_all_dynamic_variables(vec![left_rewrite_opt, right_rewrite_opt]);
                 None
             }
             Expression::Greater(left, right) => {
@@ -1392,11 +1401,15 @@ impl StaticQueryRewriter {
                     Some((right_rewrite, ChangeType::NoChange)),
                 ) = (&left_rewrite_opt, &right_rewrite_opt)
                 {
-                        return Some((
-                            Expression::Greater(Box::new(left_rewrite.clone()), Box::new(right_rewrite.clone())),
-                            ChangeType::NoChange,
-                        ));
-                    }
+                    return Some((
+                        Expression::Greater(
+                            Box::new(left_rewrite.clone()),
+                            Box::new(right_rewrite.clone()),
+                        ),
+                        ChangeType::NoChange,
+                    ));
+                }
+                self.project_all_dynamic_variables(vec![left_rewrite_opt, right_rewrite_opt]);
                 None
             }
             Expression::GreaterOrEqual(left, right) => {
@@ -1415,14 +1428,16 @@ impl StaticQueryRewriter {
                     Some((right_rewrite, ChangeType::NoChange)),
                 ) = (&left_rewrite_opt, &right_rewrite_opt)
                 {
-                        return Some((
-                            Expression::GreaterOrEqual(
-                                Box::new(left_rewrite.clone()),
-                                Box::new(right_rewrite.clone()),
-                            ),
-                            ChangeType::NoChange,
-                        ));
-                    }
+                    return Some((
+                        Expression::GreaterOrEqual(
+                            Box::new(left_rewrite.clone()),
+                            Box::new(right_rewrite.clone()),
+                        ),
+                        ChangeType::NoChange,
+                    ));
+                }
+                self.project_all_dynamic_variables(vec![left_rewrite_opt, right_rewrite_opt]);
+
                 None
             }
             Expression::Less(left, right) => {
@@ -1441,11 +1456,15 @@ impl StaticQueryRewriter {
                     Some((right_rewrite, ChangeType::NoChange)),
                 ) = (&left_rewrite_opt, &right_rewrite_opt)
                 {
-                        return Some((
-                            Expression::Less(Box::new(left_rewrite.clone()), Box::new(right_rewrite.clone())),
-                            ChangeType::NoChange,
-                        ));
+                    return Some((
+                        Expression::Less(
+                            Box::new(left_rewrite.clone()),
+                            Box::new(right_rewrite.clone()),
+                        ),
+                        ChangeType::NoChange,
+                    ));
                 }
+                self.project_all_dynamic_variables(vec![left_rewrite_opt, right_rewrite_opt]);
                 None
             }
             Expression::LessOrEqual(left, right) => {
@@ -1464,14 +1483,15 @@ impl StaticQueryRewriter {
                     Some((right_rewrite, ChangeType::NoChange)),
                 ) = (&left_rewrite_opt, &right_rewrite_opt)
                 {
-                        return Some((
-                            Expression::LessOrEqual(
-                                Box::new(left_rewrite.clone()),
-                                Box::new(right_rewrite.clone()),
-                            ),
-                            ChangeType::NoChange,
-                        ));
+                    return Some((
+                        Expression::LessOrEqual(
+                            Box::new(left_rewrite.clone()),
+                            Box::new(right_rewrite.clone()),
+                        ),
+                        ChangeType::NoChange,
+                    ));
                 }
+                self.project_all_dynamic_variables(vec![left_rewrite_opt, right_rewrite_opt]);
                 None
             }
             Expression::In(left, expressions) => {
@@ -1494,7 +1514,8 @@ impl StaticQueryRewriter {
                     return None;
                 }
                 let expressions_rewritten = expressions_rewritten_opts
-                    .into_iter()
+                    .iter()
+                    .map(|x| x.clone())
                     .map(|x| x.unwrap())
                     .collect::<Vec<(Expression, ChangeType)>>();
                 if expressions_rewritten
@@ -1508,10 +1529,13 @@ impl StaticQueryRewriter {
                     .map(|(e, _)| e)
                     .collect::<Vec<Expression>>();
 
-                if let Some((left_rewrite, ChangeType::NoChange)) = left_rewrite_opt {
+                if let Some((left_rewrite, ChangeType::NoChange)) = &left_rewrite_opt {
                     if expressions_rewritten_nochange.len() == expressions.len() {
                         return Some((
-                            Expression::In(Box::new(left_rewrite), expressions_rewritten_nochange),
+                            Expression::In(
+                                Box::new(left_rewrite.clone()),
+                                expressions_rewritten_nochange,
+                            ),
                             ChangeType::NoChange,
                         ));
                     }
@@ -1521,7 +1545,7 @@ impl StaticQueryRewriter {
                         {
                             return Some((
                                 Expression::In(
-                                    Box::new(left_rewrite),
+                                    Box::new(left_rewrite.clone()),
                                     expressions_rewritten_nochange,
                                 ),
                                 ChangeType::Constrained,
@@ -1529,6 +1553,8 @@ impl StaticQueryRewriter {
                         }
                     }
                 }
+                self.project_all_dynamic_variables(vec![left_rewrite_opt]);
+                self.project_all_dynamic_variables(expressions_rewritten_opts);
                 None
             }
             Expression::Add(left, right) => {
@@ -1555,15 +1581,8 @@ impl StaticQueryRewriter {
                         ),
                         ChangeType::NoChange,
                     ));
-                } else if let (Some((left_rewrite, _)), None) =
-                    (&left_rewrite_opt, &right_rewrite_opt)
-                {
-                    self.project_all_static_variables_from_expression(left_rewrite);
-                } else if let (None, Some((right_rewrite, _))) =
-                    (&left_rewrite_opt, &right_rewrite_opt)
-                {
-                    self.project_all_static_variables_from_expression(right_rewrite);
                 }
+                self.project_all_dynamic_variables(vec![left_rewrite_opt, right_rewrite_opt]);
                 None
             }
             Expression::Subtract(left, right) => {
@@ -1590,6 +1609,7 @@ impl StaticQueryRewriter {
                         ChangeType::NoChange,
                     ));
                 }
+                self.project_all_dynamic_variables(vec![left_rewrite_opt, right_rewrite_opt]);
                 None
             }
             Expression::Multiply(left, right) => {
@@ -1616,6 +1636,7 @@ impl StaticQueryRewriter {
                         ChangeType::NoChange,
                     ));
                 }
+                self.project_all_dynamic_variables(vec![left_rewrite_opt, right_rewrite_opt]);
                 None
             }
             Expression::Divide(left, right) => {
@@ -1642,6 +1663,7 @@ impl StaticQueryRewriter {
                         ChangeType::NoChange,
                     ));
                 }
+                self.project_all_dynamic_variables(vec![left_rewrite_opt, right_rewrite_opt]);
                 None
             }
             Expression::UnaryPlus(wrapped) => {
@@ -1656,6 +1678,7 @@ impl StaticQueryRewriter {
                         ChangeType::NoChange,
                     ));
                 }
+                self.project_all_dynamic_variables(vec![wrapped_rewrite_opt]);
                 None
             }
             Expression::UnaryMinus(wrapped) => {
@@ -1670,6 +1693,7 @@ impl StaticQueryRewriter {
                         ChangeType::NoChange,
                     ));
                 }
+                self.project_all_dynamic_variables(vec![wrapped_rewrite_opt]);
                 None
             }
             Expression::Not(wrapped) => {
@@ -1678,21 +1702,23 @@ impl StaticQueryRewriter {
                     &required_change_direction.opposite(),
                     external_ids_in_scope,
                 );
-                if let Some((wrapped_rewrite, wrapped_change)) = wrapped_rewrite_opt {
+                if let Some((wrapped_rewrite, wrapped_change)) = &wrapped_rewrite_opt {
                     let use_change_type = match wrapped_change {
                         ChangeType::NoChange => ChangeType::NoChange,
                         ChangeType::Relaxed => ChangeType::Constrained,
                         ChangeType::Constrained => ChangeType::Relaxed,
                     };
-                    if use_change_type != ChangeType::NoChange
-                        && &use_change_type != required_change_direction
+                    if use_change_type == ChangeType::NoChange
+                        || &use_change_type == required_change_direction
                     {
-                        return None;
+                        return Some((
+                            Expression::Not(Box::new(wrapped_rewrite.clone())),
+                            use_change_type,
+                        ));
                     }
-                    Some((Expression::Not(Box::new(wrapped_rewrite)), use_change_type))
-                } else {
-                    None
                 }
+                self.project_all_dynamic_variables(vec![wrapped_rewrite_opt]);
+                None
             }
             Expression::Exists(wrapped) => {
                 let wrapped_rewrite_opt = self.rewrite_static_graph_pattern(
@@ -1706,10 +1732,10 @@ impl StaticQueryRewriter {
                         ChangeType::Constrained => ChangeType::Constrained,
                         ChangeType::NoChange => ChangeType::NoChange,
                     };
-                    Some((Expression::Exists(Box::new(wrapped_rewrite)), use_change))
-                } else {
-                    None
+                    return Some((Expression::Exists(Box::new(wrapped_rewrite)), use_change));
                 }
+                todo!("Project missing variables..");
+                None
             }
             Expression::Bound(v) => {
                 if let Some(v_rewritten) = self.rewrite_static_variable(v) {
@@ -1750,6 +1776,11 @@ impl StaticQueryRewriter {
                         ChangeType::NoChange,
                     ));
                 }
+                self.project_all_dynamic_variables(vec![
+                    left_rewrite_opt,
+                    mid_rewrite_opt,
+                    right_rewrite_opt,
+                ]);
                 None
             }
             Expression::Coalesce(wrapped) => {
@@ -1763,22 +1794,25 @@ impl StaticQueryRewriter {
                         )
                     })
                     .collect::<Vec<Option<(Expression, ChangeType)>>>();
-                if !rewritten.iter().all(|x| x.is_some()) {
-                    return None;
+                if rewritten.iter().all(|x| x.is_some()) {
+                    let rewritten_some = &rewritten
+                        .iter()
+                        .map(|x| x.clone())
+                        .map(|x| x.unwrap())
+                        .collect::<Vec<(Expression, ChangeType)>>();
+                    if rewritten_some
+                        .iter()
+                        .all(|(_, c)| c == &ChangeType::NoChange)
+                    {
+                        return Some((
+                            Expression::Coalesce(
+                                rewritten_some.into_iter().map(|(e, _)| e.clone()).collect(),
+                            ),
+                            ChangeType::NoChange,
+                        ));
+                    }
                 }
-                let rewritten_some = rewritten
-                    .into_iter()
-                    .map(|x| x.unwrap())
-                    .collect::<Vec<(Expression, ChangeType)>>();
-                if rewritten_some
-                    .iter()
-                    .all(|(_, c)| c == &ChangeType::NoChange)
-                {
-                    return Some((
-                        Expression::Coalesce(rewritten_some.into_iter().map(|(e, _)| e).collect()),
-                        ChangeType::NoChange,
-                    ));
-                }
+                self.project_all_dynamic_variables(rewritten);
                 None
             }
             Expression::FunctionCall(fun, args) => {
@@ -1792,29 +1826,39 @@ impl StaticQueryRewriter {
                         )
                     })
                     .collect::<Vec<Option<(Expression, ChangeType)>>>();
-                if !args_rewritten.iter().all(|x| x.is_some()) {
-                    return None;
+                if args_rewritten.iter().all(|x| x.is_some()) {
+                    let args_rewritten_some = &args_rewritten
+                        .iter()
+                        .map(|x| x.clone())
+                        .map(|x| x.unwrap())
+                        .collect::<Vec<(Expression, ChangeType)>>();
+                    if args_rewritten_some
+                        .iter()
+                        .all(|(_, c)| c == &ChangeType::NoChange)
+                    {
+                        return Some((
+                            Expression::FunctionCall(
+                                fun.clone(),
+                                args_rewritten_some.iter().map(|(e, _)| e.clone()).collect(),
+                            ),
+                            ChangeType::NoChange,
+                        ));
+                    }
                 }
-                let args_rewritten_some = args_rewritten
-                    .into_iter()
-                    .map(|x| x.unwrap())
-                    .collect::<Vec<(Expression, ChangeType)>>();
-                if args_rewritten_some
-                    .iter()
-                    .all(|(_, c)| c == &ChangeType::NoChange)
-                {
-                    return Some((
-                        Expression::FunctionCall(
-                            fun.clone(),
-                            args_rewritten_some.into_iter().map(|(e, _)| e).collect(),
-                        ),
-                        ChangeType::NoChange,
-                    ));
-                }
+                self.project_all_dynamic_variables(args_rewritten);
                 None
             }
         }
     }
+
+    fn project_all_dynamic_variables(&mut self, rewrites: Vec<Option<(Expression, ChangeType)>>) {
+        for r in rewrites {
+            if let Some((expr, _)) = r {
+                self.project_all_static_variables_from_expression(&expr);
+            }
+        }
+    }
+
     fn rewrite_static_extend(
         &mut self,
         inner: &Box<GraphPattern>,
@@ -1920,7 +1964,7 @@ impl StaticQueryRewriter {
     fn project_all_static_variables_from_expression(&mut self, expr: &Expression) {
         match expr {
             Expression::Variable(var) => {
-                self.project_variable_if_dynamic(var);
+                self.project_variable_if_static(var);
             }
             Expression::Or(left, right) => {
                 self.project_all_static_variables_from_expression(left);
@@ -1989,7 +2033,7 @@ impl StaticQueryRewriter {
                 todo!("Fix handling..")
             }
             Expression::Bound(var) => {
-                self.project_variable_if_dynamic(var);
+                self.project_variable_if_static(var);
             }
             Expression::If(left, middle, right) => {
                 self.project_all_static_variables_from_expression(left);
@@ -2009,8 +2053,8 @@ impl StaticQueryRewriter {
             _ => {}
         }
     }
-    fn project_variable_if_dynamic(&mut self, variable: &Variable) {
-        if self.has_constraint.contains_key(variable) {
+    fn project_variable_if_static(&mut self, variable: &Variable) {
+        if !self.has_constraint.contains_key(variable) {
             self.additional_projections.insert(variable.clone());
         }
     }
