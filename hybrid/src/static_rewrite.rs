@@ -1734,7 +1734,6 @@ impl StaticQueryRewriter {
                     };
                     return Some((Expression::Exists(Box::new(wrapped_rewrite)), use_change));
                 }
-                todo!("Project missing variables..");
                 None
             }
             Expression::Bound(v) => {
