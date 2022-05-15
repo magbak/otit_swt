@@ -17,9 +17,9 @@ fn test_simple_query() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new();
+    let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query, &has_constraint)
+        .rewrite_static_query(preprocessed_query)
         .unwrap();
 
     let expected_str = r#"
@@ -49,9 +49,9 @@ fn test_filtered_query() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new();
+    let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query, &has_constraint)
+        .rewrite_static_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
@@ -82,9 +82,9 @@ fn test_complex_expression_filter() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new();
+    let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query, &has_constraint)
+        .rewrite_static_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
@@ -93,6 +93,41 @@ fn test_complex_expression_filter() {
     ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
     ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
     FILTER(?pv) }"#;
+    let expected_query = Query::parse(expected_str, None).unwrap();
+    assert_eq!(static_rewrite, expected_query);
+}
+
+#[test]
+fn test_complex_expression_filter_projection() {
+    let sparql = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX qry:<https://github.com/magbak/quarry-rs#>
+    PREFIX ex:<https://example.com/>
+    SELECT ?var1 ?var2 WHERE {
+        ?var1 a ?var2 .
+        ?var2 ex:hasPropertyValue ?pv .
+        ?var2 qry:hasTimeseries ?ts .
+        ?ts qry:hasDataPoint ?dp .
+        ?dp qry:hasValue ?val .
+        ?dp qry:hasTimestamp ?t .
+        FILTER(?val > ?pv || ?t >= "2016-01-01"^^xsd:dateTime)
+        }
+    "#;
+    let parsed = parse_sparql_select_query(sparql).unwrap();
+    let mut preprocessor = Preprocessor::new();
+    let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
+    let mut rewriter = StaticQueryRewriter::new(&has_constraint);
+    let static_rewrite = rewriter
+        .rewrite_static_query(preprocessed_query)
+        .unwrap();
+    println!("{}", static_rewrite);
+    let expected_str = r#"
+    SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
+    ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
+    ?var2 <https://example.com/hasPropertyValue> ?pv .
+    ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+    ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts . }
+    "#;
     let expected_query = Query::parse(expected_str, None).unwrap();
     assert_eq!(static_rewrite, expected_query);
 }
@@ -116,9 +151,9 @@ fn test_complex_nested_expression_filter() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new();
+    let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query, &has_constraint)
+        .rewrite_static_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
@@ -152,9 +187,9 @@ fn test_option_expression_filter_projection() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new();
+    let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query, &has_constraint)
+        .rewrite_static_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?pv ?ts_external_id_0 WHERE {
@@ -199,9 +234,9 @@ fn test_union_expression() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new();
+    let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query, &has_constraint)
+        .rewrite_static_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?pv ?ts_external_id_0 ?ts_external_id_1 WHERE {
@@ -247,9 +282,9 @@ fn test_bind_expression() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new();
+    let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query, &has_constraint)
+        .rewrite_static_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?val3 ?ts_external_id_0 ?ts_external_id_1 WHERE {
@@ -283,9 +318,9 @@ fn test_property_path_expression() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new();
+    let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query, &has_constraint)
+        .rewrite_static_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?val3 ?ts_external_id_0 ?ts_external_id_1 WHERE {

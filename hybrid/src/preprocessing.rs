@@ -8,7 +8,7 @@ use std::collections::HashMap;
 pub struct Preprocessor {
     counter: u16,
     blank_node_rename: HashMap<BlankNode, Variable>,
-    has_constraint: HashMap<TermPattern, Constraint>,
+    has_constraint: HashMap<Variable, Constraint>,
 }
 
 impl Preprocessor {
@@ -20,7 +20,7 @@ impl Preprocessor {
         }
     }
 
-    pub fn preprocess(&mut self, select_query: &Query) -> (Query, HashMap<TermPattern, Constraint>) {
+    pub fn preprocess(&mut self, select_query: &Query) -> (Query, HashMap<Variable, Constraint>) {
         if let Query::Select {
             dataset,
             pattern,
@@ -199,20 +199,22 @@ impl Preprocessor {
         let new_subject = self.rename_if_blank(&triple_pattern.subject);
         let new_object = self.rename_if_blank(&triple_pattern.object);
         if let NamedNodePattern::NamedNode(named_predicate_node) = &triple_pattern.predicate {
-            if named_predicate_node == &HAS_TIMESERIES {
-                self.has_constraint.insert(new_object.clone(), Constraint::ExternalTimeseries);
-            }
-            if named_predicate_node == &HAS_TIMESTAMP {
-                self.has_constraint.insert(new_object.clone(), Constraint::ExternalTimestamp);
-                self.has_constraint.insert(new_subject.clone(), Constraint::ExternalDataPoint);
-            }
-            if named_predicate_node == &HAS_VALUE {
-                self.has_constraint.insert(new_object.clone(), Constraint::ExternalDataValue);
-                self.has_constraint.insert(new_subject.clone(), Constraint::ExternalDataPoint);
-            }
-            if named_predicate_node == &HAS_DATA_POINT {
-                self.has_constraint.insert(new_object.clone(), Constraint::ExternalDataPoint);
-                self.has_constraint.insert(new_subject.clone(), Constraint::ExternalTimeseries);
+            if let (TermPattern::Variable(new_subject_variable), TermPattern::Variable(new_object_variable)) = (&new_subject, &new_object) {
+                if named_predicate_node == &HAS_TIMESERIES {
+                    self.has_constraint.insert(new_object_variable.clone(), Constraint::ExternalTimeseries);
+                }
+                if named_predicate_node == &HAS_TIMESTAMP {
+                    self.has_constraint.insert(new_object_variable.clone(), Constraint::ExternalTimestamp);
+                    self.has_constraint.insert(new_subject_variable.clone(), Constraint::ExternalDataPoint);
+                }
+                if named_predicate_node == &HAS_VALUE {
+                    self.has_constraint.insert(new_object_variable.clone(), Constraint::ExternalDataValue);
+                    self.has_constraint.insert(new_subject_variable.clone(), Constraint::ExternalDataPoint);
+                }
+                if named_predicate_node == &HAS_DATA_POINT {
+                    self.has_constraint.insert(new_object_variable.clone(), Constraint::ExternalDataPoint);
+                    self.has_constraint.insert(new_subject_variable.clone(), Constraint::ExternalTimeseries);
+                }
             }
         }
         return TriplePattern {
