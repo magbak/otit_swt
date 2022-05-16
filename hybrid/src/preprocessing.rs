@@ -24,7 +24,7 @@ impl Preprocessor {
         if let Query::Select {
             dataset,
             pattern,
-            base_iri ,
+            base_iri,
         } = &select_query
         {
             let gp = self.preprocess_graph_pattern(&pattern);
@@ -32,10 +32,9 @@ impl Preprocessor {
             let new_query = Query::Select {
                 dataset: dataset.clone(),
                 pattern: gp,
-                base_iri: base_iri.clone()
+                base_iri: base_iri.clone(),
             };
             (new_query, map)
-
         } else {
             panic!("Should only be called with Select")
         }
@@ -192,28 +191,36 @@ impl Preprocessor {
         }
     }
 
-    fn preprocess_triple_pattern(
-        &mut self,
-        triple_pattern: &TriplePattern,
-    ) -> TriplePattern {
+    fn preprocess_triple_pattern(&mut self, triple_pattern: &TriplePattern) -> TriplePattern {
         let new_subject = self.rename_if_blank(&triple_pattern.subject);
         let new_object = self.rename_if_blank(&triple_pattern.object);
         if let NamedNodePattern::NamedNode(named_predicate_node) = &triple_pattern.predicate {
-            if let (TermPattern::Variable(new_subject_variable), TermPattern::Variable(new_object_variable)) = (&new_subject, &new_object) {
+            if let (
+                TermPattern::Variable(new_subject_variable),
+                TermPattern::Variable(new_object_variable),
+            ) = (&new_subject, &new_object)
+            {
                 if named_predicate_node == &HAS_TIMESERIES {
-                    self.has_constraint.insert(new_object_variable.clone(), Constraint::ExternalTimeseries);
+                    self.has_constraint
+                        .insert(new_object_variable.clone(), Constraint::ExternalTimeseries);
                 }
                 if named_predicate_node == &HAS_TIMESTAMP {
-                    self.has_constraint.insert(new_object_variable.clone(), Constraint::ExternalTimestamp);
-                    self.has_constraint.insert(new_subject_variable.clone(), Constraint::ExternalDataPoint);
+                    self.has_constraint
+                        .insert(new_object_variable.clone(), Constraint::ExternalTimestamp);
+                    self.has_constraint
+                        .insert(new_subject_variable.clone(), Constraint::ExternalDataPoint);
                 }
                 if named_predicate_node == &HAS_VALUE {
-                    self.has_constraint.insert(new_object_variable.clone(), Constraint::ExternalDataValue);
-                    self.has_constraint.insert(new_subject_variable.clone(), Constraint::ExternalDataPoint);
+                    self.has_constraint
+                        .insert(new_object_variable.clone(), Constraint::ExternalDataValue);
+                    self.has_constraint
+                        .insert(new_subject_variable.clone(), Constraint::ExternalDataPoint);
                 }
                 if named_predicate_node == &HAS_DATA_POINT {
-                    self.has_constraint.insert(new_object_variable.clone(), Constraint::ExternalDataPoint);
-                    self.has_constraint.insert(new_subject_variable.clone(), Constraint::ExternalTimeseries);
+                    self.has_constraint
+                        .insert(new_object_variable.clone(), Constraint::ExternalDataPoint);
+                    self.has_constraint
+                        .insert(new_subject_variable.clone(), Constraint::ExternalTimeseries);
                 }
             }
         }
@@ -229,8 +236,9 @@ impl Preprocessor {
             if let Some(var) = self.blank_node_rename.get(bn) {
                 TermPattern::Variable(var.clone())
             } else {
-                let var = Variable::new("blank_replacement_".to_string() + &self.counter.to_string())
-                    .expect("Name is ok");
+                let var =
+                    Variable::new("blank_replacement_".to_string() + &self.counter.to_string())
+                        .expect("Name is ok");
                 self.counter += 1;
                 self.blank_node_rename.insert(bn.clone(), var.clone());
                 TermPattern::Variable(var)
@@ -239,6 +247,7 @@ impl Preprocessor {
             term_pattern.clone()
         }
     }
+
     fn preprocess_path(
         &mut self,
         subject: &TermPattern,

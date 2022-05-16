@@ -1890,6 +1890,7 @@ impl StaticQueryRewriter {
         }
         None
     }
+
     fn rewrite_static_slice(
         &mut self,
         inner: &Box<GraphPattern>,
@@ -1916,6 +1917,7 @@ impl StaticQueryRewriter {
         }
         None
     }
+
     fn rewrite_static_reduced(
         &mut self,
         inner: &Box<GraphPattern>,
@@ -1937,6 +1939,7 @@ impl StaticQueryRewriter {
         }
         None
     }
+
     fn rewrite_static_service(
         &mut self,
         name: &NamedNodePattern,
