@@ -1,4 +1,4 @@
-use crate::const_uris::HAS_EXTERNAL_ID;
+use crate::constants::HAS_EXTERNAL_ID;
 use crate::constraints::Constraint;
 use log::debug;
 use spargebra::algebra::{
@@ -447,7 +447,6 @@ impl StaticQueryRewriter {
         left: &Box<GraphPattern>,
         right: &Box<GraphPattern>,
         expression_opt: &Option<Expression>,
-
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
@@ -465,7 +464,9 @@ impl StaticQueryRewriter {
         );
         merge_external_variables_in_scope(left_external_ids_in_scope, external_ids_in_scope);
         merge_external_variables_in_scope(right_external_ids_in_scope, external_ids_in_scope);
-
+        if let Some(expression) = expression_opt {
+            self.pushdown_expression(expression, external_ids_in_scope);
+        }
         let mut expression_rewrite_opt = None;
         if let Some(expression) = expression_opt {
             expression_rewrite_opt = self.rewrite_static_expression(
@@ -623,6 +624,7 @@ impl StaticQueryRewriter {
             required_change_direction,
             external_ids_in_scope,
         );
+        self.pushdown_dynamic_filter(expression, external_ids_in_scope);
         if let Some((inner_rewrite, inner_change)) = inner_rewrite_opt {
             let expression_rewrite_opt = self.rewrite_static_expression(
                 expression,
@@ -677,6 +679,7 @@ impl StaticQueryRewriter {
             required_change_direction,
             external_ids_in_scope,
         );
+        self.pushdown_aggregates(variables, aggregates, external_ids_in_scope);
         if let Some((graph_pattern_rewrite, graph_pattern_change)) = graph_pattern_rewrite_opt {
             let aggregates_rewrite = aggregates.iter().map(|(v, a)| {
                 (
@@ -952,7 +955,6 @@ impl StaticQueryRewriter {
     fn rewrite_static_order_expression(
         &mut self,
         order_expression: &OrderExpression,
-
         external_ids_in_scope: &HashMap<Variable, Vec<Variable>>,
     ) -> Option<OrderExpression> {
         match order_expression {
@@ -981,7 +983,6 @@ impl StaticQueryRewriter {
         &mut self,
         left: &Box<GraphPattern>,
         right: &Box<GraphPattern>,
-
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
@@ -1093,6 +1094,8 @@ impl StaticQueryRewriter {
                     if !new_triples.contains(t) {
                         new_triples.push(t.clone());
                     }
+                } else {
+                    self.add_dynamic_projection_triple(t, external_ids_in_scope);
                 }
             }
         }
@@ -1437,7 +1440,6 @@ impl StaticQueryRewriter {
                     ));
                 }
                 self.project_all_dynamic_variables(vec![left_rewrite_opt, right_rewrite_opt]);
-
                 None
             }
             Expression::Less(left, right) => {

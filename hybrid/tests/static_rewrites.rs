@@ -1,6 +1,6 @@
 use hybrid::preprocessing::Preprocessor;
 use hybrid::splitter::parse_sparql_select_query;
-use hybrid::static_rewrite::StaticQueryRewriter;
+use hybrid::rewriting::StaticQueryRewriter;
 use spargebra::Query;
 
 #[test]

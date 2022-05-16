@@ -1,4 +1,4 @@
-use crate::const_uris::{HAS_DATA_POINT, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE};
+use crate::constants::{HAS_DATA_POINT, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE};
 use crate::constraints::Constraint;
 use spargebra::algebra::{GraphPattern, PropertyPathExpression};
 use spargebra::term::{BlankNode, NamedNodePattern, TermPattern, TriplePattern, Variable};

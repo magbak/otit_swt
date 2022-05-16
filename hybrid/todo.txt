@@ -1,0 +1,2 @@
+Project static values also when weakening expressions.. and, or?
+Minus problem: we should do union instead of minus if rhs contains timeseries..
