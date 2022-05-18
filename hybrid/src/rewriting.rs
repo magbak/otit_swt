@@ -12,11 +12,12 @@ use std::collections::{HashMap, HashSet};
 use crate::change_types::ChangeType;
 use crate::timeseries_query::TimeSeriesQuery;
 
+#[derive(Debug)]
 pub struct StaticQueryRewriter {
     variable_counter: u16,
     additional_projections: HashSet<Variable>,
     has_constraint: HashMap<Variable, Constraint>,
-    time_series_queries: Vec<TimeSeriesQuery>,
+    pub time_series_queries: Vec<TimeSeriesQuery>,
 }
 
 impl StaticQueryRewriter {
@@ -29,7 +30,7 @@ impl StaticQueryRewriter {
         }
     }
 
-    pub fn rewrite_static_query(&mut self, query: Query) -> Option<Query> {
+    pub fn rewrite_query(&mut self, query: Query) -> Option<(Query, Vec<TimeSeriesQuery>)> {
         if let Query::Select {
             dataset,
             pattern,
@@ -38,18 +39,18 @@ impl StaticQueryRewriter {
         {
             let mut external_ids_in_scope = HashMap::new();
             let required_change_direction = ChangeType::Relaxed;
-            let pattern_rewrite_opt = self.rewrite_static_graph_pattern(
+            let pattern_rewrite_opt = self.rewrite_graph_pattern(
                 pattern,
                 &required_change_direction,
                 &mut external_ids_in_scope,
             );
             if let Some((pattern_rewrite, change_type)) = pattern_rewrite_opt {
                 if change_type == ChangeType::NoChange || change_type == ChangeType::Relaxed {
-                    return Some(Query::Select {
+                    return Some((Query::Select {
                         dataset: dataset.clone(),
                         pattern: pattern_rewrite,
                         base_iri: base_iri.clone(),
-                    });
+                    }, self.time_series_queries.clone()));
                 } else {
                     None
                 }
@@ -61,7 +62,7 @@ impl StaticQueryRewriter {
         }
     }
 
-    fn rewrite_static_graph_pattern(
+    fn rewrite_graph_pattern(
         &mut self,
         graph_pattern: &GraphPattern,
 
@@ -70,14 +71,14 @@ impl StaticQueryRewriter {
     ) -> Option<(GraphPattern, ChangeType)> {
         match graph_pattern {
             GraphPattern::Bgp { patterns } => {
-                self.rewrite_static_bgp(patterns, external_ids_in_scope)
+                self.rewrite_bgp(patterns, external_ids_in_scope)
             }
             GraphPattern::Path {
                 subject,
                 path,
                 object,
-            } => self.rewrite_static_path(subject, path, object),
-            GraphPattern::Join { left, right } => self.rewrite_static_join(
+            } => self.rewrite_path(subject, path, object),
+            GraphPattern::Join { left, right } => self.rewrite_join(
                 left,
                 right,
                 required_change_direction,
@@ -87,26 +88,26 @@ impl StaticQueryRewriter {
                 left,
                 right,
                 expression,
-            } => self.rewrite_static_left_join(
+            } => self.rewrite_left_join(
                 left,
                 right,
                 expression,
                 required_change_direction,
                 external_ids_in_scope,
             ),
-            GraphPattern::Filter { expr, inner } => self.rewrite_static_filter(
+            GraphPattern::Filter { expr, inner } => self.rewrite_filter(
                 expr,
                 inner,
                 required_change_direction,
                 external_ids_in_scope,
             ),
-            GraphPattern::Union { left, right } => self.rewrite_static_union(
+            GraphPattern::Union { left, right } => self.rewrite_union(
                 left,
                 right,
                 required_change_direction,
                 external_ids_in_scope,
             ),
-            GraphPattern::Graph { name, inner } => self.rewrite_static_graph(
+            GraphPattern::Graph { name, inner } => self.rewrite_graph(
                 name,
                 inner,
                 required_change_direction,
@@ -116,14 +117,14 @@ impl StaticQueryRewriter {
                 inner,
                 variable,
                 expression,
-            } => self.rewrite_static_extend(
+            } => self.rewrite_extend(
                 inner,
                 variable,
                 expression,
                 required_change_direction,
                 external_ids_in_scope,
             ),
-            GraphPattern::Minus { left, right } => self.rewrite_static_minus(
+            GraphPattern::Minus { left, right } => self.rewrite_minus(
                 left,
                 right,
                 required_change_direction,
@@ -132,32 +133,32 @@ impl StaticQueryRewriter {
             GraphPattern::Values {
                 variables,
                 bindings,
-            } => self.rewrite_static_values(variables, bindings),
-            GraphPattern::OrderBy { inner, expression } => self.rewrite_static_order_by(
+            } => self.rewrite_values(variables, bindings),
+            GraphPattern::OrderBy { inner, expression } => self.rewrite_order_by(
                 inner,
                 expression,
                 required_change_direction,
                 external_ids_in_scope,
             ),
-            GraphPattern::Project { inner, variables } => self.rewrite_static_project(
+            GraphPattern::Project { inner, variables } => self.rewrite_project(
                 inner,
                 variables,
                 required_change_direction,
                 external_ids_in_scope,
             ),
-            GraphPattern::Distinct { inner } => self.rewrite_static_distinct(
+            GraphPattern::Distinct { inner } => self.rewrite_distinct(
                 inner,
                 required_change_direction,
                 external_ids_in_scope,
             ),
             GraphPattern::Reduced { inner } => {
-                self.rewrite_static_reduced(inner, required_change_direction, external_ids_in_scope)
+                self.rewrite_reduced(inner, required_change_direction, external_ids_in_scope)
             }
             GraphPattern::Slice {
                 inner,
                 start,
                 length,
-            } => self.rewrite_static_slice(
+            } => self.rewrite_slice(
                 inner,
                 start,
                 length,
@@ -168,7 +169,7 @@ impl StaticQueryRewriter {
                 inner,
                 variables,
                 aggregates,
-            } => self.rewrite_static_group(
+            } => self.rewrite_group(
                 inner,
                 variables,
                 aggregates,
@@ -179,11 +180,11 @@ impl StaticQueryRewriter {
                 name,
                 inner,
                 silent,
-            } => self.rewrite_static_service(name, inner, silent, external_ids_in_scope),
+            } => self.rewrite_service(name, inner, silent, external_ids_in_scope),
         }
     }
 
-    fn rewrite_static_values(
+    fn rewrite_values(
         &mut self,
         variables: &Vec<Variable>,
         bindings: &Vec<Vec<Option<GroundTerm>>>,
@@ -197,7 +198,7 @@ impl StaticQueryRewriter {
         ));
     }
 
-    fn rewrite_static_graph(
+    fn rewrite_graph(
         &mut self,
         name: &NamedNodePattern,
         inner: &Box<GraphPattern>,
@@ -205,7 +206,7 @@ impl StaticQueryRewriter {
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        if let Some((inner_rewrite, inner_change)) = self.rewrite_static_graph_pattern(
+        if let Some((inner_rewrite, inner_change)) = self.rewrite_graph_pattern(
             inner,
             required_change_direction,
             external_ids_in_scope,
@@ -221,7 +222,7 @@ impl StaticQueryRewriter {
         None
     }
 
-    fn rewrite_static_union(
+    fn rewrite_union(
         &mut self,
         left: &Box<GraphPattern>,
         right: &Box<GraphPattern>,
@@ -230,13 +231,13 @@ impl StaticQueryRewriter {
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
         let mut left_external_ids_in_scope = external_ids_in_scope.clone();
-        let left_rewrite_opt = self.rewrite_static_graph_pattern(
+        let left_rewrite_opt = self.rewrite_graph_pattern(
             left,
             required_change_direction,
             &mut left_external_ids_in_scope,
         );
         let mut right_external_ids_in_scope = external_ids_in_scope.clone();
-        let right_rewrite_opt = self.rewrite_static_graph_pattern(
+        let right_rewrite_opt = self.rewrite_graph_pattern(
             right,
             required_change_direction,
             &mut right_external_ids_in_scope,
@@ -365,7 +366,7 @@ impl StaticQueryRewriter {
         None
     }
 
-    fn rewrite_static_join(
+    fn rewrite_join(
         &mut self,
         left: &Box<GraphPattern>,
         right: &Box<GraphPattern>,
@@ -374,13 +375,13 @@ impl StaticQueryRewriter {
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
         let mut left_external_ids_in_scope = external_ids_in_scope.clone();
-        let left_rewrite_opt = self.rewrite_static_graph_pattern(
+        let left_rewrite_opt = self.rewrite_graph_pattern(
             left,
             required_change_direction,
             &mut left_external_ids_in_scope,
         );
         let mut right_external_ids_in_scope = external_ids_in_scope.clone();
-        let right_rewrite_opt = self.rewrite_static_graph_pattern(
+        let right_rewrite_opt = self.rewrite_graph_pattern(
             right,
             required_change_direction,
             &mut right_external_ids_in_scope,
@@ -429,7 +430,7 @@ impl StaticQueryRewriter {
         None
     }
 
-    fn rewrite_static_left_join(
+    fn rewrite_left_join(
         &mut self,
         left: &Box<GraphPattern>,
         right: &Box<GraphPattern>,
@@ -438,13 +439,13 @@ impl StaticQueryRewriter {
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
         let mut left_external_ids_in_scope = external_ids_in_scope.clone();
-        let left_rewrite_opt = self.rewrite_static_graph_pattern(
+        let left_rewrite_opt = self.rewrite_graph_pattern(
             left,
             required_change_direction,
             &mut left_external_ids_in_scope,
         );
         let mut right_external_ids_in_scope = external_ids_in_scope.clone();
-        let right_rewrite_opt = self.rewrite_static_graph_pattern(
+        let right_rewrite_opt = self.rewrite_graph_pattern(
             right,
             required_change_direction,
             &mut right_external_ids_in_scope,
@@ -456,7 +457,7 @@ impl StaticQueryRewriter {
         }
         let mut expression_rewrite_opt = None;
         if let Some(expression) = expression_opt {
-            expression_rewrite_opt = self.rewrite_static_expression(
+            expression_rewrite_opt = self.rewrite_expression(
                 expression,
                 required_change_direction,
                 external_ids_in_scope,
@@ -598,7 +599,7 @@ impl StaticQueryRewriter {
         None
     }
 
-    fn rewrite_static_filter(
+    fn rewrite_filter(
         &mut self,
         expression: &Expression,
         inner: &Box<GraphPattern>,
@@ -606,14 +607,14 @@ impl StaticQueryRewriter {
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        let inner_rewrite_opt = self.rewrite_static_graph_pattern(
+        let inner_rewrite_opt = self.rewrite_graph_pattern(
             inner,
             required_change_direction,
             external_ids_in_scope,
         );
         self.pushdown_expression(expression);
         if let Some((inner_rewrite, inner_change)) = inner_rewrite_opt {
-            let expression_rewrite_opt = self.rewrite_static_expression(
+            let expression_rewrite_opt = self.rewrite_expression(
                 expression,
                 required_change_direction,
                 external_ids_in_scope,
@@ -652,7 +653,7 @@ impl StaticQueryRewriter {
         None
     }
 
-    fn rewrite_static_group(
+    fn rewrite_group(
         &mut self,
         graph_pattern: &GraphPattern,
         variables: &Vec<Variable>,
@@ -661,7 +662,7 @@ impl StaticQueryRewriter {
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        let graph_pattern_rewrite_opt = self.rewrite_static_graph_pattern(
+        let graph_pattern_rewrite_opt = self.rewrite_graph_pattern(
             graph_pattern,
             required_change_direction,
             external_ids_in_scope,
@@ -671,8 +672,8 @@ impl StaticQueryRewriter {
         if let Some((graph_pattern_rewrite, graph_pattern_change)) = graph_pattern_rewrite_opt {
             let aggregates_rewrite = aggregates.iter().map(|(v, a)| {
                 (
-                    self.rewrite_static_variable(v),
-                    self.rewrite_static_aggregate_expression(a, external_ids_in_scope),
+                    self.rewrite_variable(v),
+                    self.rewrite_aggregate_expression(a, external_ids_in_scope),
                 )
             });
             let aggregates_rewrite = aggregates_rewrite
@@ -683,7 +684,7 @@ impl StaticQueryRewriter {
             //TODO! Check if we need to handle variables_rewritten len=0
             let variables_rewritten = variables
                 .iter()
-                .map(|v| self.rewrite_static_variable(v))
+                .map(|v| self.rewrite_variable(v))
                 .filter(|x| x.is_some());
             if aggregates_rewrite.len() > 0 {
                 return Some((
@@ -701,7 +702,7 @@ impl StaticQueryRewriter {
         None
     }
 
-    fn rewrite_static_aggregate_expression(
+    fn rewrite_aggregate_expression(
         &mut self,
         aggregate_expression: &AggregateExpression,
 
@@ -711,7 +712,7 @@ impl StaticQueryRewriter {
             AggregateExpression::Count { expr, distinct } => {
                 if let Some(boxed_expression) = expr {
                     if let Some((expr_rewritten, ChangeType::NoChange)) = self
-                        .rewrite_static_expression(
+                        .rewrite_expression(
                             boxed_expression,
                             &ChangeType::NoChange,
                             external_ids_in_scope,
@@ -736,7 +737,7 @@ impl StaticQueryRewriter {
             }
             AggregateExpression::Sum { expr, distinct } => {
                 if let Some((rewritten_expression, ChangeType::NoChange)) = self
-                    .rewrite_static_expression(expr, &ChangeType::NoChange, external_ids_in_scope)
+                    .rewrite_expression(expr, &ChangeType::NoChange, external_ids_in_scope)
                 {
                     Some(AggregateExpression::Sum {
                         expr: Box::new(rewritten_expression),
@@ -748,7 +749,7 @@ impl StaticQueryRewriter {
             }
             AggregateExpression::Avg { expr, distinct } => {
                 if let Some((rewritten_expression, ChangeType::NoChange)) = self
-                    .rewrite_static_expression(expr, &ChangeType::NoChange, external_ids_in_scope)
+                    .rewrite_expression(expr, &ChangeType::NoChange, external_ids_in_scope)
                 {
                     Some(AggregateExpression::Avg {
                         expr: Box::new(rewritten_expression),
@@ -760,7 +761,7 @@ impl StaticQueryRewriter {
             }
             AggregateExpression::Min { expr, distinct } => {
                 if let Some((rewritten_expression, ChangeType::NoChange)) = self
-                    .rewrite_static_expression(expr, &ChangeType::NoChange, external_ids_in_scope)
+                    .rewrite_expression(expr, &ChangeType::NoChange, external_ids_in_scope)
                 {
                     Some(AggregateExpression::Min {
                         expr: Box::new(rewritten_expression),
@@ -772,7 +773,7 @@ impl StaticQueryRewriter {
             }
             AggregateExpression::Max { expr, distinct } => {
                 if let Some((rewritten_expression, ChangeType::NoChange)) = self
-                    .rewrite_static_expression(expr, &ChangeType::NoChange, external_ids_in_scope)
+                    .rewrite_expression(expr, &ChangeType::NoChange, external_ids_in_scope)
                 {
                     Some(AggregateExpression::Max {
                         expr: Box::new(rewritten_expression),
@@ -788,7 +789,7 @@ impl StaticQueryRewriter {
                 separator,
             } => {
                 if let Some((rewritten_expression, ChangeType::NoChange)) = self
-                    .rewrite_static_expression(expr, &ChangeType::NoChange, external_ids_in_scope)
+                    .rewrite_expression(expr, &ChangeType::NoChange, external_ids_in_scope)
                 {
                     Some(AggregateExpression::GroupConcat {
                         expr: Box::new(rewritten_expression),
@@ -801,7 +802,7 @@ impl StaticQueryRewriter {
             }
             AggregateExpression::Sample { expr, distinct } => {
                 if let Some((rewritten_expression, ChangeType::NoChange)) = self
-                    .rewrite_static_expression(expr, &ChangeType::NoChange, external_ids_in_scope)
+                    .rewrite_expression(expr, &ChangeType::NoChange, external_ids_in_scope)
                 {
                     Some(AggregateExpression::Sample {
                         expr: Box::new(rewritten_expression),
@@ -817,7 +818,7 @@ impl StaticQueryRewriter {
                 distinct,
             } => {
                 if let Some((rewritten_expression, ChangeType::NoChange)) = self
-                    .rewrite_static_expression(expr, &ChangeType::NoChange, external_ids_in_scope)
+                    .rewrite_expression(expr, &ChangeType::NoChange, external_ids_in_scope)
                 {
                     Some(AggregateExpression::Custom {
                         name: name.clone(),
@@ -831,14 +832,14 @@ impl StaticQueryRewriter {
         }
     }
 
-    fn rewrite_static_distinct(
+    fn rewrite_distinct(
         &mut self,
         inner: &Box<GraphPattern>,
 
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        if let Some((inner_rewrite, inner_change_type)) = self.rewrite_static_graph_pattern(
+        if let Some((inner_rewrite, inner_change_type)) = self.rewrite_graph_pattern(
             inner,
             required_change_direction,
             external_ids_in_scope,
@@ -854,7 +855,7 @@ impl StaticQueryRewriter {
         }
     }
 
-    fn rewrite_static_project(
+    fn rewrite_project(
         &mut self,
         inner: &Box<GraphPattern>,
         variables: &Vec<Variable>,
@@ -862,14 +863,14 @@ impl StaticQueryRewriter {
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        if let Some((inner_rewrite, inner_change_type)) = self.rewrite_static_graph_pattern(
+        if let Some((inner_rewrite, inner_change_type)) = self.rewrite_graph_pattern(
             inner,
             required_change_direction,
             external_ids_in_scope,
         ) {
             let mut variables_rewrite = variables
                 .iter()
-                .map(|v| self.rewrite_static_variable(v))
+                .map(|v| self.rewrite_variable(v))
                 .filter(|x| x.is_some())
                 .map(|x| x.unwrap())
                 .collect::<Vec<Variable>>();
@@ -908,7 +909,7 @@ impl StaticQueryRewriter {
         None
     }
 
-    fn rewrite_static_order_by(
+    fn rewrite_order_by(
         &mut self,
         inner: &Box<GraphPattern>,
         order_expressions: &Vec<OrderExpression>,
@@ -916,14 +917,14 @@ impl StaticQueryRewriter {
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        if let Some((inner_rewrite, inner_change)) = self.rewrite_static_graph_pattern(
+        if let Some((inner_rewrite, inner_change)) = self.rewrite_graph_pattern(
             inner,
             required_change_direction,
             external_ids_in_scope,
         ) {
             let expressions_rewrite = order_expressions
                 .iter()
-                .map(|e| self.rewrite_static_order_expression(e, &external_ids_in_scope))
+                .map(|e| self.rewrite_order_expression(e, &external_ids_in_scope))
                 .filter(|x| x.is_some())
                 .map(|x| x.unwrap())
                 .collect::<Vec<OrderExpression>>();
@@ -940,7 +941,7 @@ impl StaticQueryRewriter {
         None
     }
 
-    fn rewrite_static_order_expression(
+    fn rewrite_order_expression(
         &mut self,
         order_expression: &OrderExpression,
         external_ids_in_scope: &HashMap<Variable, Vec<Variable>>,
@@ -948,7 +949,7 @@ impl StaticQueryRewriter {
         match order_expression {
             OrderExpression::Asc(e) => {
                 if let Some((e_rewrite, ChangeType::NoChange)) =
-                    self.rewrite_static_expression(e, &ChangeType::NoChange, external_ids_in_scope)
+                    self.rewrite_expression(e, &ChangeType::NoChange, external_ids_in_scope)
                 {
                     Some(OrderExpression::Asc(e_rewrite))
                 } else {
@@ -957,7 +958,7 @@ impl StaticQueryRewriter {
             }
             OrderExpression::Desc(e) => {
                 if let Some((e_rewrite, ChangeType::NoChange)) =
-                    self.rewrite_static_expression(e, &ChangeType::NoChange, external_ids_in_scope)
+                    self.rewrite_expression(e, &ChangeType::NoChange, external_ids_in_scope)
                 {
                     Some(OrderExpression::Desc(e_rewrite))
                 } else {
@@ -967,7 +968,7 @@ impl StaticQueryRewriter {
         }
     }
 
-    fn rewrite_static_minus(
+    fn rewrite_minus(
         &mut self,
         left: &Box<GraphPattern>,
         right: &Box<GraphPattern>,
@@ -975,13 +976,13 @@ impl StaticQueryRewriter {
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
         let mut left_external_ids_in_scope = external_ids_in_scope.clone();
-        let left_rewrite_opt = self.rewrite_static_graph_pattern(
+        let left_rewrite_opt = self.rewrite_graph_pattern(
             left,
             required_change_direction,
             &mut left_external_ids_in_scope,
         );
         let mut right_external_ids_in_scope = external_ids_in_scope.clone();
-        let right_rewrite_opt = self.rewrite_static_graph_pattern(
+        let right_rewrite_opt = self.rewrite_graph_pattern(
             right,
             &required_change_direction.opposite(),
             &mut right_external_ids_in_scope,
@@ -1035,7 +1036,7 @@ impl StaticQueryRewriter {
         None
     }
 
-    fn rewrite_static_bgp(
+    fn rewrite_bgp(
         &mut self,
         patterns: &Vec<TriplePattern>,
 
@@ -1107,7 +1108,7 @@ impl StaticQueryRewriter {
 
     //We assume that all paths have been rewritten so as to not contain any datapoint, timestamp, or data value.
     //These should have been split into ordinary triples.
-    fn rewrite_static_path(
+    fn rewrite_path(
         &mut self,
         subject: &TermPattern,
         path: &PropertyPathExpression,
@@ -1123,7 +1124,7 @@ impl StaticQueryRewriter {
         ));
     }
 
-    fn rewrite_static_expression(
+    fn rewrite_expression(
         &mut self,
         expression: &Expression,
 
@@ -1136,7 +1137,7 @@ impl StaticQueryRewriter {
             }
             Expression::Literal(l) => Some((Expression::Literal(l.clone()), ChangeType::NoChange)),
             Expression::Variable(v) => {
-                if let Some(rewritten_variable) = self.rewrite_static_variable(v) {
+                if let Some(rewritten_variable) = self.rewrite_variable(v) {
                     Some((
                         Expression::Variable(rewritten_variable),
                         ChangeType::NoChange,
@@ -1146,12 +1147,12 @@ impl StaticQueryRewriter {
                 }
             }
             Expression::Or(left, right) => {
-                let left_rewrite_opt = self.rewrite_static_expression(
+                let left_rewrite_opt = self.rewrite_expression(
                     left,
                     required_change_direction,
                     external_ids_in_scope,
                 );
-                let right_rewrite_opt = self.rewrite_static_expression(
+                let right_rewrite_opt = self.rewrite_expression(
                     right,
                     required_change_direction,
                     external_ids_in_scope,
@@ -1238,12 +1239,12 @@ impl StaticQueryRewriter {
             Expression::And(left, right) => {
                 // We allow translations of left- or right hand sides of And-expressions to be None.
                 // This allows us to enforce the remaining conditions that were not removed due to a rewrite
-                let left_rewrite_opt = self.rewrite_static_expression(
+                let left_rewrite_opt = self.rewrite_expression(
                     left,
                     required_change_direction,
                     external_ids_in_scope,
                 );
-                let right_rewrite_opt = self.rewrite_static_expression(
+                let right_rewrite_opt = self.rewrite_expression(
                     right,
                     required_change_direction,
                     external_ids_in_scope,
@@ -1327,12 +1328,12 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::Equal(left, right) => {
-                let left_rewrite_opt = self.rewrite_static_expression(
+                let left_rewrite_opt = self.rewrite_expression(
                     left,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
                 );
-                let right_rewrite_opt = self.rewrite_static_expression(
+                let right_rewrite_opt = self.rewrite_expression(
                     right,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
@@ -1354,12 +1355,12 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::SameTerm(left, right) => {
-                let left_rewrite_opt = self.rewrite_static_expression(
+                let left_rewrite_opt = self.rewrite_expression(
                     left,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
                 );
-                let right_rewrite_opt = self.rewrite_static_expression(
+                let right_rewrite_opt = self.rewrite_expression(
                     right,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
@@ -1381,12 +1382,12 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::Greater(left, right) => {
-                let left_rewrite_opt = self.rewrite_static_expression(
+                let left_rewrite_opt = self.rewrite_expression(
                     left,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
                 );
-                let right_rewrite_opt = self.rewrite_static_expression(
+                let right_rewrite_opt = self.rewrite_expression(
                     right,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
@@ -1408,12 +1409,12 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::GreaterOrEqual(left, right) => {
-                let left_rewrite_opt = self.rewrite_static_expression(
+                let left_rewrite_opt = self.rewrite_expression(
                     left,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
                 );
-                let right_rewrite_opt = self.rewrite_static_expression(
+                let right_rewrite_opt = self.rewrite_expression(
                     right,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
@@ -1435,12 +1436,12 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::Less(left, right) => {
-                let left_rewrite_opt = self.rewrite_static_expression(
+                let left_rewrite_opt = self.rewrite_expression(
                     left,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
                 );
-                let right_rewrite_opt = self.rewrite_static_expression(
+                let right_rewrite_opt = self.rewrite_expression(
                     right,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
@@ -1462,12 +1463,12 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::LessOrEqual(left, right) => {
-                let left_rewrite_opt = self.rewrite_static_expression(
+                let left_rewrite_opt = self.rewrite_expression(
                     left,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
                 );
-                let right_rewrite_opt = self.rewrite_static_expression(
+                let right_rewrite_opt = self.rewrite_expression(
                     right,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
@@ -1489,7 +1490,7 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::In(left, expressions) => {
-                let left_rewrite_opt = self.rewrite_static_expression(
+                let left_rewrite_opt = self.rewrite_expression(
                     left,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
@@ -1497,7 +1498,7 @@ impl StaticQueryRewriter {
                 let expressions_rewritten_opts = expressions
                     .iter()
                     .map(|e| {
-                        self.rewrite_static_expression(
+                        self.rewrite_expression(
                             e,
                             &ChangeType::NoChange,
                             external_ids_in_scope,
@@ -1552,12 +1553,12 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::Add(left, right) => {
-                let left_rewrite_opt = self.rewrite_static_expression(
+                let left_rewrite_opt = self.rewrite_expression(
                     left,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
                 );
-                let right_rewrite_opt = self.rewrite_static_expression(
+                let right_rewrite_opt = self.rewrite_expression(
                     right,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
@@ -1580,12 +1581,12 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::Subtract(left, right) => {
-                let left_rewrite_opt = self.rewrite_static_expression(
+                let left_rewrite_opt = self.rewrite_expression(
                     left,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
                 );
-                let right_rewrite_opt = self.rewrite_static_expression(
+                let right_rewrite_opt = self.rewrite_expression(
                     right,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
@@ -1607,12 +1608,12 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::Multiply(left, right) => {
-                let left_rewrite_opt = self.rewrite_static_expression(
+                let left_rewrite_opt = self.rewrite_expression(
                     left,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
                 );
-                let right_rewrite_opt = self.rewrite_static_expression(
+                let right_rewrite_opt = self.rewrite_expression(
                     right,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
@@ -1634,12 +1635,12 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::Divide(left, right) => {
-                let left_rewrite_opt = self.rewrite_static_expression(
+                let left_rewrite_opt = self.rewrite_expression(
                     left,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
                 );
-                let right_rewrite_opt = self.rewrite_static_expression(
+                let right_rewrite_opt = self.rewrite_expression(
                     right,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
@@ -1661,7 +1662,7 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::UnaryPlus(wrapped) => {
-                let wrapped_rewrite_opt = self.rewrite_static_expression(
+                let wrapped_rewrite_opt = self.rewrite_expression(
                     wrapped,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
@@ -1676,7 +1677,7 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::UnaryMinus(wrapped) => {
-                let wrapped_rewrite_opt = self.rewrite_static_expression(
+                let wrapped_rewrite_opt = self.rewrite_expression(
                     wrapped,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
@@ -1691,7 +1692,7 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::Not(wrapped) => {
-                let wrapped_rewrite_opt = self.rewrite_static_expression(
+                let wrapped_rewrite_opt = self.rewrite_expression(
                     wrapped,
                     &required_change_direction.opposite(),
                     external_ids_in_scope,
@@ -1715,7 +1716,7 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::Exists(wrapped) => {
-                let wrapped_rewrite_opt = self.rewrite_static_graph_pattern(
+                let wrapped_rewrite_opt = self.rewrite_graph_pattern(
                     &wrapped,
                     required_change_direction,
                     &mut external_ids_in_scope.clone(),
@@ -1731,24 +1732,24 @@ impl StaticQueryRewriter {
                 None
             }
             Expression::Bound(v) => {
-                if let Some(v_rewritten) = self.rewrite_static_variable(v) {
+                if let Some(v_rewritten) = self.rewrite_variable(v) {
                     Some((Expression::Bound(v_rewritten), ChangeType::NoChange))
                 } else {
                     None
                 }
             }
             Expression::If(left, mid, right) => {
-                let left_rewrite_opt = self.rewrite_static_expression(
+                let left_rewrite_opt = self.rewrite_expression(
                     left,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
                 );
-                let mid_rewrite_opt = self.rewrite_static_expression(
+                let mid_rewrite_opt = self.rewrite_expression(
                     mid,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
                 );
-                let right_rewrite_opt = self.rewrite_static_expression(
+                let right_rewrite_opt = self.rewrite_expression(
                     right,
                     &ChangeType::NoChange,
                     external_ids_in_scope,
@@ -1780,7 +1781,7 @@ impl StaticQueryRewriter {
                 let rewritten = wrapped
                     .iter()
                     .map(|e| {
-                        self.rewrite_static_expression(
+                        self.rewrite_expression(
                             e,
                             &ChangeType::NoChange,
                             external_ids_in_scope,
@@ -1812,7 +1813,7 @@ impl StaticQueryRewriter {
                 let args_rewritten = args
                     .iter()
                     .map(|e| {
-                        self.rewrite_static_expression(
+                        self.rewrite_expression(
                             e,
                             &ChangeType::NoChange,
                             external_ids_in_scope,
@@ -1852,7 +1853,7 @@ impl StaticQueryRewriter {
         }
     }
 
-    fn rewrite_static_extend(
+    fn rewrite_extend(
         &mut self,
         inner: &Box<GraphPattern>,
         var: &Variable,
@@ -1861,13 +1862,13 @@ impl StaticQueryRewriter {
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        let inner_rewrite_opt = self.rewrite_static_graph_pattern(
+        let inner_rewrite_opt = self.rewrite_graph_pattern(
             inner,
             required_change_direction,
             external_ids_in_scope,
         );
         let expr_rewrite_opt =
-            self.rewrite_static_expression(expr, &ChangeType::NoChange, external_ids_in_scope);
+            self.rewrite_expression(expr, &ChangeType::NoChange, external_ids_in_scope);
         if let Some((inner_rewrite, inner_change_type)) = inner_rewrite_opt {
             if let Some((expression_rewrite, _)) = expr_rewrite_opt {
                 return Some((
@@ -1885,7 +1886,7 @@ impl StaticQueryRewriter {
         None
     }
 
-    fn rewrite_static_slice(
+    fn rewrite_slice(
         &mut self,
         inner: &Box<GraphPattern>,
         start: &usize,
@@ -1894,7 +1895,7 @@ impl StaticQueryRewriter {
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        let rewrite_inner_opt = self.rewrite_static_graph_pattern(
+        let rewrite_inner_opt = self.rewrite_graph_pattern(
             inner,
             required_change_direction,
             external_ids_in_scope,
@@ -1912,14 +1913,14 @@ impl StaticQueryRewriter {
         None
     }
 
-    fn rewrite_static_reduced(
+    fn rewrite_reduced(
         &mut self,
         inner: &Box<GraphPattern>,
 
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
-        if let Some((inner_rewrite, inner_change)) = self.rewrite_static_graph_pattern(
+        if let Some((inner_rewrite, inner_change)) = self.rewrite_graph_pattern(
             inner,
             required_change_direction,
             external_ids_in_scope,
@@ -1934,7 +1935,7 @@ impl StaticQueryRewriter {
         None
     }
 
-    fn rewrite_static_service(
+    fn rewrite_service(
         &mut self,
         name: &NamedNodePattern,
         inner: &Box<GraphPattern>,
@@ -1943,7 +1944,7 @@ impl StaticQueryRewriter {
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
         if let Some((inner_rewrite, inner_change)) =
-            self.rewrite_static_graph_pattern(inner, &ChangeType::NoChange, external_ids_in_scope)
+            self.rewrite_graph_pattern(inner, &ChangeType::NoChange, external_ids_in_scope)
         {
             return Some((
                 GraphPattern::Service {
@@ -2056,7 +2057,7 @@ impl StaticQueryRewriter {
         }
     }
 
-    fn rewrite_static_variable(&self, v: &Variable) -> Option<Variable> {
+    fn rewrite_variable(&self, v: &Variable) -> Option<Variable> {
         if let Some(ctr) = self.has_constraint.get(v) {
             if !(ctr == &Constraint::ExternalDataPoint
                 || ctr == &Constraint::ExternalDataValue
@@ -2079,12 +2080,14 @@ impl StaticQueryRewriter {
 
     fn process_dynamic_triples(&mut self, dynamic_triples: Vec<&TriplePattern>) {
         for t in &dynamic_triples {
-            if t.predicate.to_string() == HAS_DATA_POINT {
-                for q in &mut self.time_series_queries {
-                    if let (Some(q_timeseries_variable), TermPattern::Variable(subject_variable)) =  (&q.data_point_variable, &t.subject) {
-                       if subject_variable == q_timeseries_variable {
-                            if let TermPattern::Variable(ts_var) = &t.object {
-                                q.data_point_variable = Some(ts_var.clone());
+            if let NamedNodePattern::NamedNode(named_predicate_node) = &t.predicate {
+                if named_predicate_node == HAS_DATA_POINT {
+                    for q in &mut self.time_series_queries {
+                        if let (Some(q_timeseries_variable), TermPattern::Variable(subject_variable)) = (&q.timeseries_variable, &t.subject) {
+                            if subject_variable == q_timeseries_variable {
+                                if let TermPattern::Variable(ts_var) = &t.object {
+                                    q.data_point_variable = Some(ts_var.clone());
+                                }
                             }
                         }
                     }
@@ -2093,22 +2096,24 @@ impl StaticQueryRewriter {
         }
 
         for t in &dynamic_triples {
-            if t.predicate.to_string() == HAS_VALUE {
-                for q in &mut self.time_series_queries {
-                    if let (Some(q_data_point_variable), TermPattern::Variable(subject_variable)) = (&q.data_point_variable, &t.subject) {
-                        if subject_variable == q_data_point_variable {
-                            if let TermPattern::Variable(value_var) = &t.object {
-                                q.value_variable = Some(value_var.clone());
+            if let NamedNodePattern::NamedNode(named_predicate_node) = &t.predicate {
+                if named_predicate_node == HAS_VALUE {
+                    for q in &mut self.time_series_queries {
+                        if let (Some(q_data_point_variable), TermPattern::Variable(subject_variable)) = (&q.data_point_variable, &t.subject) {
+                            if subject_variable == q_data_point_variable {
+                                if let TermPattern::Variable(value_var) = &t.object {
+                                    q.value_variable = Some(value_var.clone());
+                                }
                             }
                         }
                     }
-                }
-            } else if t.predicate.to_string() == HAS_TIMESTAMP {
-                for q in &mut self.time_series_queries {
-                    if let (Some(q_data_point_variable), TermPattern::Variable(subject_variable)) = (&q.data_point_variable, &t.subject) {
-                        if subject_variable == q_data_point_variable {
-                            if let TermPattern::Variable(timestamp_var) = &t.object {
-                                q.timeseries_variable = Some(timestamp_var.clone());
+                } else if named_predicate_node == HAS_TIMESTAMP {
+                    for q in &mut self.time_series_queries {
+                        if let (Some(q_data_point_variable), TermPattern::Variable(subject_variable)) = (&q.data_point_variable, &t.subject) {
+                            if subject_variable == q_data_point_variable {
+                                if let TermPattern::Variable(timestamp_var) = &t.object {
+                                    q.timeseries_variable = Some(timestamp_var.clone());
+                                }
                             }
                         }
                     }
@@ -2125,6 +2130,7 @@ impl StaticQueryRewriter {
         let mut ts_query = TimeSeriesQuery::new();
         ts_query.identifier_variable = Some(time_series_id_variable.clone());
         ts_query.timeseries_variable = Some(time_series_variable.clone());
+        self.time_series_queries.push(ts_query);
     }
     fn find_functions_of_timestamps(&self, graph_pattern: &GraphPattern) -> Vec<(Variable, GraphPattern)> {
         todo!()

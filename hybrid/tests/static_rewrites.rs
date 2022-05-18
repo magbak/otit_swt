@@ -18,8 +18,8 @@ fn test_simple_query() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query)
+    let (static_rewrite, time_series_queries) = rewriter
+        .rewrite_query(preprocessed_query)
         .unwrap();
 
     let expected_str = r#"
@@ -50,8 +50,8 @@ fn test_filtered_query() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query)
+    let (static_rewrite, time_series_queries) = rewriter
+        .rewrite_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
@@ -83,8 +83,8 @@ fn test_complex_expression_filter() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query)
+    let (static_rewrite, time_series_queries) = rewriter
+        .rewrite_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
@@ -117,8 +117,8 @@ fn test_complex_expression_filter_projection() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query)
+    let (static_rewrite, time_series_queries) = rewriter
+        .rewrite_query(preprocessed_query)
         .unwrap();
     println!("{}", static_rewrite);
     let expected_str = r#"
@@ -152,8 +152,8 @@ fn test_complex_nested_expression_filter() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query)
+    let (static_rewrite, time_series_queries) = rewriter
+        .rewrite_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 ?pv WHERE {
@@ -188,8 +188,8 @@ fn test_option_expression_filter_projection() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query)
+    let (static_rewrite, time_series_queries) =  rewriter
+        .rewrite_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?pv ?ts_external_id_0 WHERE {
@@ -235,8 +235,8 @@ fn test_union_expression() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query)
+    let (static_rewrite, time_series_queries) = rewriter
+        .rewrite_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?pv ?ts_external_id_0 ?ts_external_id_1 WHERE {
@@ -283,8 +283,8 @@ fn test_bind_expression() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query)
+    let (static_rewrite, time_series_queries) = rewriter
+        .rewrite_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?val3 ?ts_external_id_0 ?ts_external_id_1 WHERE {
@@ -319,8 +319,8 @@ fn test_property_path_expression() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let static_rewrite = rewriter
-        .rewrite_static_query(preprocessed_query)
+    let (static_rewrite, time_series_queries) = rewriter
+        .rewrite_query(preprocessed_query)
         .unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?val3 ?ts_external_id_0 ?ts_external_id_1 WHERE {
@@ -331,5 +331,7 @@ fn test_property_path_expression() {
      ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?blank_replacement_1 . }
     "#;
     let expected_query = Query::parse(expected_str, None).unwrap();
+
+    println!("{:?}", rewriter.time_series_queries);
     assert_eq!(static_rewrite, expected_query);
 }
