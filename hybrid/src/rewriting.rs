@@ -1,4 +1,4 @@
-use crate::constants::HAS_EXTERNAL_ID;
+use crate::constants::{HAS_DATA_POINT, HAS_EXTERNAL_ID, HAS_TIMESTAMP, HAS_VALUE};
 use crate::constraints::Constraint;
 use log::debug;
 use spargebra::algebra::{
@@ -9,28 +9,14 @@ use spargebra::term::{
 };
 use spargebra::Query;
 use std::collections::{HashMap, HashSet};
-
-#[derive(PartialEq, Debug, Clone)]
-pub enum ChangeType {
-    Relaxed,
-    Constrained,
-    NoChange,
-}
-
-impl ChangeType {
-    fn opposite(&self) -> ChangeType {
-        match self {
-            ChangeType::Relaxed => ChangeType::Constrained,
-            ChangeType::Constrained => ChangeType::Relaxed,
-            ChangeType::NoChange => ChangeType::NoChange,
-        }
-    }
-}
+use crate::change_types::ChangeType;
+use crate::timeseries_query::TimeSeriesQuery;
 
 pub struct StaticQueryRewriter {
     variable_counter: u16,
     additional_projections: HashSet<Variable>,
     has_constraint: HashMap<Variable, Constraint>,
+    time_series_queries: Vec<TimeSeriesQuery>,
 }
 
 impl StaticQueryRewriter {
@@ -39,6 +25,7 @@ impl StaticQueryRewriter {
             variable_counter: 0,
             additional_projections: Default::default(),
             has_constraint: has_constraint.clone(),
+            time_series_queries: vec![]
         }
     }
 
@@ -74,7 +61,7 @@ impl StaticQueryRewriter {
         }
     }
 
-    pub fn rewrite_static_graph_pattern(
+    fn rewrite_static_graph_pattern(
         &mut self,
         graph_pattern: &GraphPattern,
 
@@ -465,7 +452,7 @@ impl StaticQueryRewriter {
         merge_external_variables_in_scope(left_external_ids_in_scope, external_ids_in_scope);
         merge_external_variables_in_scope(right_external_ids_in_scope, external_ids_in_scope);
         if let Some(expression) = expression_opt {
-            self.pushdown_expression(expression, external_ids_in_scope);
+            self.pushdown_expression(expression);
         }
         let mut expression_rewrite_opt = None;
         if let Some(expression) = expression_opt {
@@ -624,7 +611,7 @@ impl StaticQueryRewriter {
             required_change_direction,
             external_ids_in_scope,
         );
-        self.pushdown_dynamic_filter(expression, external_ids_in_scope);
+        self.pushdown_expression(expression);
         if let Some((inner_rewrite, inner_change)) = inner_rewrite_opt {
             let expression_rewrite_opt = self.rewrite_static_expression(
                 expression,
@@ -679,7 +666,8 @@ impl StaticQueryRewriter {
             required_change_direction,
             external_ids_in_scope,
         );
-        self.pushdown_aggregates(variables, aggregates, external_ids_in_scope);
+        let functions_of_timestamps = self.find_functions_of_timestamps(graph_pattern);
+        self.pushdown_aggregates(variables, aggregates, functions_of_timestamps);
         if let Some((graph_pattern_rewrite, graph_pattern_change)) = graph_pattern_rewrite_opt {
             let aggregates_rewrite = aggregates.iter().map(|(v, a)| {
                 (
@@ -1047,19 +1035,20 @@ impl StaticQueryRewriter {
         None
     }
 
-    pub fn rewrite_static_bgp(
+    fn rewrite_static_bgp(
         &mut self,
         patterns: &Vec<TriplePattern>,
 
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
         let mut new_triples = vec![];
+        let mut dynamic_triples = vec![];
         for t in patterns {
             if let (TermPattern::Variable(subject_var), TermPattern::Variable(object_var)) =
                 (&t.subject, &t.object)
             {
-                let obj_constr_opt = self.has_constraint.get(object_var);
-                if let Some(obj_constr) = obj_constr_opt {
+                let obj_constr_opt = self.has_constraint.get(object_var).cloned();
+                if let Some(obj_constr) = &obj_constr_opt {
                     if obj_constr == &Constraint::ExternalTimeseries {
                         if !external_ids_in_scope.contains_key(object_var) {
                             let external_id_var = Variable::new(
@@ -1067,6 +1056,7 @@ impl StaticQueryRewriter {
                             )
                             .unwrap();
                             self.variable_counter += 1;
+                            self.create_time_series_query(&object_var, &external_id_var);
                             let new_triple = TriplePattern {
                                 subject: t.object.clone(),
                                 predicate: NamedNodePattern::NamedNode(
@@ -1087,18 +1077,20 @@ impl StaticQueryRewriter {
                 if subj_constr_opt != Some(&Constraint::ExternalDataPoint)
                     && subj_constr_opt != Some(&Constraint::ExternalDataValue)
                     && subj_constr_opt != Some(&Constraint::ExternalTimestamp)
-                    && obj_constr_opt != Some(&Constraint::ExternalDataPoint)
-                    && obj_constr_opt != Some(&Constraint::ExternalDataValue)
-                    && obj_constr_opt != Some(&Constraint::ExternalTimestamp)
+                    && obj_constr_opt != Some(Constraint::ExternalDataPoint)
+                    && obj_constr_opt != Some(Constraint::ExternalDataValue)
+                    && obj_constr_opt != Some(Constraint::ExternalTimestamp)
                 {
                     if !new_triples.contains(t) {
                         new_triples.push(t.clone());
                     }
                 } else {
-                    self.add_dynamic_projection_triple(t, external_ids_in_scope);
+                    dynamic_triples.push(t)
                 }
             }
         }
+        //We wait until last to process the dynamic triples, making sure all relationships are known first.
+        self.process_dynamic_triples(dynamic_triples);
 
         if new_triples.is_empty() {
             debug!("New triples in static BGP was empty, returning None");
@@ -1115,7 +1107,7 @@ impl StaticQueryRewriter {
 
     //We assume that all paths have been rewritten so as to not contain any datapoint, timestamp, or data value.
     //These should have been split into ordinary triples.
-    pub fn rewrite_static_path(
+    fn rewrite_static_path(
         &mut self,
         subject: &TermPattern,
         path: &PropertyPathExpression,
@@ -1131,7 +1123,7 @@ impl StaticQueryRewriter {
         ));
     }
 
-    pub fn rewrite_static_expression(
+    fn rewrite_static_expression(
         &mut self,
         expression: &Expression,
 
@@ -2057,6 +2049,7 @@ impl StaticQueryRewriter {
             _ => {}
         }
     }
+
     fn project_variable_if_static(&mut self, variable: &Variable) {
         if !self.has_constraint.contains_key(variable) {
             self.additional_projections.insert(variable.clone());
@@ -2076,6 +2069,65 @@ impl StaticQueryRewriter {
         } else {
             Some(v.clone())
         }
+    }
+
+    fn pushdown_expression(&mut self, expr: &Expression) {
+        for t in &mut self.time_series_queries {
+            t.try_rewrite_expression(expr);
+        }
+    }
+
+    fn process_dynamic_triples(&mut self, dynamic_triples: Vec<&TriplePattern>) {
+        for t in &dynamic_triples {
+            if t.predicate.to_string() == HAS_DATA_POINT {
+                for q in &mut self.time_series_queries {
+                    if let (Some(q_timeseries_variable), TermPattern::Variable(subject_variable)) =  (&q.data_point_variable, &t.subject) {
+                       if subject_variable == q_timeseries_variable {
+                            if let TermPattern::Variable(ts_var) = &t.object {
+                                q.data_point_variable = Some(ts_var.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for t in &dynamic_triples {
+            if t.predicate.to_string() == HAS_VALUE {
+                for q in &mut self.time_series_queries {
+                    if let (Some(q_data_point_variable), TermPattern::Variable(subject_variable)) = (&q.data_point_variable, &t.subject) {
+                        if subject_variable == q_data_point_variable {
+                            if let TermPattern::Variable(value_var) = &t.object {
+                                q.value_variable = Some(value_var.clone());
+                            }
+                        }
+                    }
+                }
+            } else if t.predicate.to_string() == HAS_TIMESTAMP {
+                for q in &mut self.time_series_queries {
+                    if let (Some(q_data_point_variable), TermPattern::Variable(subject_variable)) = (&q.data_point_variable, &t.subject) {
+                        if subject_variable == q_data_point_variable {
+                            if let TermPattern::Variable(timestamp_var) = &t.object {
+                                q.timeseries_variable = Some(timestamp_var.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    fn pushdown_aggregates(&mut self, variables: &Vec<Variable>, aggregates: &Vec<(Variable, AggregateExpression)>, functions_of_timestamps: Vec<(Variable, GraphPattern)>) {
+        for q in &mut self.time_series_queries {
+            q.try_pushdown_aggregates(variables, aggregates);
+        }
+    }
+    fn create_time_series_query(&mut self, time_series_variable:&Variable, time_series_id_variable: &Variable) {
+        let mut ts_query = TimeSeriesQuery::new();
+        ts_query.identifier_variable = Some(time_series_id_variable.clone());
+        ts_query.timeseries_variable = Some(time_series_variable.clone());
+    }
+    fn find_functions_of_timestamps(&self, graph_pattern: &GraphPattern) -> Vec<(Variable, GraphPattern)> {
+        todo!()
     }
 }
 
