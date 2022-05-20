@@ -3,13 +3,13 @@ use spargebra::algebra::{AggregateExpression, Expression};
 use spargebra::term::Variable;
 use std::time::Duration;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Grouping {
     interval: Duration,
     aggregations: Vec<(Variable, AggregateExpression)>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TimeSeriesQuery {
     pub identifier_variable: Option<Variable>,
     pub timeseries_variable: Option<Variable>,

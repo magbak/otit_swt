@@ -4,9 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-polars = "0.21.0"
+polars = {version="0.21.1", features=["lazy"] }
 arrow-flight="9.1.0"
 tokio = {version="1.17.0", features = ["rt-multi-thread"] }
 log="0.4.14"
-spargebra = "0.2.0-rc.1"
+spargebra = "0.2.0"
+sparesults = "0.1.0"
+oxrdf = "0.1.0"
 reqwest="0.11.10"
+
+
+[dev-dependencies]
+bollard = "0.12.0"
+rstest = "0.13.0"
+tokio = {version="1.18.2", features=["rt-multi-thread"]}

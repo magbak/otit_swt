@@ -2132,7 +2132,9 @@ impl StaticQueryRewriter {
         ts_query.timeseries_variable = Some(time_series_variable.clone());
         self.time_series_queries.push(ts_query);
     }
+
     fn find_functions_of_timestamps(&self, graph_pattern: &GraphPattern) -> Vec<(Variable, GraphPattern)> {
+        println!("{:?}", graph_pattern);
         todo!()
     }
 }

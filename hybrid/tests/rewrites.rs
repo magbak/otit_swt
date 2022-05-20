@@ -1,6 +1,8 @@
 use hybrid::preprocessing::Preprocessor;
-use hybrid::splitter::parse_sparql_select_query;
 use hybrid::rewriting::StaticQueryRewriter;
+use hybrid::splitter::parse_sparql_select_query;
+use hybrid::timeseries_query::TimeSeriesQuery;
+use spargebra::term::Variable;
 use spargebra::Query;
 
 #[test]
@@ -18,9 +20,7 @@ fn test_simple_query() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter
-        .rewrite_query(preprocessed_query)
-        .unwrap();
+    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
 
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
@@ -50,9 +50,7 @@ fn test_filtered_query() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter
-        .rewrite_query(preprocessed_query)
-        .unwrap();
+    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
      ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -83,9 +81,7 @@ fn test_complex_expression_filter() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter
-        .rewrite_query(preprocessed_query)
-        .unwrap();
+    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -117,9 +113,7 @@ fn test_complex_expression_filter_projection() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter
-        .rewrite_query(preprocessed_query)
-        .unwrap();
+    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     println!("{}", static_rewrite);
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 ?pv WHERE {
@@ -152,9 +146,7 @@ fn test_complex_nested_expression_filter() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter
-        .rewrite_query(preprocessed_query)
-        .unwrap();
+    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 ?pv WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -188,9 +180,7 @@ fn test_option_expression_filter_projection() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) =  rewriter
-        .rewrite_query(preprocessed_query)
-        .unwrap();
+    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?pv ?ts_external_id_0 WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -235,9 +225,7 @@ fn test_union_expression() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter
-        .rewrite_query(preprocessed_query)
-        .unwrap();
+    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?pv ?ts_external_id_0 ?ts_external_id_1 WHERE {
         ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -283,9 +271,7 @@ fn test_bind_expression() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter
-        .rewrite_query(preprocessed_query)
-        .unwrap();
+    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?val3 ?ts_external_id_0 ?ts_external_id_1 WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -319,9 +305,7 @@ fn test_property_path_expression() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter
-        .rewrite_query(preprocessed_query)
-        .unwrap();
+    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?val3 ?ts_external_id_0 ?ts_external_id_1 WHERE {
      ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -331,7 +315,28 @@ fn test_property_path_expression() {
      ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?blank_replacement_1 . }
     "#;
     let expected_query = Query::parse(expected_str, None).unwrap();
-
-    println!("{:?}", rewriter.time_series_queries);
+    let expected_time_series_queries = vec![
+        TimeSeriesQuery {
+            identifier_variable: Some(Variable::new_unchecked("ts_external_id_0")),
+            timeseries_variable: Some(Variable::new_unchecked("t")),
+            data_point_variable: Some(Variable::new_unchecked("dp1")),
+            value_variable: Some(Variable::new_unchecked("val1")),
+            timestamp_variable: None,
+            ids: None,
+            grouping: None,
+            conditions: vec![],
+        },
+        TimeSeriesQuery {
+            identifier_variable: Some(Variable::new_unchecked("ts_external_id_1")),
+            timeseries_variable: Some(Variable::new_unchecked("t")),
+            data_point_variable: Some(Variable::new_unchecked("dp2")),
+            value_variable: Some(Variable::new_unchecked("val2")),
+            timestamp_variable: None,
+            ids: None,
+            grouping: None,
+            conditions: vec![],
+        },
+    ];
+    assert_eq!(time_series_queries, expected_time_series_queries);
     assert_eq!(static_rewrite, expected_query);
 }
