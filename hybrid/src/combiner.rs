@@ -1,16 +1,20 @@
 use std::collections::HashSet;
+use std::ptr::null;
 use std::str::FromStr;
 use std::sync::Arc;
+use oxrdf::{NamedNode, NamedNodeRef};
 use oxrdf::vocab::xsd;
 use polars::datatypes::BooleanChunked;
+use polars::df;
+use polars::export::lazy_static::lazy::Lazy;
 use polars::frame::DataFrame;
-use polars::prelude::{BooleanChunkedBuilder, col, concat, Expr, IntoLazy, JoinType, LazyFrame, LiteralValue, NamedFrom, Operator, SortArguments, SortOptions, UniqueKeepStrategy, when};
+use polars::prelude::{BooleanChunkedBuilder, col, concat, Expr, IntoLazy, JoinType, LazyFrame, lit, LiteralValue, NamedFrom, Operator, SortArguments, SortOptions, UniqueKeepStrategy, when};
 use polars::prelude::Expr::SortBy;
 use polars::series::{ChunkCompare, Series};
 use sparesults::QuerySolution;
 use spargebra::algebra::{Expression, GraphPattern, OrderExpression};
 use spargebra::Query;
-use spargebra::term::{Literal, Term, TermPattern, TriplePattern, Variable};
+use spargebra::term::{Literal, NamedNodePattern, Term, TermPattern, TriplePattern, Variable};
 use crate::constants::{HAS_TIMESTAMP, HAS_VALUE};
 use crate::timeseries_query::TimeSeriesQuery;
 
@@ -20,11 +24,11 @@ pub struct Combiner {
 }
 
 impl Combiner {
-    pub fn combine_static_and_time_series_results(&mut self, query: Query, static_query: Query, sparql_result: Vec<QuerySolution>, time_series: &Vec<(TimeSeriesQuery, DataFrame)>) {
+    pub fn combine_static_and_time_series_results(&mut self, query: Query, static_query: Query, sparql_result: Vec<QuerySolution>, time_series: &Vec<(TimeSeriesQuery, DataFrame)>) -> LazyFrame {
         let column_variables;
         let inner_graph_pattern;
-        if let Some(Query::Select { dataset: _, pattern, base_iri: _ }) = &static_query {
-            if let Some(GraphPattern::Project { inner, variables }) = pattern {
+        if let Query::Select { dataset: _, pattern, base_iri: _ } = &static_query {
+            if let GraphPattern::Project { inner, variables } = pattern {
                 column_variables = variables.clone();
                 inner_graph_pattern = inner;
             } else {
@@ -34,40 +38,17 @@ impl Combiner {
             panic!("Wrong!!!");
         }
 
-        let mut series = vec![];
-        let first_soln = sparql_result.get(0).unwrap();
-        //let map_series = |s:&str, f| sparql_result.iter().map(|x| f(x.get(s).unwrap()) ).collect::<Series>();
+        let mut series_vec = vec![];
         for c in &column_variables {
-            let series = match first_soln.get(c).expect("Variable exists in soln") {
-                Term::NamedNode(_) => {
-                    sparql_result.iter().map(|x|x.get())
-                }
-                Term::BlankNode(_) => {
-                    panic!("Should never happen");
-                }
-                Term::Literal(lit) => {
-                    let datatype = lit.datatype();
-                    if datatype == xsd::STRING {
-                        sparql_result.iter().map(|x|x.get(c).unwrap())
-
-                    } else if datatype == xsd::INTEGER {
-                        let i = i32::from_str(lit.value()).expect("Integer parsing error");
-                        Expr::Literal(LiteralValue::Int32(i))
-                    } else if datatype == xsd::BOOLEAN {
-                        let b = bool::from_str(lit.value()).expect("Boolean parsing error");
-                        Expr::Literal(LiteralValue::Boolean(b))
-                    }
-                }
-                Term::Triple(_) => {
-                    todo!("Not implemented")
-                }
-            };
-
+            let literal_values = sparql_result.iter().map(|x| if let Some(term) = x.get(c) {
+                                                                  sparql_term_to_polars_literal_value(term)} else { LiteralValue::Null}).collect();
+            let series = polars_literal_values_to_series(literal_values, c.as_str());
+            series_vec.push(series);
         }
-
+        let lf = DataFrame::new(series_vec).expect("Create df problem").lazy();
         let mut columns = column_variables.iter().map(|v| v.as_str().to_string()).collect();
-
-        self.lazy_graph_pattern(&mut columns, &mut result_lf, inner_graph_pattern, time_series);
+        let result_lf = self.lazy_graph_pattern(&mut columns, lf, inner_graph_pattern, time_series);
+        result_lf
     }
 
     fn lazy_graph_pattern(&mut self, columns: &mut HashSet<String>, input_lf: LazyFrame, graph_pattern: &GraphPattern, time_series: &Vec<(TimeSeriesQuery, DataFrame)>) -> LazyFrame {
@@ -76,7 +57,7 @@ impl Combiner {
                 //No action, handled statically
                 let mut output_lf = input_lf;
                 for p in patterns {
-                    output_lf = self.lazy_triple_pattern(columns, output_lf, p, time_series);
+                    output_lf = Combiner::lazy_triple_pattern(columns, output_lf, p, time_series);
                 }
                 output_lf
             }
@@ -92,14 +73,14 @@ impl Combiner {
             GraphPattern::LeftJoin { left, right, expression } => {
                 let left_join_distinct_column = "left_join_distinct_column_".to_string() + &self.counter.to_string();
                 self.counter += 1;
-                input_lf.with_column(col(columns.iter().next().unwrap()).cumcount(false).alias(&left_join_distinct_column));
+                let input_lf = input_lf.with_column(col(columns.iter().next().unwrap()).cumcount(false).alias(&left_join_distinct_column));
                 let left_lf = self.lazy_graph_pattern(columns, input_lf, left, time_series);
                 let right_lf = self.lazy_graph_pattern(columns, left_lf.clone(), right, time_series);
                 let output_lf = concat(vec![left_lf, right_lf], false).expect("Concat error");
-                output_lf.unique(Some(vec![left_join_distinct_column]), UniqueKeepStrategy::Last).drop_columns(&left_join_distinct_column)
+                output_lf.unique(Some(vec![left_join_distinct_column.clone()]), UniqueKeepStrategy::Last).drop_columns(&[&left_join_distinct_column])
             }
             GraphPattern::Filter { expr, inner } => {
-                let inner_lf = self.lazy_graph_pattern(result_lf, input_lf, inner, time_series);
+                let inner_lf = self.lazy_graph_pattern(columns, input_lf, inner, time_series);
                 Combiner::lazy_filter(inner_lf, expr)
             }
             GraphPattern::Union { left, right } => {
@@ -109,48 +90,65 @@ impl Combiner {
                 let left_lf = self.lazy_graph_pattern(columns, new_input_df.clone(), left, time_series);
                 let right_lf = self.lazy_graph_pattern(columns, new_input_df, right, time_series);
                 let output_lf = concat(vec![left_lf, right_lf], false).expect("Concat problem");
-                output_lf.unique(None, UniqueKeepStrategy::First).drop_columns(&union_distinct_column)
+                output_lf.unique(None, UniqueKeepStrategy::First).drop_columns(&[&union_distinct_column])
             }
-            GraphPattern::Graph { name, inner } => {}
-            GraphPattern::Extend { inner, variable, expression } => {}
+            GraphPattern::Graph { name, inner } => {
+                todo!()
+            }
+            GraphPattern::Extend { inner, variable, expression } => {
+                todo!()
+            }
             GraphPattern::Minus { left, right } => {
                 let minus_column = "minus_column".to_string() + &self.counter.to_string();
                 let left_lf = self.lazy_graph_pattern(columns, input_lf, left, time_series);
-                let right_lf = self.lazy_graph_pattern(columns, left_lf, right, time_series);
+                let right_lf = self.lazy_graph_pattern(columns, left_lf.clone(), right, time_series);
                 let mut output_lf = concat(vec![left_lf, right_lf], false).expect("Noprob");
-                output_lf = output_lf.select(col(&minus_column).is_duplicated().not()).drop_columns(&minus_column);
+                output_lf = output_lf.filter(col(&minus_column).is_duplicated().not()).drop_columns(&[&minus_column]);
                 output_lf
             }
-            GraphPattern::Values { variables, bindings } => {}
+            GraphPattern::Values { variables, bindings } => {
+                todo!()
+            }
             GraphPattern::OrderBy { inner, expression } => {
                 let inner_lf = self.lazy_graph_pattern(columns, input_lf, inner, time_series);
                 let lazy_exprs = expression.iter().map(|o| Combiner::lazy_order_expression(o)).collect::<Vec<(Expr,bool)>>();
-                inner_lf.sort_by_exprs(lazy_exprs.iter.map(|(e,_)|e.clone()).collect(), lazy_exprs.iter().map(|(_, asc)|asc.clone()).collect())
+                inner_lf.sort_by_exprs(lazy_exprs.iter().map(|(e,_)|e.clone()).collect::<Vec<Expr>>(), lazy_exprs.iter().map(|(_, asc)|asc.clone()).collect())
             }
-            GraphPattern::Project { inner, variables } => {}
+            GraphPattern::Project { inner, variables } => {
+                todo!()
+            }
             GraphPattern::Distinct { inner } => {
                 self.lazy_graph_pattern(columns, input_lf, inner, time_series).unique(None, UniqueKeepStrategy::First)
             }
-            GraphPattern::Reduced { .. } => {}
-            GraphPattern::Slice { .. } => {}
-            GraphPattern::Group { inner, variables, aggregates } => {
-
+            GraphPattern::Reduced { .. } => {
+                todo!()
             }
-            GraphPattern::Service { .. } => {}
+            GraphPattern::Slice { .. } => {
+                todo!()
+            }
+            GraphPattern::Group { inner, variables, aggregates } => {
+                todo!()
+            }
+            GraphPattern::Service { .. } => {
+                todo!()
+            }
         }
     }
 
     fn lazy_triple_pattern(columns: &mut HashSet<String>, input_lf: LazyFrame, triple_pattern: &TriplePattern, time_series: &Vec<(TimeSeriesQuery, DataFrame)>) -> LazyFrame {
-        if triple_pattern.predicate == HAS_VALUE {
-            if let TermPattern::Variable(obj_var) = &triple_pattern.object {
-                if !columns.contains(obj_var.as_str()) {
-                    for (tsq, tsr) in &time_series {
-                        if tsq.value_variable == obj_var {
-                            let mut output_lf = input_lf.join(tsr.lazy(), tsq.identifier_variable.unwrap().as_str(), tsq.identifier_variable.unwrap().as_str(), JoinType::Inner);
-                            output_lf = output_lf.drop_columns(tsq.identifier_variable.unwrap().as_str());
-                            columns.remove(tsq.identifier_variable.unwrap().as_str());
-                            columns.insert(obj_var.as_str().to_string());
-                            return output_lf
+        if let NamedNodePattern::NamedNode(pn) = &triple_pattern.predicate {
+            if pn.as_str() == HAS_VALUE {
+                if let TermPattern::Variable(obj_var) = &triple_pattern.object {
+                    if !columns.contains(obj_var.as_str()) {
+                        for (tsq, tsr) in time_series {
+                            if tsq.value_variable.as_ref() == Some(obj_var) {
+                                //TODO: remove dataframe copy here..
+                                let mut output_lf = input_lf.join(tsr.clone().lazy(), [col(tsq.identifier_variable.as_ref().unwrap().as_str())], [col(tsq.identifier_variable.as_ref().unwrap().as_str())], JoinType::Inner);
+                                output_lf = output_lf.drop_columns([tsq.identifier_variable.as_ref().unwrap().as_str()]);
+                                columns.remove(tsq.identifier_variable.as_ref().unwrap().as_str());
+                                columns.insert(obj_var.as_str().to_string());
+                                return output_lf
+                            }
                         }
                     }
                 }
@@ -177,20 +175,10 @@ impl Combiner {
     fn lazy_expression(expr: &Expression) -> Expr {
         match expr {
             Expression::NamedNode(nn) => {
-                Expr::Literal(LiteralValue::Utf8(nn.to_string()))
+                Expr::Literal(sparql_named_node_to_polars_literal_value(nn))
             }
             Expression::Literal(lit) => {
-                let datatype = lit.datatype();
-                if datatype == xsd::STRING {
-                    let s = lit.value();
-                    Expr::Literal(LiteralValue::Utf8(s.to_string()))
-                } else if datatype == xsd::INTEGER {
-                    let i = i32::from_str(lit.value()).expect("Integer parsing error");
-                    Expr::Literal(LiteralValue::Int32(i))
-                } else if datatype == xsd::BOOLEAN {
-                    let b = bool::from_str(lit.value()).expect("Boolean parsing error");
-                    Expr::Literal(LiteralValue::Boolean(b))
-                }
+                Expr::Literal(sparql_literal_to_polars_literal_value(lit))
             }
             Expression::Variable(v) => {
                 Expr::Column(Arc::from(v.as_str()))
@@ -263,7 +251,7 @@ impl Combiner {
             }
             Expression::In(left, right) => {
                 let left_expr = Combiner::lazy_expression(left);
-                let right_exprs = right.iter().map(|r| lazy_expression(r));
+                let right_exprs = right.iter().map(|r| Combiner::lazy_expression(r));
                 let mut expr = Expr::Literal(LiteralValue::Boolean(false));
                 for r in right_exprs {
                     expr = Expr::BinaryExpr {
@@ -347,10 +335,10 @@ impl Combiner {
                 }
             }
             Expression::Coalesce(inner) => {
-                let mut inner_exprs = inner.iter().map(|e| lazy_expression(e)).collect::<Vec<Expr>>();
+                let mut inner_exprs = inner.iter().map(|e| Combiner::lazy_expression(e)).collect::<Vec<Expr>>();
                 let mut coalesced = inner_exprs.remove(0);
                 for c in inner_exprs {
-                    Expr::Ternary {
+                    coalesced = Expr::Ternary {
                         predicate: Box::new(Expr::IsNotNull(Box::new(coalesced.clone()))),
                         truthy: Box::new(coalesced.clone()),
                         falsy: Box::new(c)
@@ -362,5 +350,97 @@ impl Combiner {
                 todo!()
             }
         }
+    }
+}
+
+fn sparql_term_to_polars_literal_value(term:&Term) -> LiteralValue{
+    match term {
+        Term::NamedNode(named_node) => {
+            sparql_named_node_to_polars_literal_value(named_node)
+        }
+        Term::BlankNode(_) => {
+            panic!("Not supported")
+        }
+        Term::Literal(lit) => {
+            sparql_literal_to_polars_literal_value(lit)
+        }
+        _ => {
+            panic!("No triple terms supported")
+        }
+    }
+}
+
+fn sparql_named_node_to_polars_literal_value(named_node: &NamedNode) -> LiteralValue {
+    LiteralValue::Utf8(named_node.as_str().to_string())
+}
+
+fn sparql_literal_to_polars_literal_value(lit:&Literal) -> LiteralValue {
+    let datatype = lit.datatype();
+    let value = lit.value();
+    let literal_value = if datatype == xsd::STRING {
+        LiteralValue::Utf8(value.to_string())
+    } else if datatype == xsd::INTEGER {
+        let i = i32::from_str(value).expect("Integer parsing error");
+        LiteralValue::Int32(i)
+    } else if datatype == xsd::BOOLEAN {
+        let b = bool::from_str(value).expect("Boolean parsing error");
+        LiteralValue::Boolean(b)
+    } else {
+        todo!("Not implemented!")
+    };
+    literal_value
+}
+
+fn polars_literal_values_to_series(literal_values:Vec<LiteralValue>, name:&str) -> Series {
+    let first_non_null_opt = literal_values.iter().find(|x| &&LiteralValue::Null != x);
+    let has_null_value = literal_values.iter().find(|x|&&LiteralValue::Null == x);
+    if let Some(first_non_null) = first_non_null_opt {
+        match first_non_null {
+            LiteralValue::Boolean(_) => {
+                Series::new(name, literal_values.into_iter().map(|x| if let LiteralValue::Boolean(b) = x {
+                    b
+                } else {panic!("Not possible")} ).collect::<Vec<bool>>())
+            }
+            LiteralValue::Utf8(_) => {
+                Series::new(name, literal_values.into_iter().map(|x| if let LiteralValue::Utf8(u) = x {
+                    u
+                } else {panic!("Not possible")} ).collect::<Vec<String>>())
+            }
+            LiteralValue::UInt32(_) => {
+                todo!()
+            }
+            LiteralValue::UInt64(_) => {
+                todo!()
+            }
+            LiteralValue::Int32(_) => {
+                todo!()
+            }
+            LiteralValue::Int64(_) => {
+                todo!()
+            }
+            LiteralValue::Float32(_) => {
+                todo!()
+            }
+            LiteralValue::Float64(_) => {
+                todo!()
+            }
+            LiteralValue::Range { .. } => {
+                todo!()
+            }
+            LiteralValue::DateTime(_, _) => {
+                todo!()
+            }
+            LiteralValue::Duration(_, _) => {
+                todo!()
+            }
+            LiteralValue::Series(_) => {
+                todo!()
+            }
+            _ => {
+                todo!()
+            }
+        }
+    } else {
+        Series::new(name, literal_values.iter().map(|_| None ).collect::<Vec<Option<bool>>>())
     }
 }
