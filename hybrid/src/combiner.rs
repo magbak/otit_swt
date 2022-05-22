@@ -1,282 +1,366 @@
-use std::lazy::Lazy;
+use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
 use oxrdf::vocab::xsd;
 use polars::datatypes::BooleanChunked;
 use polars::frame::DataFrame;
-use polars::prelude::{BooleanChunkedBuilder, Expr, IntoLazy, LazyFrame, LiteralValue, NamedFrom, Operator, when};
+use polars::prelude::{BooleanChunkedBuilder, col, concat, Expr, IntoLazy, JoinType, LazyFrame, LiteralValue, NamedFrom, Operator, SortArguments, SortOptions, UniqueKeepStrategy, when};
+use polars::prelude::Expr::SortBy;
 use polars::series::{ChunkCompare, Series};
 use sparesults::QuerySolution;
-use spargebra::algebra::{Expression, GraphPattern};
+use spargebra::algebra::{Expression, GraphPattern, OrderExpression};
 use spargebra::Query;
-use spargebra::term::{Literal, Term, TriplePattern, Variable};
+use spargebra::term::{Literal, Term, TermPattern, TriplePattern, Variable};
+use crate::constants::{HAS_TIMESTAMP, HAS_VALUE};
 use crate::timeseries_query::TimeSeriesQuery;
 
 
-pub fn combine_static_and_time_series_results(query: Query, static_query:Query, time_series_queries: Vec<TimeSeriesQuery>, sparql_result:Vec<QuerySolution>, time_series_results:Vec<DataFrame>) {
-    let column_variables ;
-    let inner_graph_pattern;
-    if let Some(Query::Select { dataset:_, pattern, base_iri:_ }) = &static_query {
-        if let Some(GraphPattern::Project { inner, variables }) = pattern{
-            column_variables = variables.clone();
-            inner_graph_pattern = inner;
+pub struct Combiner {
+    counter: u16
+}
+
+impl Combiner {
+    pub fn combine_static_and_time_series_results(&mut self, query: Query, static_query: Query, sparql_result: Vec<QuerySolution>, time_series: &Vec<(TimeSeriesQuery, DataFrame)>) {
+        let column_variables;
+        let inner_graph_pattern;
+        if let Some(Query::Select { dataset: _, pattern, base_iri: _ }) = &static_query {
+            if let Some(GraphPattern::Project { inner, variables }) = pattern {
+                column_variables = variables.clone();
+                inner_graph_pattern = inner;
+            } else {
+                panic!("Wrong!!!");
+            }
         } else {
             panic!("Wrong!!!");
         }
-    } else {
-        panic!("Wrong!!!");
+
+        let mut series = vec![];
+        let first_soln = sparql_result.get(0).unwrap();
+        //let map_series = |s:&str, f| sparql_result.iter().map(|x| f(x.get(s).unwrap()) ).collect::<Series>();
+        for c in &column_variables {
+            let series = match first_soln.get(c).expect("Variable exists in soln") {
+                Term::NamedNode(_) => {
+                    sparql_result.iter().map(|x|x.get())
+                }
+                Term::BlankNode(_) => {
+                    panic!("Should never happen");
+                }
+                Term::Literal(lit) => {
+                    let datatype = lit.datatype();
+                    if datatype == xsd::STRING {
+                        sparql_result.iter().map(|x|x.get(c).unwrap())
+
+                    } else if datatype == xsd::INTEGER {
+                        let i = i32::from_str(lit.value()).expect("Integer parsing error");
+                        Expr::Literal(LiteralValue::Int32(i))
+                    } else if datatype == xsd::BOOLEAN {
+                        let b = bool::from_str(lit.value()).expect("Boolean parsing error");
+                        Expr::Literal(LiteralValue::Boolean(b))
+                    }
+                }
+                Term::Triple(_) => {
+                    todo!("Not implemented")
+                }
+            };
+
+        }
+
+        let mut columns = column_variables.iter().map(|v| v.as_str().to_string()).collect();
+
+        self.lazy_graph_pattern(&mut columns, &mut result_lf, inner_graph_pattern, time_series);
     }
 
-    let mut series = vec![];
-    let first_soln = sparql_result.get(0).unwrap();
-    for c in &column_variables {
-        let data_type = match first_soln.get(c).expect("Variable exists in soln") {
-            Term::NamedNode(_) => {}
-            Term::BlankNode(_) => {}
-            Term::Literal(lit) => {
-                match lit { &_ => {} }
+    fn lazy_graph_pattern(&mut self, columns: &mut HashSet<String>, input_lf: LazyFrame, graph_pattern: &GraphPattern, time_series: &Vec<(TimeSeriesQuery, DataFrame)>) -> LazyFrame {
+        match graph_pattern {
+            GraphPattern::Bgp { patterns } => {
+                //No action, handled statically
+                let mut output_lf = input_lf;
+                for p in patterns {
+                    output_lf = self.lazy_triple_pattern(columns, output_lf, p, time_series);
+                }
+                output_lf
             }
-            Term::Triple(_) => {}
-        };
-        series.push()
+            GraphPattern::Path { .. } => {
+                //No action, handled statically
+                input_lf
+            }
+            GraphPattern::Join { left, right } => {
+                let left_lf = self.lazy_graph_pattern(columns, input_lf, left, time_series);
+                let right_lf = self.lazy_graph_pattern(columns, left_lf, right, time_series);
+                right_lf
+            }
+            GraphPattern::LeftJoin { left, right, expression } => {
+                let left_join_distinct_column = "left_join_distinct_column_".to_string() + &self.counter.to_string();
+                self.counter += 1;
+                input_lf.with_column(col(columns.iter().next().unwrap()).cumcount(false).alias(&left_join_distinct_column));
+                let left_lf = self.lazy_graph_pattern(columns, input_lf, left, time_series);
+                let right_lf = self.lazy_graph_pattern(columns, left_lf.clone(), right, time_series);
+                let output_lf = concat(vec![left_lf, right_lf], false).expect("Concat error");
+                output_lf.unique(Some(vec![left_join_distinct_column]), UniqueKeepStrategy::Last).drop_columns(&left_join_distinct_column)
+            }
+            GraphPattern::Filter { expr, inner } => {
+                let inner_lf = self.lazy_graph_pattern(result_lf, input_lf, inner, time_series);
+                Combiner::lazy_filter(inner_lf, expr)
+            }
+            GraphPattern::Union { left, right } => {
+                let union_distinct_column = "union_distinct_column".to_string() + &self.counter.to_string();
+                self.counter += 1;
+                let new_input_df = input_lf.with_column(col(columns.iter().next().unwrap()).cumcount(false).alias(&union_distinct_column));
+                let left_lf = self.lazy_graph_pattern(columns, new_input_df.clone(), left, time_series);
+                let right_lf = self.lazy_graph_pattern(columns, new_input_df, right, time_series);
+                let output_lf = concat(vec![left_lf, right_lf], false).expect("Concat problem");
+                output_lf.unique(None, UniqueKeepStrategy::First).drop_columns(&union_distinct_column)
+            }
+            GraphPattern::Graph { name, inner } => {}
+            GraphPattern::Extend { inner, variable, expression } => {}
+            GraphPattern::Minus { left, right } => {
+                let minus_column = "minus_column".to_string() + &self.counter.to_string();
+                let left_lf = self.lazy_graph_pattern(columns, input_lf, left, time_series);
+                let right_lf = self.lazy_graph_pattern(columns, left_lf, right, time_series);
+                let mut output_lf = concat(vec![left_lf, right_lf], false).expect("Noprob");
+                output_lf = output_lf.select(col(&minus_column).is_duplicated().not()).drop_columns(&minus_column);
+                output_lf
+            }
+            GraphPattern::Values { variables, bindings } => {}
+            GraphPattern::OrderBy { inner, expression } => {
+                let inner_lf = self.lazy_graph_pattern(columns, input_lf, inner, time_series);
+                let lazy_exprs = expression.iter().map(|o| Combiner::lazy_order_expression(o)).collect::<Vec<(Expr,bool)>>();
+                inner_lf.sort_by_exprs(lazy_exprs.iter.map(|(e,_)|e.clone()).collect(), lazy_exprs.iter().map(|(_, asc)|asc.clone()).collect())
+            }
+            GraphPattern::Project { inner, variables } => {}
+            GraphPattern::Distinct { inner } => {
+                self.lazy_graph_pattern(columns, input_lf, inner, time_series).unique(None, UniqueKeepStrategy::First)
+            }
+            GraphPattern::Reduced { .. } => {}
+            GraphPattern::Slice { .. } => {}
+            GraphPattern::Group { inner, variables, aggregates } => {
+
+            }
+            GraphPattern::Service { .. } => {}
+        }
     }
 
-    evaluate_graph_pattern(&mut result_df, inner_graph_pattern, time_series_queries, time_series_results);
-}
-
-struct Evaluator {
-    result_df: DataFrame,
-    time_series_queries: Vec<TimeSeriesQuery>
-}
-
-fn evaluate_graph_pattern(input_df: LazyFrame, graph_pattern: &GraphPattern, time_series_queries: Vec<TimeSeriesQuery>, time_series_results: Vec<DataFrame>) -> LazyFrame {
-    match graph_pattern {
-        GraphPattern::Bgp { patterns } => {
-            //No action, handled statically
-            let mut output_df = input_df;
-            for p in patterns {
-                output_df = evaluate_triple_pattern(output_df, p, time_series_queries, time_series_results)
+    fn lazy_triple_pattern(columns: &mut HashSet<String>, input_lf: LazyFrame, triple_pattern: &TriplePattern, time_series: &Vec<(TimeSeriesQuery, DataFrame)>) -> LazyFrame {
+        if triple_pattern.predicate == HAS_VALUE {
+            if let TermPattern::Variable(obj_var) = &triple_pattern.object {
+                if !columns.contains(obj_var.as_str()) {
+                    for (tsq, tsr) in &time_series {
+                        if tsq.value_variable == obj_var {
+                            let mut output_lf = input_lf.join(tsr.lazy(), tsq.identifier_variable.unwrap().as_str(), tsq.identifier_variable.unwrap().as_str(), JoinType::Inner);
+                            output_lf = output_lf.drop_columns(tsq.identifier_variable.unwrap().as_str());
+                            columns.remove(tsq.identifier_variable.unwrap().as_str());
+                            columns.insert(obj_var.as_str().to_string());
+                            return output_lf
+                        }
+                    }
+                }
             }
-            output_df
         }
-        GraphPattern::Path { .. } => {
-            //No action, handled statically
-            input_df
-        }
-        GraphPattern::Join {  } => {}
-        GraphPattern::LeftJoin {  } => {}
-        GraphPattern::Filter { expr, inner } => {
-            let lf = evaluate_graph_pattern(result_df, inner, time_series_queries, time_series_results);
-            evaluate_filter(lf, expr)
-        }
-        GraphPattern::Union {  } => {}
-        GraphPattern::Graph {  } => {}
-        GraphPattern::Extend {  } => {}
-        GraphPattern::Minus { left, right } => {}
-        GraphPattern::Values { variables, bindings } => {}
-        GraphPattern::OrderBy { .. } => {}
-        GraphPattern::Project { .. } => {}
-        GraphPattern::Distinct { inner } => {}
-        GraphPattern::Reduced { .. } => {}
-        GraphPattern::Slice { .. } => {}
-        GraphPattern::Group { .. } => {}
-        GraphPattern::Service { .. } => {}
+        input_lf
     }
-}
 
-fn evaluate_triple_pattern(input_lf: LazyFrame, triple_pattern: &TriplePattern, time_series_query: Vec<TimeSeriesQuery>, time_series_results: Vec<DataFrame>) -> LazyFrame {
-    if triple_pattern.object.
-}
+    fn lazy_filter(input_lf: LazyFrame, expression: &Expression) -> LazyFrame {
+        input_lf.filter(Combiner::lazy_expression(expression))
+    }
 
-fn evaluate_filter(result_df: LazyFrame, expression: &Expression) -> LazyFrame {
-    result_df.lazy().filter(compute_expression(expression))
-}
+    fn lazy_order_expression(oexpr: &OrderExpression) -> (Expr, bool) {
+        match oexpr {
+            OrderExpression::Asc(expr) => {
+                (Combiner::lazy_expression(expr), true)
+            }
+            OrderExpression::Desc(expr) => {
+                (Combiner::lazy_expression(expr), false)
+            }
+        }
+    }
 
-fn compute_expression(expr: &Expression) -> Expr {
-    match expr {
-        Expression::NamedNode(nn) => {
-            Expr::Literal(LiteralValue::Utf8(nn.to_string()))
-        }
-        Expression::Literal(lit) => {
-            let datatype = lit.datatype();
-            if datatype == xsd::STRING {
-                let s = lit.value();
-                Expr::Literal(LiteralValue::Utf8(s.to_string()))
-            } else if datatype == xsd::INTEGER {
-                let i = i32::from_str(lit.value()).expect("Integer parsing error");
-                Expr::Literal(LiteralValue::Int32(i))
-            } else if datatype == xsd::BOOLEAN {
-                let b = bool::from_str(lit.value()).expect("Boolean parsing error");
-                Expr::Literal(LiteralValue::Boolean(b))
+    fn lazy_expression(expr: &Expression) -> Expr {
+        match expr {
+            Expression::NamedNode(nn) => {
+                Expr::Literal(LiteralValue::Utf8(nn.to_string()))
             }
-        }
-        Expression::Variable(v) => {
-            Expr::Column(Arc::from(v.as_str()))
-        }
-        Expression::Or(left, right) => {
-            let left_expr = compute_expression( left);
-            let right_expr = compute_expression( right);
-            Expr::BinaryExpr {
-                left: Box::new(left_expr),
-                op: Operator::Or,
-                right: Box::new(right_expr)
+            Expression::Literal(lit) => {
+                let datatype = lit.datatype();
+                if datatype == xsd::STRING {
+                    let s = lit.value();
+                    Expr::Literal(LiteralValue::Utf8(s.to_string()))
+                } else if datatype == xsd::INTEGER {
+                    let i = i32::from_str(lit.value()).expect("Integer parsing error");
+                    Expr::Literal(LiteralValue::Int32(i))
+                } else if datatype == xsd::BOOLEAN {
+                    let b = bool::from_str(lit.value()).expect("Boolean parsing error");
+                    Expr::Literal(LiteralValue::Boolean(b))
+                }
             }
-        }
-        Expression::And(left, right)=> {
-            let left_expr = compute_expression( left);
-            let right_expr = compute_expression( right);
-            Expr::BinaryExpr {
-                left: Box::new(left_expr),
-                op: Operator::And,
-                right: Box::new(right_expr)
+            Expression::Variable(v) => {
+                Expr::Column(Arc::from(v.as_str()))
             }
-        }
-        Expression::Equal(left, right) => {
-            let left_expr = compute_expression( left);
-            let right_expr = compute_expression( right);
-            Expr::BinaryExpr {
-                left: Box::new(left_expr),
-                op: Operator::Eq,
-                right: Box::new(right_expr)
-            }
-        }
-        Expression::SameTerm(_, _) => {
-            todo!("Not implemented")
-        }
-        Expression::Greater(left, right) => {
-            let left_expr = compute_expression( left);
-            let right_expr = compute_expression( right);
-            Expr::BinaryExpr {
-                left: Box::new(left_expr),
-                op: Operator::Gt,
-                right: Box::new(right_expr)
-            }
-        }
-        Expression::GreaterOrEqual(left, right) => {
-            let left_expr = compute_expression( left);
-            let right_expr = compute_expression( right);
-            Expr::BinaryExpr {
-                left: Box::new(left_expr),
-                op: Operator::GtEq,
-                right: Box::new(right_expr)
-            }
-        }
-        Expression::Less(left, right) => {
-            let left_expr = compute_expression( left);
-            let right_expr = compute_expression( right);
-            Expr::BinaryExpr {
-                left: Box::new(left_expr),
-                op: Operator::Lt,
-                right: Box::new(right_expr)
-            }
-        }
-        Expression::LessOrEqual(left, right) => {
-            let left_expr = compute_expression( left);
-            let right_expr = compute_expression( right);
-            Expr::BinaryExpr {
-                left: Box::new(left_expr),
-                op: Operator::LtEq,
-                right: Box::new(right_expr)
-            }
-        }
-        Expression::In(left, right) => {
-            let left_expr = compute_expression( left);
-            let right_exprs = right.iter().map(|r| compute_expression( r));
-            let mut expr = Expr::Literal(LiteralValue::Boolean(false));
-            for r in right_exprs {
-                expr = Expr::BinaryExpr {
-                    left: Box::new(expr),
+            Expression::Or(left, right) => {
+                let left_expr = Combiner::lazy_expression(left);
+                let right_expr = Combiner::lazy_expression(right);
+                Expr::BinaryExpr {
+                    left: Box::new(left_expr),
                     op: Operator::Or,
-                    right: Box::new(Expr::BinaryExpr {
-                        left: Box::new(left_expr.clone()),
-                        op: Operator::Eq,
-                        right: Box::new(r)
-                    })
+                    right: Box::new(right_expr)
                 }
             }
-            expr
-        }
-        Expression::Add(left, right) => {
-            let left_expr = compute_expression( left);
-            let right_expr = compute_expression( right);
-            Expr::BinaryExpr {
-                left: Box::new(left_expr),
-                op: Operator::Plus,
-                right: Box::new(right_expr)
+            Expression::And(left, right) => {
+                let left_expr = Combiner::lazy_expression(left);
+                let right_expr = Combiner::lazy_expression(right);
+                Expr::BinaryExpr {
+                    left: Box::new(left_expr),
+                    op: Operator::And,
+                    right: Box::new(right_expr)
+                }
             }
-        }
-        Expression::Subtract(left, right) => {
-            let left_expr = compute_expression( left);
-            let right_expr = compute_expression( right);
-            Expr::BinaryExpr {
-                left: Box::new(left_expr),
-                op: Operator::Minus,
-                right: Box::new(right_expr)
+            Expression::Equal(left, right) => {
+                let left_expr = Combiner::lazy_expression(left);
+                let right_expr = Combiner::lazy_expression(right);
+                Expr::BinaryExpr {
+                    left: Box::new(left_expr),
+                    op: Operator::Eq,
+                    right: Box::new(right_expr)
+                }
             }
-        }
-        Expression::Multiply(left, right) => {
-            let left_expr = compute_expression( left);
-            let right_expr = compute_expression( right);
-            Expr::BinaryExpr {
-                left: Box::new(left_expr),
-                op: Operator::Multiply,
-                right: Box::new(right_expr)
+            Expression::SameTerm(_, _) => {
+                todo!("Not implemented")
             }
-        }
-        Expression::Divide(left, right) => {
-            let left_expr = compute_expression( left);
-            let right_expr = compute_expression( right);
-            Expr::BinaryExpr {
-                left: Box::new(left_expr),
-                op: Operator::Divide,
-                right: Box::new(right_expr)
+            Expression::Greater(left, right) => {
+                let left_expr = Combiner::lazy_expression(left);
+                let right_expr = Combiner::lazy_expression(right);
+                Expr::BinaryExpr {
+                    left: Box::new(left_expr),
+                    op: Operator::Gt,
+                    right: Box::new(right_expr)
+                }
             }
-        }
-        Expression::UnaryPlus(inner) => {
-            let inner_expr = compute_expression( inner);
-            inner_expr
-        }
-        Expression::UnaryMinus(inner) => {
-            let inner_expr = compute_expression( inner);
-            Expr::BinaryExpr{
-                left: Box::new(Expr::Literal(LiteralValue::Int32(0))),
-                op: Operator::Minus,
-                right: Box::new(inner_expr)
+            Expression::GreaterOrEqual(left, right) => {
+                let left_expr = Combiner::lazy_expression(left);
+                let right_expr = Combiner::lazy_expression(right);
+                Expr::BinaryExpr {
+                    left: Box::new(left_expr),
+                    op: Operator::GtEq,
+                    right: Box::new(right_expr)
+                }
             }
-        }
-        Expression::Not(inner) => {
-            let inner_expr = compute_expression( inner);
-            Expr::Not(Box::new(inner_expr))
-        }
-        Expression::Exists(_) => {
-            todo!()
-        }
-        Expression::Bound(v) => {
-            Expr::IsNotNull(Box::new(Expr::Column(Arc::from(v.as_str()))))
-        }
-        Expression::If(left, middle, right) => {
-            let left_expr = compute_expression( left);
-            let middle_expr = compute_expression( middle);
-            let right_expr = compute_expression( right);
-            Expr::Ternary{
-                predicate: Box::new(left_expr),
-                truthy: Box::new(middle_expr),
-                falsy: Box::new(right_expr)}
-        }
-        Expression::Coalesce(inner) => {
-            let mut inner_exprs = inner.iter().map(|e| compute_expression(e)).collect::<Vec<Expr>>();
-            let mut coalesced = inner_exprs.remove(0);
-            for c in inner_exprs {
+            Expression::Less(left, right) => {
+                let left_expr = Combiner::lazy_expression(left);
+                let right_expr = Combiner::lazy_expression(right);
+                Expr::BinaryExpr {
+                    left: Box::new(left_expr),
+                    op: Operator::Lt,
+                    right: Box::new(right_expr)
+                }
+            }
+            Expression::LessOrEqual(left, right) => {
+                let left_expr = Combiner::lazy_expression(left);
+                let right_expr = Combiner::lazy_expression(right);
+                Expr::BinaryExpr {
+                    left: Box::new(left_expr),
+                    op: Operator::LtEq,
+                    right: Box::new(right_expr)
+                }
+            }
+            Expression::In(left, right) => {
+                let left_expr = Combiner::lazy_expression(left);
+                let right_exprs = right.iter().map(|r| lazy_expression(r));
+                let mut expr = Expr::Literal(LiteralValue::Boolean(false));
+                for r in right_exprs {
+                    expr = Expr::BinaryExpr {
+                        left: Box::new(expr),
+                        op: Operator::Or,
+                        right: Box::new(Expr::BinaryExpr {
+                            left: Box::new(left_expr.clone()),
+                            op: Operator::Eq,
+                            right: Box::new(r)
+                        })
+                    }
+                }
+                expr
+            }
+            Expression::Add(left, right) => {
+                let left_expr = Combiner::lazy_expression(left);
+                let right_expr = Combiner::lazy_expression(right);
+                Expr::BinaryExpr {
+                    left: Box::new(left_expr),
+                    op: Operator::Plus,
+                    right: Box::new(right_expr)
+                }
+            }
+            Expression::Subtract(left, right) => {
+                let left_expr = Combiner::lazy_expression(left);
+                let right_expr = Combiner::lazy_expression(right);
+                Expr::BinaryExpr {
+                    left: Box::new(left_expr),
+                    op: Operator::Minus,
+                    right: Box::new(right_expr)
+                }
+            }
+            Expression::Multiply(left, right) => {
+                let left_expr = Combiner::lazy_expression(left);
+                let right_expr = Combiner::lazy_expression(right);
+                Expr::BinaryExpr {
+                    left: Box::new(left_expr),
+                    op: Operator::Multiply,
+                    right: Box::new(right_expr)
+                }
+            }
+            Expression::Divide(left, right) => {
+                let left_expr = Combiner::lazy_expression(left);
+                let right_expr = Combiner::lazy_expression(right);
+                Expr::BinaryExpr {
+                    left: Box::new(left_expr),
+                    op: Operator::Divide,
+                    right: Box::new(right_expr)
+                }
+            }
+            Expression::UnaryPlus(inner) => {
+                let inner_expr = Combiner::lazy_expression(inner);
+                inner_expr
+            }
+            Expression::UnaryMinus(inner) => {
+                let inner_expr = Combiner::lazy_expression(inner);
+                Expr::BinaryExpr {
+                    left: Box::new(Expr::Literal(LiteralValue::Int32(0))),
+                    op: Operator::Minus,
+                    right: Box::new(inner_expr)
+                }
+            }
+            Expression::Not(inner) => {
+                let inner_expr = Combiner::lazy_expression(inner);
+                Expr::Not(Box::new(inner_expr))
+            }
+            Expression::Exists(_) => {
+                todo!()
+            }
+            Expression::Bound(v) => {
+                Expr::IsNotNull(Box::new(Expr::Column(Arc::from(v.as_str()))))
+            }
+            Expression::If(left, middle, right) => {
+                let left_expr = Combiner::lazy_expression(left);
+                let middle_expr = Combiner::lazy_expression(middle);
+                let right_expr = Combiner::lazy_expression(right);
                 Expr::Ternary {
-                    predicate: Box::new(Expr::IsNotNull(Box::new(coalesced.clone()))),
-                    truthy: Box::new(coalesced.clone()),
-                    falsy: Box::new(c)
+                    predicate: Box::new(left_expr),
+                    truthy: Box::new(middle_expr),
+                    falsy: Box::new(right_expr)
                 }
             }
-            coalesced
-        }
-        Expression::FunctionCall(_, _) => {
-            todo!()
+            Expression::Coalesce(inner) => {
+                let mut inner_exprs = inner.iter().map(|e| lazy_expression(e)).collect::<Vec<Expr>>();
+                let mut coalesced = inner_exprs.remove(0);
+                for c in inner_exprs {
+                    Expr::Ternary {
+                        predicate: Box::new(Expr::IsNotNull(Box::new(coalesced.clone()))),
+                        truthy: Box::new(coalesced.clone()),
+                        falsy: Box::new(c)
+                    }
+                }
+                coalesced
+            }
+            Expression::FunctionCall(_, _) => {
+                todo!()
+            }
         }
     }
 }
