@@ -2,6 +2,7 @@ use crate::constants::HAS_VALUE;
 use crate::timeseries_query::TimeSeriesQuery;
 use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
+use polars::export::chrono::NaiveDateTime;
 use polars::frame::DataFrame;
 use polars::prelude::{
     col, concat, Expr, IntoLazy, JoinType, LazyFrame, LiteralValue, NamedFrom, Operator,
@@ -24,9 +25,8 @@ impl Combiner {
     pub fn combine_static_and_time_series_results(
         &mut self,
         query: Query,
-        static_query: Query,
         sparql_result: Vec<QuerySolution>,
-        time_series: &Vec<(TimeSeriesQuery, DataFrame)>,
+        time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
     ) -> LazyFrame {
         let column_variables;
         let inner_graph_pattern;
@@ -34,7 +34,7 @@ impl Combiner {
             dataset: _,
             pattern,
             base_iri: _,
-        } = &static_query
+        } = &query
         {
             if let GraphPattern::Project { inner, variables } = pattern {
                 column_variables = variables.clone();
@@ -77,7 +77,7 @@ impl Combiner {
         columns: &mut HashSet<String>,
         input_lf: LazyFrame,
         graph_pattern: &GraphPattern,
-        time_series: &Vec<(TimeSeriesQuery, DataFrame)>,
+        time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
     ) -> LazyFrame {
         match graph_pattern {
             GraphPattern::Bgp { patterns } => {
@@ -111,15 +111,20 @@ impl Combiner {
                         .alias(&left_join_distinct_column),
                 );
                 let left_lf = self.lazy_graph_pattern(columns, input_lf, left, time_series);
-                let right_lf =
+                let mut right_lf =
                     self.lazy_graph_pattern(columns, left_lf.clone(), right, time_series);
-                let output_lf = concat(vec![left_lf, right_lf], false).expect("Concat error");
-                output_lf
+                if let Some(expr) = expression {
+                    right_lf = right_lf.filter(Combiner::lazy_expression(expr))
+                }
+                let mut output_lf = concat(vec![left_lf, right_lf], false).expect("Concat error");
+                output_lf = output_lf
                     .unique(
                         Some(vec![left_join_distinct_column.clone()]),
                         UniqueKeepStrategy::Last,
                     )
-                    .drop_columns(&[&left_join_distinct_column])
+                    .drop_columns(&[&left_join_distinct_column]);
+
+                output_lf
             }
             GraphPattern::Filter { expr, inner } => {
                 let inner_lf = self.lazy_graph_pattern(columns, input_lf, inner, time_series);
@@ -212,34 +217,40 @@ impl Combiner {
         columns: &mut HashSet<String>,
         input_lf: LazyFrame,
         triple_pattern: &TriplePattern,
-        time_series: &Vec<(TimeSeriesQuery, DataFrame)>,
+        time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
     ) -> LazyFrame {
+        let mut found_index = None;
+        let mut found_obj_var = None;
         if let NamedNodePattern::NamedNode(pn) = &triple_pattern.predicate {
             if pn.as_str() == HAS_VALUE {
                 if let TermPattern::Variable(obj_var) = &triple_pattern.object {
                     if !columns.contains(obj_var.as_str()) {
-                        for (tsq, tsr) in time_series {
+                        for i in 0..time_series.len() {
+                            let (tsq, _) = time_series.get(i).unwrap();
                             if tsq.value_variable.as_ref() == Some(obj_var) {
-                                //TODO: remove dataframe copy here..
-                                let mut output_lf = input_lf.join(
-                                    tsr.clone().lazy(),
-                                    [col(tsq.identifier_variable.as_ref().unwrap().as_str())],
-                                    [col(tsq.identifier_variable.as_ref().unwrap().as_str())],
-                                    JoinType::Inner,
-                                );
-                                output_lf = output_lf.drop_columns([tsq
-                                    .identifier_variable
-                                    .as_ref()
-                                    .unwrap()
-                                    .as_str()]);
-                                columns.remove(tsq.identifier_variable.as_ref().unwrap().as_str());
-                                columns.insert(obj_var.as_str().to_string());
-                                return output_lf;
+                                found_index = Some(i);
+                                found_obj_var = Some(obj_var);
+                                break;
                             }
                         }
                     }
                 }
             }
+        }
+
+        if let (Some(i), Some(obj_var)) = (found_index, found_obj_var) {
+            let (tsq, tsr) = time_series.remove(i);
+            let mut output_lf = input_lf.join(
+                tsr.clone().lazy(),
+                [col(tsq.identifier_variable.as_ref().unwrap().as_str())],
+                [col(tsq.identifier_variable.as_ref().unwrap().as_str())],
+                JoinType::Inner,
+            );
+            output_lf =
+                output_lf.drop_columns([tsq.identifier_variable.as_ref().unwrap().as_str()]);
+            columns.remove(tsq.identifier_variable.as_ref().unwrap().as_str());
+            columns.insert(obj_var.as_str().to_string());
+            return output_lf;
         }
         input_lf
     }
@@ -440,9 +451,6 @@ fn sparql_term_to_polars_literal_value(term: &Term) -> LiteralValue {
             panic!("Not supported")
         }
         Term::Literal(lit) => sparql_literal_to_polars_literal_value(lit),
-        _ => {
-            panic!("No triple terms supported")
-        }
     }
 }
 
@@ -468,9 +476,9 @@ fn sparql_literal_to_polars_literal_value(lit: &Literal) -> LiteralValue {
 }
 
 fn polars_literal_values_to_series(literal_values: Vec<LiteralValue>, name: &str) -> Series {
-    let first_non_null_opt = literal_values.iter().find(|x| &&LiteralValue::Null != x);
-    let has_null_value = literal_values.iter().find(|x| &&LiteralValue::Null == x);
-    if let Some(first_non_null) = first_non_null_opt {
+    let first_non_null_opt = literal_values.iter().find(|x| &&LiteralValue::Null != x).cloned();
+    let first_null_opt = literal_values.iter().find(|x| &&LiteralValue::Null == x).cloned();
+    if let (Some(first_non_null), None) = (&first_non_null_opt, &first_null_opt) {
         match first_non_null {
             LiteralValue::Boolean(_) => Series::new(
                 name,
@@ -498,29 +506,241 @@ fn polars_literal_values_to_series(literal_values: Vec<LiteralValue>, name: &str
                     })
                     .collect::<Vec<String>>(),
             ),
-            LiteralValue::UInt32(_) => {
-                todo!()
-            }
-            LiteralValue::UInt64(_) => {
-                todo!()
-            }
-            LiteralValue::Int32(_) => {
-                todo!()
-            }
-            LiteralValue::Int64(_) => {
-                todo!()
-            }
-            LiteralValue::Float32(_) => {
-                todo!()
-            }
-            LiteralValue::Float64(_) => {
-                todo!()
-            }
+            LiteralValue::UInt32(_) => Series::new(
+                name,
+                literal_values
+                    .into_iter()
+                    .map(|x| {
+                        if let LiteralValue::UInt32(i) = x {
+                            i
+                        } else {
+                            panic!("Not possible")
+                        }
+                    })
+                    .collect::<Vec<u32>>(),
+            ),
+            LiteralValue::UInt64(_) => Series::new(
+                name,
+                literal_values
+                    .into_iter()
+                    .map(|x| {
+                        if let LiteralValue::UInt64(i) = x {
+                            i
+                        } else {
+                            panic!("Not possible")
+                        }
+                    })
+                    .collect::<Vec<u64>>(),
+            ),
+            LiteralValue::Int32(_) => Series::new(
+                name,
+                literal_values
+                    .into_iter()
+                    .map(|x| {
+                        if let LiteralValue::Int32(i) = x {
+                            i
+                        } else {
+                            panic!("Not possible")
+                        }
+                    })
+                    .collect::<Vec<i32>>(),
+            ),
+            LiteralValue::Int64(_) => Series::new(
+                name,
+                literal_values
+                    .into_iter()
+                    .map(|x| {
+                        if let LiteralValue::Int64(i) = x {
+                            i
+                        } else {
+                            panic!("Not possible")
+                        }
+                    })
+                    .collect::<Vec<i64>>(),
+            ),
+            LiteralValue::Float32(_) => Series::new(
+                name,
+                literal_values
+                    .into_iter()
+                    .map(|x| {
+                        if let LiteralValue::Float32(f) = x {
+                            f
+                        } else {
+                            panic!("Not possible")
+                        }
+                    })
+                    .collect::<Vec<f32>>(),
+            ),
+            LiteralValue::Float64(_) => Series::new(
+                name,
+                literal_values
+                    .into_iter()
+                    .map(|x| {
+                        if let LiteralValue::Float64(f) = x {
+                            Some(f)
+                        } else {
+                            panic!("Not possible")
+                        }
+                    })
+                    .collect::<Vec<Option<f64>>>(),
+            ),
             LiteralValue::Range { .. } => {
                 todo!()
             }
-            LiteralValue::DateTime(_, _) => {
+            LiteralValue::DateTime(_,t) =>
+            //TODO: Assert time unit lik??
+            {
+                Series::new(
+                    name,
+                    literal_values
+                        .into_iter()
+                        .map(|x| {
+                            if let LiteralValue::DateTime(n, t_prime) = x {
+                                assert_eq!(t, &t_prime);
+                                n
+                            } else {
+                                panic!("Not possible")
+                            }
+                        })
+                        .collect::<Vec<NaiveDateTime>>(),
+                )
+            }
+            LiteralValue::Duration(_, _) => {
                 todo!()
+            }
+            LiteralValue::Series(_) => {
+                todo!()
+            }
+            _ => {
+                todo!()
+            }
+        }
+    } else if let (Some(first_non_null), Some(_)) = (&first_non_null_opt, &first_null_opt) {
+        match first_non_null {
+            LiteralValue::Boolean(_) => Series::new(
+                name,
+                literal_values
+                    .into_iter()
+                    .map(|x| {
+                        if let LiteralValue::Boolean(b) = x {
+                            Some(b)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<Option<bool>>>(),
+            ),
+            LiteralValue::Utf8(_) => Series::new(
+                name,
+                literal_values
+                    .into_iter()
+                    .map(|x| {
+                        if let LiteralValue::Utf8(u) = x {
+                            Some(u)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<Option<String>>>(),
+            ),
+            LiteralValue::UInt32(_) => Series::new(
+                name,
+                literal_values
+                    .into_iter()
+                    .map(|x| {
+                        if let LiteralValue::UInt32(i) = x {
+                            Some(i)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<Option<u32>>>(),
+            ),
+            LiteralValue::UInt64(_) => Series::new(
+                name,
+                literal_values
+                    .into_iter()
+                    .map(|x| {
+                        if let LiteralValue::UInt64(i) = x {
+                            Some(i)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<Option<u64>>>(),
+            ),
+            LiteralValue::Int32(_) => Series::new(
+                name,
+                literal_values
+                    .into_iter()
+                    .map(|x| {
+                        if let LiteralValue::Int32(i) = x {
+                            Some(i)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<Option<i32>>>(),
+            ),
+            LiteralValue::Int64(_) => Series::new(
+                name,
+                literal_values
+                    .into_iter()
+                    .map(|x| {
+                        if let LiteralValue::Int64(i) = x {
+                            Some(i)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<Option<i64>>>(),
+            ),
+            LiteralValue::Float32(_) => Series::new(
+                name,
+                literal_values
+                    .into_iter()
+                    .map(|x| {
+                        if let LiteralValue::Float32(f) = x {
+                            Some(f)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<Option<f32>>>(),
+            ),
+            LiteralValue::Float64(_) => Series::new(
+                name,
+                literal_values
+                    .into_iter()
+                    .map(|x| {
+                        if let LiteralValue::Float64(f) = x {
+                            Some(f)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<Option<f64>>>(),
+            ),
+            LiteralValue::Range { .. } => {
+                todo!()
+            }
+            LiteralValue::DateTime(_,t) =>
+            //TODO: Assert time unit lik??
+            {
+                Series::new(
+                    name,
+                    literal_values
+                        .into_iter()
+                        .map(|x| {
+                            if let LiteralValue::DateTime(n, t_prime) = x {
+                                assert_eq!(t, &t_prime);
+                                Some(n)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<Option<NaiveDateTime>>>(),
+                )
             }
             LiteralValue::Duration(_, _) => {
                 todo!()

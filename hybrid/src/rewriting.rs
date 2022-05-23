@@ -2125,6 +2125,7 @@ impl StaticQueryRewriter {
         for q in &mut self.time_series_queries {
             q.try_pushdown_aggregates(variables, aggregates);
         }
+        todo!()
     }
     fn create_time_series_query(&mut self, time_series_variable:&Variable, time_series_id_variable: &Variable) {
         let mut ts_query = TimeSeriesQuery::new();
