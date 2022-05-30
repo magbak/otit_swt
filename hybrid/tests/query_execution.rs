@@ -6,13 +6,16 @@ use std::time::Duration;
 use bollard::container::{Config, CreateContainerOptions, KillContainerOptions, ListContainersOptions, RemoveContainerOptions, StartContainerOptions};
 use bollard::models::{ContainerConfig, ContainerSummary, HostConfig, Mount, PortBinding, PortMap};
 use bollard::Docker;
+use reqwest::header::CONTENT_TYPE;
 use rstest::*;
 use spargebra::{Query, Update};
 use tokio::task;
 use tokio::time::sleep;
 
 const OXIGRAPH_SERVER_IMAGE: &str = "oxigraph/oxigraph:v0.3.2";
-const ENDPOINT: &str = "http://localhost:7878";
+const QUERY_ENDPOINT: &str = "http://localhost:7878/query";
+const UPDATE_ENDPOINT: &str = "http://localhost:7878/update";
+
 
 async fn find_container(docker: &Docker, container_name: &str) -> Option<ContainerSummary> {
     let list = docker.list_containers(Some(ListContainersOptions::<String>{
@@ -70,7 +73,7 @@ async fn with_testdata(#[future] sparql_endpoint: ()) {
     let testdata_update_string = fs::read_to_string(path_here.as_path()).expect("Read testdata.sparql problem");
 
     let client = reqwest::Client::new();
-    let put_request = client.put(ENDPOINT).body(testdata_update_string);
+    let put_request = client.post(UPDATE_ENDPOINT).header(CONTENT_TYPE, "application/sparql-update").body(testdata_update_string);
     let put_response = put_request.send().await.expect("Update error");
     println!("{:?}", put_response)
 }
@@ -79,10 +82,11 @@ async fn with_testdata(#[future] sparql_endpoint: ()) {
 #[tokio::test]
 async fn test_full_case(#[future] with_testdata:()) {
     let _ = with_testdata.await;
-    
+    let client = reqwest::Client::new();
+    let response = client.post(QUERY_ENDPOINT).header(CONTENT_TYPE, "application/sparql-query").body("SELECT * WHERE {?a ?b ?c }").send().await.expect("postproblem");
+    println!("{:?}", response);
     println!("Hello");
 }
-
 
 
 
