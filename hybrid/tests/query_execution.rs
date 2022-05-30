@@ -79,6 +79,7 @@ async fn with_testdata(#[future] sparql_endpoint: ()) {
 #[tokio::test]
 async fn test_full_case(#[future] with_testdata:()) {
     let _ = with_testdata.await;
+    
     println!("Hello");
 }
 
