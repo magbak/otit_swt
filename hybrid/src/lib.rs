@@ -8,3 +8,4 @@ pub mod change_types;
 pub mod timeseries_database;
 pub mod in_memory_timeseries;
 pub mod combiner;
+pub mod static_sparql;

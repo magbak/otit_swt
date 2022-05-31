@@ -451,6 +451,7 @@ fn sparql_term_to_polars_literal_value(term: &Term) -> LiteralValue {
             panic!("Not supported")
         }
         Term::Literal(lit) => sparql_literal_to_polars_literal_value(lit),
+        _ => panic!("Not implemented"),
     }
 }
 
