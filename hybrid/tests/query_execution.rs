@@ -2,25 +2,20 @@ use bollard::container::{
     Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
     StartContainerOptions,
 };
-use bollard::models::{ContainerConfig, ContainerSummary, HostConfig, Mount, PortBinding, PortMap};
+use bollard::models::{ContainerSummary, HostConfig, PortBinding};
 use bollard::Docker;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::static_sparql::execute_sparql_query;
 use oxrdf::{NamedNode, Term, Variable};
-use polars::export::arrow::datatypes::UnionMode::Sparse;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::StatusCode;
 use rstest::*;
-use sparesults::{QueryResultsFormat, QueryResultsParser, QueryResultsReader, QuerySolution};
-use spargebra::{Query, Update};
+use sparesults::QuerySolution;
 use std::cmp::Ordering;
-use std::cmp::Ordering::Greater;
 use std::collections::HashMap;
 use std::fs;
-use std::future::Future;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::time::Duration;
-use tokio::task;
 use tokio::time::sleep;
 
 const OXIGRAPH_SERVER_IMAGE: &str = "oxigraph/oxigraph:v0.3.2";
@@ -57,7 +52,7 @@ async fn sparql_endpoint() {
     let docker = Docker::connect_with_local_defaults().expect("Could not find local docker");
     let container_name = "my-oxigraph-server";
     let existing = find_container(&docker, container_name).await;
-    if let Some(container) = existing {
+    if let Some(_) = existing {
         docker
             .remove_container(
                 container_name,
@@ -157,7 +152,7 @@ fn compare_query_solutions(a: &QuerySolution, b: &QuerySolution) -> Ordering {
     if let Some(ordering) = first_unequal {
         return ordering;
     }
-    for (bv, bt) in b {
+    for (bv, _) in b {
         if a.get(bv).is_none() {
             return Ordering::Less;
         }
