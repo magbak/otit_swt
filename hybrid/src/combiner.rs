@@ -270,7 +270,7 @@ impl Combiner {
         }
     }
 
-    fn lazy_expression(expr: &Expression) -> Expr {
+    pub fn lazy_expression(expr: &Expression) -> Expr {
         match expr {
             Expression::NamedNode(nn) => {
                 Expr::Literal(sparql_named_node_to_polars_literal_value(nn))

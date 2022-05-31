@@ -14,9 +14,11 @@ use sparesults::QuerySolution;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs;
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time::sleep;
+
+pub mod in_memory_timeseries;
 
 const OXIGRAPH_SERVER_IMAGE: &str = "oxigraph/oxigraph:v0.3.2";
 const QUERY_ENDPOINT: &str = "http://localhost:7878/query";
