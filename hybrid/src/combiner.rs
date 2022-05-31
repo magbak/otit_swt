@@ -447,10 +447,8 @@ impl Combiner {
 fn sparql_term_to_polars_literal_value(term: &Term) -> LiteralValue {
     match term {
         Term::NamedNode(named_node) => sparql_named_node_to_polars_literal_value(named_node),
-        Term::BlankNode(_) => {
-            panic!("Not supported")
-        }
         Term::Literal(lit) => sparql_literal_to_polars_literal_value(lit),
+        _ => {panic!("Not supported")}
     }
 }
 
