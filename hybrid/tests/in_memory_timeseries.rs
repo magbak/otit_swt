@@ -21,8 +21,8 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
             lf = lf.rename(["timestamp"], [timestamp_variable.as_str()])
         }
         if tsq.conditions.len() > 0 {
-            let exprs = tsq.conditions.iter().map(|c| Combiner::lazy_expression(c));
-            let expr = exprs.fold(Expr::Literal(LiteralValue::Boolean(true)), |left, right| {
+            let expr_iter = tsq.conditions.iter().map(|c| Combiner::lazy_expression(c));
+            let expr = expr_iter.fold(Expr::Literal(LiteralValue::Boolean(true)), |left, right| {
                 Expr::BinaryExpr {
                     left: Box::new(left),
                     op: Operator::And,
