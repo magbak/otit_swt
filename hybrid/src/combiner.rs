@@ -22,6 +22,10 @@ pub struct Combiner {
 }
 
 impl Combiner {
+    pub fn new() -> Combiner {
+        Combiner {counter:0}
+    }
+
     pub fn combine_static_and_time_series_results(
         &mut self,
         query: Query,

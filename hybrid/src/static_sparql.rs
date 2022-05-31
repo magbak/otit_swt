@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Error, StatusCode};
 use sparesults::{
@@ -17,6 +18,32 @@ pub enum QueryExecutionErrorKind {
     ResultsParseError(ParseError),
     SolutionParseError(ParseError),
     WrongResultType,
+}
+
+impl Display for QueryExecutionError {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        match &self.kind {
+            QueryExecutionErrorKind::RequestError(reqerr) => {
+                 std::fmt::Display::fmt(&reqerr, f)
+            }
+            QueryExecutionErrorKind::BadStatusCode(status_code) => {
+                std::fmt::Display::fmt(&status_code, f)
+            }
+            QueryExecutionErrorKind::ResultsParseError(parseerr) => {
+                std::fmt::Display::fmt(&parseerr, f)
+            }
+            QueryExecutionErrorKind::SolutionParseError(parseerr) => {
+                std::fmt::Display::fmt(&parseerr, f)
+            }
+            QueryExecutionErrorKind::WrongResultType => {
+                write!(f, "Wrong result type, expected solutions")
+            }
+        }
+    }
+}
+
+impl std::error::Error for QueryExecutionError {
+
 }
 
 pub async fn execute_sparql_query(

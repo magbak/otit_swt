@@ -1,12 +1,15 @@
+use std::error::Error;
 use spargebra::{ParseError, Query};
 use std::fmt::{Debug, Display, Formatter};
 
+#[derive(Debug)]
 pub enum SelectQueryErrorKind {
     Parse(ParseError),
     NotSelectQuery,
     Unsupported(String),
 }
 
+#[derive(Debug)]
 pub struct SelectQueryError {
     kind: SelectQueryErrorKind,
 }
@@ -25,18 +28,7 @@ impl Display for SelectQueryError {
     }
 }
 
-impl Debug for SelectQueryError {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        match &self.kind {
-            SelectQueryErrorKind::Parse(pe) => Debug::fmt(&pe, f),
-            SelectQueryErrorKind::NotSelectQuery => {
-                write!(f, "Not a select query")
-            }
-            SelectQueryErrorKind::Unsupported(s) => {
-                write!(f, "Unsupported construct: {}", s)
-            }
-        }
-    }
+impl Error for SelectQueryError {
 }
 
 pub fn parse_sparql_select_query(query_str: &str) -> Result<Query, SelectQueryError> {
