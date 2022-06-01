@@ -1,15 +1,19 @@
+use crate::in_memory_timeseries::InMemoryTimeseriesDatabase;
 use bollard::container::{
     Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
     StartContainerOptions,
 };
 use bollard::models::{ContainerSummary, HostConfig, PortBinding};
 use bollard::Docker;
+use hybrid::orchestrator::execute_hybrid_query;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::static_sparql::execute_sparql_query;
 use oxrdf::{NamedNode, Term, Variable};
+use polars::prelude::{CsvReader, SerReader};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::StatusCode;
 use rstest::*;
+use serial_test::serial;
 use sparesults::QuerySolution;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -17,11 +21,7 @@ use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
 use std::time::Duration;
-use polars::prelude::{CsvReader, SerReader};
 use tokio::time::sleep;
-use hybrid::orchestrator::execute_hybrid_query;
-use serial_test::serial;
-use crate::in_memory_timeseries::InMemoryTimeseriesDatabase;
 
 pub mod in_memory_timeseries;
 
@@ -55,12 +55,13 @@ async fn find_container(docker: &Docker, container_name: &str) -> Option<Contain
 }
 
 #[fixture]
-fn path_here() -> PathBuf {
+fn testdata_path() -> PathBuf {
     let manidir = env!("CARGO_MANIFEST_DIR");
-    let mut path_here = PathBuf::new();
-    path_here.push(manidir);
-    path_here.push("tests");
-    path_here
+    let mut testdata_path = PathBuf::new();
+    testdata_path.push(manidir);
+    testdata_path.push("tests");
+    testdata_path.push("testdata");
+    testdata_path
 }
 
 #[fixture]
@@ -126,11 +127,11 @@ async fn sparql_endpoint() {
 }
 
 #[fixture]
-async fn with_testdata(#[future] sparql_endpoint: (), mut path_here:PathBuf) {
+async fn with_testdata(#[future] sparql_endpoint: (), mut testdata_path: PathBuf) {
     let _ = sparql_endpoint.await;
-    path_here.push("testdata.sparql");
+    testdata_path.push("testdata.sparql");
     let testdata_update_string =
-        fs::read_to_string(path_here.as_path()).expect("Read testdata.sparql problem");
+        fs::read_to_string(testdata_path.as_path()).expect("Read testdata.sparql problem");
 
     let client = reqwest::Client::new();
     let put_request = client
@@ -142,20 +143,21 @@ async fn with_testdata(#[future] sparql_endpoint: (), mut path_here:PathBuf) {
 }
 
 #[fixture]
-fn time_series_database(path_here:PathBuf) -> InMemoryTimeseriesDatabase {
+fn time_series_database(testdata_path: PathBuf) -> InMemoryTimeseriesDatabase {
     let mut frames = HashMap::new();
     for t in ["ts1", "ts2"] {
-        let mut file_path = path_here.clone();
+        let mut file_path = testdata_path.clone();
         file_path.push(t.to_string() + ".csv");
 
         let file = File::open(file_path.as_path()).expect("could not open file");
         let df = CsvReader::new(file)
             .infer_schema(None)
             .has_header(true)
-            .finish().expect("DF read error");
+            .finish()
+            .expect("DF read error");
         frames.insert(t.to_string(), df);
     }
-    InMemoryTimeseriesDatabase{frames}
+    InMemoryTimeseriesDatabase { frames }
 }
 
 fn compare_terms(t1: &Term, t2: &Term) -> Ordering {
@@ -246,7 +248,11 @@ async fn test_static_query(#[future] with_testdata: ()) {
 #[rstest]
 #[tokio::test]
 #[serial]
-async fn test_simple_hybrid_query(#[future] with_testdata: (), time_series_database:InMemoryTimeseriesDatabase, path_here:PathBuf) {
+async fn test_simple_hybrid_query(
+    #[future] with_testdata: (),
+    time_series_database: InMemoryTimeseriesDatabase,
+    testdata_path: PathBuf,
+) {
     let _ = with_testdata.await;
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -262,14 +268,18 @@ async fn test_simple_hybrid_query(#[future] with_testdata: (), time_series_datab
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime && ?v < 50) .
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database)).await.expect("Hybrid error");
-    let mut file_path = path_here.clone();
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+        .await
+        .expect("Hybrid error");
+    let mut file_path = testdata_path.clone();
     file_path.push("expected_simple_hybrid.csv");
 
     let file = File::open(file_path.as_path()).expect("Read file problem");
-    let expected_df = CsvReader::new(file).infer_schema(None)
-            .has_header(true)
-            .finish().expect("DF read error");
+    let expected_df = CsvReader::new(file)
+        .infer_schema(None)
+        .has_header(true)
+        .finish()
+        .expect("DF read error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
