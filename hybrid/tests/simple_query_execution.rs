@@ -14,9 +14,12 @@ use sparesults::QuerySolution;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs;
+use std::fs::File;
 use std::path::PathBuf;
 use std::time::Duration;
+use polars::prelude::{CsvReader, SerReader};
 use tokio::time::sleep;
+use crate::in_memory_timeseries::InMemoryTimeseriesDatabase;
 
 pub mod in_memory_timeseries;
 
@@ -47,6 +50,15 @@ async fn find_container(docker: &Docker, container_name: &str) -> Option<Contain
         })
         .cloned();
     existing
+}
+
+#[fixture]
+fn path_here() -> PathBuf {
+    let manidir = env!("CARGO_MANIFEST_DIR");
+    let mut path_here = PathBuf::new();
+    path_here.push(manidir);
+    path_here.push("tests");
+    path_here
 }
 
 #[fixture]
@@ -112,12 +124,8 @@ async fn sparql_endpoint() {
 }
 
 #[fixture]
-async fn with_testdata(#[future] sparql_endpoint: ()) {
+async fn with_testdata(#[future] sparql_endpoint: (), mut path_here:PathBuf) {
     let _ = sparql_endpoint.await;
-    let manidir = env!("CARGO_MANIFEST_DIR");
-    let mut path_here = PathBuf::new();
-    path_here.push(manidir);
-    path_here.push("tests");
     path_here.push("testdata.sparql");
     let testdata_update_string =
         fs::read_to_string(path_here.as_path()).expect("Read testdata.sparql problem");
@@ -129,6 +137,23 @@ async fn with_testdata(#[future] sparql_endpoint: ()) {
         .body(testdata_update_string);
     let put_response = put_request.send().await.expect("Update error");
     assert_eq!(put_response.status(), StatusCode::from_u16(204).unwrap());
+}
+
+#[fixture]
+fn time_series_database(path_here:PathBuf) -> InMemoryTimeseriesDatabase {
+    let mut frames = HashMap::new();
+    for f in ["ts1.csv", "ts2.csv"] {
+        let mut file_path = path_here.clone();
+        file_path.push(f);
+
+        let file = File::open(file_path.as_path()).expect("could not open file");
+        let df = CsvReader::new(file)
+            .infer_schema(None)
+            .has_header(true)
+            .finish().expect("DF read error");
+        frames.insert(f.to_string(), df);
+    }
+    InMemoryTimeseriesDatabase{frames}
 }
 
 fn compare_terms(t1: &Term, t2: &Term) -> Ordering {
