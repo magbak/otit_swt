@@ -48,7 +48,7 @@ impl std::error::Error for QueryExecutionError {
 
 pub async fn execute_sparql_query(
     endpoint: &str,
-    query: Query,
+    query: &Query,
 ) -> Result<Vec<QuerySolution>, QueryExecutionError> {
     let client = reqwest::Client::new();
     let response = client

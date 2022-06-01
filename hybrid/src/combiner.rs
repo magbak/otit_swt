@@ -2,6 +2,7 @@ use crate::constants::HAS_VALUE;
 use crate::timeseries_query::TimeSeriesQuery;
 use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
+use polars::datatypes::TimeUnit;
 use polars::export::chrono::NaiveDateTime;
 use polars::frame::DataFrame;
 use polars::prelude::{
@@ -23,16 +24,17 @@ pub struct Combiner {
 
 impl Combiner {
     pub fn new() -> Combiner {
-        Combiner {counter:0}
+        Combiner { counter: 0 }
     }
 
     pub fn combine_static_and_time_series_results(
         &mut self,
         query: Query,
+        static_query: Query,
         sparql_result: Vec<QuerySolution>,
         time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
     ) -> LazyFrame {
-        let column_variables;
+        let project_variables;
         let inner_graph_pattern;
         if let Query::Select {
             dataset: _,
@@ -41,13 +43,23 @@ impl Combiner {
         } = &query
         {
             if let GraphPattern::Project { inner, variables } = pattern {
-                column_variables = variables.clone();
+                project_variables = variables.clone();
                 inner_graph_pattern = inner;
             } else {
                 panic!("Wrong!!!");
             }
         } else {
             panic!("Wrong!!!");
+        }
+        let column_variables;
+        if let Query::Select {dataset:_, pattern, base_iri:_} = static_query {
+            if let GraphPattern::Project { inner, variables } = pattern {
+                column_variables = variables.clone();
+            } else {
+                panic!("");
+            }
+        } else {
+            panic!("");
         }
 
         let mut series_vec = vec![];
@@ -72,7 +84,9 @@ impl Combiner {
             .iter()
             .map(|v| v.as_str().to_string())
             .collect();
-        let result_lf = self.lazy_graph_pattern(&mut columns, lf, inner_graph_pattern, time_series);
+        let mut result_lf = self.lazy_graph_pattern(&mut columns, lf, inner_graph_pattern, time_series);
+        let projections = project_variables.iter().map(|c|col(c.as_str())).collect::<Vec<Expr>>();
+        result_lf = result_lf.select(projections.as_slice());
         result_lf
     }
 
@@ -452,7 +466,9 @@ fn sparql_term_to_polars_literal_value(term: &Term) -> LiteralValue {
     match term {
         Term::NamedNode(named_node) => sparql_named_node_to_polars_literal_value(named_node),
         Term::Literal(lit) => sparql_literal_to_polars_literal_value(lit),
-        _ => {panic!("Not supported")}
+        _ => {
+            panic!("Not supported")
+        }
     }
 }
 
@@ -471,15 +487,27 @@ fn sparql_literal_to_polars_literal_value(lit: &Literal) -> LiteralValue {
     } else if datatype == xsd::BOOLEAN {
         let b = bool::from_str(value).expect("Boolean parsing error");
         LiteralValue::Boolean(b)
+    } else if datatype == xsd::DATE_TIME {
+        let dt = value
+            .parse::<NaiveDateTime>()
+            .expect("Datetime parsing error");
+        LiteralValue::DateTime(dt, TimeUnit::Nanoseconds)
     } else {
+        println!("{}", datatype.as_str());
         todo!("Not implemented!")
     };
     literal_value
 }
 
 fn polars_literal_values_to_series(literal_values: Vec<LiteralValue>, name: &str) -> Series {
-    let first_non_null_opt = literal_values.iter().find(|x| &&LiteralValue::Null != x).cloned();
-    let first_null_opt = literal_values.iter().find(|x| &&LiteralValue::Null == x).cloned();
+    let first_non_null_opt = literal_values
+        .iter()
+        .find(|x| &&LiteralValue::Null != x)
+        .cloned();
+    let first_null_opt = literal_values
+        .iter()
+        .find(|x| &&LiteralValue::Null == x)
+        .cloned();
     if let (Some(first_non_null), None) = (&first_non_null_opt, &first_null_opt) {
         match first_non_null {
             LiteralValue::Boolean(_) => Series::new(
@@ -589,7 +617,7 @@ fn polars_literal_values_to_series(literal_values: Vec<LiteralValue>, name: &str
             LiteralValue::Range { .. } => {
                 todo!()
             }
-            LiteralValue::DateTime(_,t) =>
+            LiteralValue::DateTime(_, t) =>
             //TODO: Assert time unit lik??
             {
                 Series::new(
@@ -726,7 +754,7 @@ fn polars_literal_values_to_series(literal_values: Vec<LiteralValue>, name: &str
             LiteralValue::Range { .. } => {
                 todo!()
             }
-            LiteralValue::DateTime(_,t) =>
+            LiteralValue::DateTime(_, t) =>
             //TODO: Assert time unit lik??
             {
                 Series::new(

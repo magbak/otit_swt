@@ -65,7 +65,7 @@ impl TimeSeriesQuery {
                 return Some((Expression::Literal(lit.clone()), ChangeType::NoChange));
             }
             Expression::Variable(v) => {
-                if (self.timeseries_variable.is_some() && self.timeseries_variable.as_ref().unwrap() == v)
+                if (self.timestamp_variable.is_some() && self.timestamp_variable.as_ref().unwrap() == v)
                     || (self.value_variable.is_some() && self.value_variable.as_ref().unwrap() == v)
                 {
                     return Some((Expression::Variable(v.clone()), ChangeType::NoChange));

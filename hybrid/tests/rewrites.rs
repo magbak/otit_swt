@@ -2,8 +2,14 @@ use hybrid::preprocessing::Preprocessor;
 use hybrid::rewriting::StaticQueryRewriter;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::timeseries_query::TimeSeriesQuery;
+use oxrdf::vocab::xsd;
+use oxrdf::{Literal, NamedNode, Term};
+use polars::prelude::Expr;
+use spargebra::algebra::Expression;
+use spargebra::algebra::Expression::{And, Greater, Less};
 use spargebra::term::Variable;
 use spargebra::Query;
+use std::os::linux::raw::stat;
 
 #[test]
 fn test_simple_query() {
@@ -285,6 +291,67 @@ fn test_bind_expression() {
 }
 
 #[test]
+fn test_fix_dropped_triple() {
+    let sparql = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX quarry:<https://github.com/magbak/quarry-rs#>
+    PREFIX types:<http://example.org/types#>
+    SELECT ?w ?s ?t ?v WHERE {
+        ?w a types:BigWidget .
+        ?w types:hasSensor ?s .
+        ?s quarry:hasTimeseries ?ts .
+        ?ts quarry:hasDataPoint ?dp .
+        ?dp quarry:hasTimestamp ?t .
+        ?dp quarry:hasValue ?v .
+        FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime && ?v < 50) .
+    }"#;
+    let parsed = parse_sparql_select_query(sparql).unwrap();
+    let mut preprocessor = Preprocessor::new();
+    let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
+    let mut rewriter = StaticQueryRewriter::new(&has_constraint);
+    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
+    let expected_str = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX quarry:<https://github.com/magbak/quarry-rs#>
+    PREFIX types:<http://example.org/types#>
+    SELECT ?w ?s ?ts_external_id_0 WHERE {
+        ?w a types:BigWidget .
+        ?w types:hasSensor ?s .
+        ?ts quarry:hasExternalId ?ts_external_id_0 .
+        ?s quarry:hasTimeseries ?ts .
+    }"#;
+    let expected_query = Query::parse(expected_str, None).unwrap();
+    assert_eq!(static_rewrite, expected_query);
+
+    let expected_time_series_queries = vec![TimeSeriesQuery {
+        identifier_variable: Some(Variable::new_unchecked("ts_external_id_0")),
+        timeseries_variable: Some(Variable::new_unchecked("ts")),
+        data_point_variable: Some(Variable::new_unchecked("dp")),
+        value_variable: Some(Variable::new_unchecked("v")),
+        timestamp_variable: Some(Variable::new_unchecked("t")),
+        ids: None,
+        grouping: None,
+        conditions: vec![And(
+            Box::new(Greater(
+                Box::new(Expression::Variable(Variable::new_unchecked("t"))),
+                Box::new(Expression::Literal(Literal::new_typed_literal(
+                    "2022-06-01T08:46:53",
+                    xsd::DATE_TIME,
+                ))),
+            )),
+            Box::new(Less(
+                Box::new(Expression::Variable(Variable::new_unchecked("v"))),
+                Box::new(Expression::Literal(Literal::new_typed_literal(
+                    "50",
+                    xsd::INTEGER,
+                ))),
+            )),
+        )],
+    }];
+    assert_eq!(time_series_queries, expected_time_series_queries);
+}
+
+#[test]
 fn test_property_path_expression() {
     let sparql = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -318,20 +385,20 @@ fn test_property_path_expression() {
     let expected_time_series_queries = vec![
         TimeSeriesQuery {
             identifier_variable: Some(Variable::new_unchecked("ts_external_id_0")),
-            timeseries_variable: Some(Variable::new_unchecked("t")),
+            timeseries_variable: Some(Variable::new_unchecked("blank_replacement_0")),
             data_point_variable: Some(Variable::new_unchecked("dp1")),
             value_variable: Some(Variable::new_unchecked("val1")),
-            timestamp_variable: None,
+            timestamp_variable: Some(Variable::new_unchecked("t")),
             ids: None,
             grouping: None,
             conditions: vec![],
         },
         TimeSeriesQuery {
             identifier_variable: Some(Variable::new_unchecked("ts_external_id_1")),
-            timeseries_variable: Some(Variable::new_unchecked("t")),
+            timeseries_variable: Some(Variable::new_unchecked("blank_replacement_1")),
             data_point_variable: Some(Variable::new_unchecked("dp2")),
             value_variable: Some(Variable::new_unchecked("val2")),
-            timestamp_variable: None,
+            timestamp_variable: Some(Variable::new_unchecked("t")),
             ids: None,
             grouping: None,
             conditions: vec![],
