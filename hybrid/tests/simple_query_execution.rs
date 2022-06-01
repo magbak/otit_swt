@@ -20,6 +20,7 @@ use std::time::Duration;
 use polars::prelude::{CsvReader, SerReader};
 use tokio::time::sleep;
 use hybrid::orchestrator::execute_hybrid_query;
+use serial_test::serial;
 use crate::in_memory_timeseries::InMemoryTimeseriesDatabase;
 
 pub mod in_memory_timeseries;
@@ -204,6 +205,7 @@ fn compare_all_solutions(mut expected: Vec<QuerySolution>, mut actual: Vec<Query
 
 #[rstest]
 #[tokio::test]
+#[serial]
 async fn test_static_query(#[future] with_testdata: ()) {
     let _ = with_testdata.await;
     let query = parse_sparql_select_query(
@@ -243,6 +245,7 @@ async fn test_static_query(#[future] with_testdata: ()) {
 
 #[rstest]
 #[tokio::test]
+#[serial]
 async fn test_simple_hybrid_query(#[future] with_testdata: (), time_series_database:InMemoryTimeseriesDatabase, path_here:PathBuf) {
     let _ = with_testdata.await;
     let query = r#"
