@@ -9,6 +9,7 @@ use hybrid::orchestrator::execute_hybrid_query;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::static_sparql::execute_sparql_query;
 use oxrdf::{NamedNode, Term, Variable};
+use polars::datatypes::DataType;
 use polars::prelude::{col, CsvReader, CsvWriter, SerReader, SerWriter, TimeUnit};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::StatusCode;
@@ -21,7 +22,6 @@ use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
 use std::time::Duration;
-use polars::datatypes::DataType;
 use tokio::time::sleep;
 
 pub mod in_memory_timeseries;
@@ -153,7 +153,8 @@ fn time_series_database(testdata_path: PathBuf) -> InMemoryTimeseriesDatabase {
         let file = File::open(file_path.as_path()).expect("could not open file");
         let mut df = CsvReader::new(file)
             .infer_schema(None)
-            .has_header(true).with_parse_dates(true)
+            .has_header(true)
+            .with_parse_dates(true)
             .finish()
             .expect("DF read error");
         frames.insert(t.to_string(), df);
@@ -278,7 +279,8 @@ async fn test_simple_hybrid_query(
     let file = File::open(file_path.as_path()).expect("Read file problem");
     let expected_df = CsvReader::new(file)
         .infer_schema(None)
-        .has_header(true).with_parse_dates(true)
+        .has_header(true)
+        .with_parse_dates(true)
         .finish()
         .expect("DF read error");
     assert_eq!(expected_df, df);
@@ -326,7 +328,8 @@ async fn test_complex_hybrid_query(
     let file = File::open(file_path.as_path()).expect("Read file problem");
     let expected_df = CsvReader::new(file)
         .infer_schema(None)
-        .has_header(true).with_parse_dates(true)
+        .has_header(true)
+        .with_parse_dates(true)
         .finish()
         .expect("DF read error");
     assert_eq!(expected_df, df);
