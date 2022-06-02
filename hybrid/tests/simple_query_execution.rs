@@ -9,7 +9,7 @@ use hybrid::orchestrator::execute_hybrid_query;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::static_sparql::execute_sparql_query;
 use oxrdf::{NamedNode, Term, Variable};
-use polars::prelude::{CsvReader, SerReader};
+use polars::prelude::{col, CsvReader, CsvWriter, SerReader, SerWriter, TimeUnit};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::StatusCode;
 use rstest::*;
@@ -21,6 +21,7 @@ use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
 use std::time::Duration;
+use polars::datatypes::DataType;
 use tokio::time::sleep;
 
 pub mod in_memory_timeseries;
@@ -150,9 +151,9 @@ fn time_series_database(testdata_path: PathBuf) -> InMemoryTimeseriesDatabase {
         file_path.push(t.to_string() + ".csv");
 
         let file = File::open(file_path.as_path()).expect("could not open file");
-        let df = CsvReader::new(file)
+        let mut df = CsvReader::new(file)
             .infer_schema(None)
-            .has_header(true)
+            .has_header(true).with_parse_dates(true)
             .finish()
             .expect("DF read error");
         frames.insert(t.to_string(), df);
@@ -265,10 +266,10 @@ async fn test_simple_hybrid_query(
         ?ts quarry:hasDataPoint ?dp .
         ?dp quarry:hasTimestamp ?t .
         ?dp quarry:hasValue ?v .
-        FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime && ?v < 50) .
+        FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime && ?v < 200) .
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -277,12 +278,60 @@ async fn test_simple_hybrid_query(
     let file = File::open(file_path.as_path()).expect("Read file problem");
     let expected_df = CsvReader::new(file)
         .infer_schema(None)
-        .has_header(true)
+        .has_header(true).with_parse_dates(true)
         .finish()
         .expect("DF read error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
     // writer.finish(&mut df).expect("writeok");
-    //println!("{}", df);
+    // println!("{}", df);
+}
+
+#[rstest]
+#[tokio::test]
+#[serial]
+async fn test_complex_hybrid_query(
+    #[future] with_testdata: (),
+    time_series_database: InMemoryTimeseriesDatabase,
+    testdata_path: PathBuf,
+) {
+    let _ = with_testdata.await;
+    let query = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX quarry:<https://github.com/magbak/quarry-rs#>
+    PREFIX types:<http://example.org/types#>
+    SELECT ?w1 ?w2 ?t ?v1 ?v2 WHERE {
+        ?w1 a types:BigWidget .
+        ?w2 a types:SmallWidget .
+        ?w1 types:hasSensor ?s1 .
+        ?w2 types:hasSensor ?s2 .
+        ?s1 quarry:hasTimeseries ?ts1 .
+        ?s2 quarry:hasTimeseries ?ts2 .
+        ?ts1 quarry:hasDataPoint ?dp1 .
+        ?ts2 quarry:hasDataPoint ?dp2 .
+        ?dp1 quarry:hasTimestamp ?t .
+        ?dp2 quarry:hasTimestamp ?t .
+        ?dp1 quarry:hasValue ?v1 .
+        ?dp2 quarry:hasValue ?v2 .
+        FILTER(?t > "2022-06-01T08:46:55"^^xsd:dateTime && ?v1 < ?v2) .
+    }
+    "#;
+    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+        .await
+        .expect("Hybrid error");
+    let mut file_path = testdata_path.clone();
+    file_path.push("expected_complex_hybrid.csv");
+
+    let file = File::open(file_path.as_path()).expect("Read file problem");
+    let expected_df = CsvReader::new(file)
+        .infer_schema(None)
+        .has_header(true).with_parse_dates(true)
+        .finish()
+        .expect("DF read error");
+    assert_eq!(expected_df, df);
+    // let file = File::create(file_path.as_path()).expect("could not open file");
+    // let writer = CsvWriter::new(file);
+    // writer.finish(&mut df).expect("writeok");
+    // println!("{}", df);
 }

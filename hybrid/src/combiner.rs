@@ -52,7 +52,12 @@ impl Combiner {
             panic!("Wrong!!!");
         }
         let column_variables;
-        if let Query::Select {dataset:_, pattern, base_iri:_} = static_query {
+        if let Query::Select {
+            dataset: _,
+            pattern,
+            base_iri: _,
+        } = static_query
+        {
             if let GraphPattern::Project { inner, variables } = pattern {
                 column_variables = variables.clone();
             } else {
@@ -84,8 +89,12 @@ impl Combiner {
             .iter()
             .map(|v| v.as_str().to_string())
             .collect();
-        let mut result_lf = self.lazy_graph_pattern(&mut columns, lf, inner_graph_pattern, time_series);
-        let projections = project_variables.iter().map(|c|col(c.as_str())).collect::<Vec<Expr>>();
+        let mut result_lf =
+            self.lazy_graph_pattern(&mut columns, lf, inner_graph_pattern, time_series);
+        let projections = project_variables
+            .iter()
+            .map(|c| col(c.as_str()))
+            .collect::<Vec<Expr>>();
         result_lf = result_lf.select(projections.as_slice());
         result_lf
     }
@@ -258,12 +267,21 @@ impl Combiner {
 
         if let (Some(i), Some(obj_var)) = (found_index, found_obj_var) {
             let (tsq, tsr) = time_series.remove(i);
+            let mut join_on = vec![col(tsq.identifier_variable.as_ref().unwrap().as_str())];
+            if let Some(tsv) = &tsq.timestamp_variable {
+                if columns.contains(tsv.as_str()) {
+                    join_on.push(col(tsv.as_str()));
+                } else {
+                    columns.insert(tsv.as_str().to_string());
+                }
+            }
             let mut output_lf = input_lf.join(
                 tsr.clone().lazy(),
-                [col(tsq.identifier_variable.as_ref().unwrap().as_str())],
-                [col(tsq.identifier_variable.as_ref().unwrap().as_str())],
+                join_on.as_slice(),
+                join_on.as_slice(),
                 JoinType::Inner,
             );
+
             output_lf =
                 output_lf.drop_columns([tsq.identifier_variable.as_ref().unwrap().as_str()]);
             columns.remove(tsq.identifier_variable.as_ref().unwrap().as_str());
@@ -620,6 +638,7 @@ fn polars_literal_values_to_series(literal_values: Vec<LiteralValue>, name: &str
             LiteralValue::DateTime(_, t) =>
             //TODO: Assert time unit lik??
             {
+                let s =
                 Series::new(
                     name,
                     literal_values
@@ -633,7 +652,9 @@ fn polars_literal_values_to_series(literal_values: Vec<LiteralValue>, name: &str
                             }
                         })
                         .collect::<Vec<NaiveDateTime>>(),
-                )
+                );
+                println!("series: {}", s);
+                s
             }
             LiteralValue::Duration(_, _) => {
                 todo!()

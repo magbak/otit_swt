@@ -44,6 +44,7 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
                 panic!("Missing frame");
             }
         }
-        Ok(concat(lfs, false)?.collect()?)
+        let collected = concat(lfs, false)?.collect()?;
+        Ok(collected)
     }
 }
