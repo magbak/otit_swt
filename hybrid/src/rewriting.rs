@@ -661,7 +661,8 @@ impl StaticQueryRewriter {
             required_change_direction,
             external_ids_in_scope,
         );
-        let functions_of_timestamps = self.find_functions_of_timestamps(graph_pattern);
+        //let functions_of_timestamps = self.find_functions_of_timestamps(graph_pattern);
+        let functions_of_timestamps = vec![];
         self.pushdown_aggregates(variables, aggregates, functions_of_timestamps);
         if let Some((graph_pattern_rewrite, graph_pattern_change)) = graph_pattern_rewrite_opt {
             let aggregates_rewrite = aggregates.iter().map(|(v, a)| {
