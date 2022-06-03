@@ -364,7 +364,7 @@ async fn test_group_by_hybrid_query(
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
-    file_path.push("expected_simple_hybrid.csv");
+    file_path.push("expected_group_by_hybrid.csv");
 
     let file = File::open(file_path.as_path()).expect("Read file problem");
     let expected_df = CsvReader::new(file)
