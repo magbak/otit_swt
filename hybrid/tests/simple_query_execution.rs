@@ -9,7 +9,6 @@ use hybrid::orchestrator::execute_hybrid_query;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::static_sparql::execute_sparql_query;
 use oxrdf::{NamedNode, Term, Variable};
-use polars::datatypes::DataType;
 use polars::prelude::{col, CsvReader, CsvWriter, SerReader, SerWriter, TimeUnit};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::StatusCode;

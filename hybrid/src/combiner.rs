@@ -1,7 +1,7 @@
 use crate::constants::HAS_VALUE;
 use crate::timeseries_query::TimeSeriesQuery;
 use oxrdf::vocab::xsd;
-use oxrdf::NamedNode;
+use oxrdf::{NamedNode, Variable};
 use polars::datatypes::TimeUnit;
 use polars::export::chrono::NaiveDateTime;
 use polars::frame::DataFrame;
@@ -11,12 +11,13 @@ use polars::prelude::{
 };
 use polars::series::Series;
 use sparesults::QuerySolution;
-use spargebra::algebra::{Expression, GraphPattern, OrderExpression};
+use spargebra::algebra::{AggregateExpression, Expression, GraphPattern, OrderExpression};
 use spargebra::term::{Literal, NamedNodePattern, Term, TermPattern, TriplePattern};
 use spargebra::Query;
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
+use crate::rewriting::hash_graph_pattern;
 
 pub struct Combiner {
     counter: u16,
@@ -232,12 +233,55 @@ impl Combiner {
                 variables,
                 aggregates,
             } => {
-                todo!()
+                let graph_pattern_hash = hash_graph_pattern(graph_pattern);
+                let mut found_index = None;
+                for i in 0..time_series.len() {
+                    let (tsq, _) = time_series.get(i).as_ref().unwrap();
+                    if let Some(grouping) = &tsq.grouping {
+                        if graph_pattern_hash == grouping.graph_pattern_hash {
+                            found_index = Some(i);
+                        }
+                    }
+                }
+                if let Some(index) = found_index {
+                    let (tsq, df) = time_series.remove(index);
+                    Combiner::join_tsq(columns, input_lf, tsq, df)
+                } else {
+                    self.lazy_group_without_pushdown(columns, input_lf, inner, variables, aggregates, time_series)
+                }
             }
             GraphPattern::Service { .. } => {
                 todo!()
             }
         }
+    }
+
+    fn lazy_group_without_pushdown(&self, columns: &mut HashSet<String>, input_lf: LazyFrame, inner: &Box<GraphPattern>, variables: &Vec<Variable>, aggregates: &Vec<(Variable, AggregateExpression)>, time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>) -> LazyFrame {
+        todo!()
+    }
+
+    fn join_tsq(columns: &mut HashSet<String>, input_lf:LazyFrame, tsq:TimeSeriesQuery, df:DataFrame) -> LazyFrame {
+        let mut join_on = vec![];
+        for c in df.get_column_names() {
+            if columns.contains(c) {
+                join_on.push(col(c));
+            } else {
+                columns.insert(c.to_string());
+            }
+        }
+        assert!(columns.contains(tsq.identifier_variable.as_ref().unwrap().as_str()));
+
+            let mut output_lf = input_lf.join(
+                df.lazy(),
+                join_on.as_slice(),
+                join_on.as_slice(),
+                JoinType::Inner,
+            );
+
+            output_lf =
+                output_lf.drop_columns([tsq.identifier_variable.as_ref().unwrap().as_str()]);
+            columns.remove(tsq.identifier_variable.as_ref().unwrap().as_str());
+            output_lf
     }
 
     fn lazy_triple_pattern(
@@ -247,7 +291,6 @@ impl Combiner {
         time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
     ) -> LazyFrame {
         let mut found_index = None;
-        let mut found_obj_var = None;
         if let NamedNodePattern::NamedNode(pn) = &triple_pattern.predicate {
             if pn.as_str() == HAS_VALUE {
                 if let TermPattern::Variable(obj_var) = &triple_pattern.object {
@@ -256,7 +299,6 @@ impl Combiner {
                             let (tsq, _) = time_series.get(i).unwrap();
                             if tsq.value_variable.as_ref() == Some(obj_var) {
                                 found_index = Some(i);
-                                found_obj_var = Some(obj_var);
                                 break;
                             }
                         }
@@ -265,28 +307,9 @@ impl Combiner {
             }
         }
 
-        if let (Some(i), Some(obj_var)) = (found_index, found_obj_var) {
-            let (tsq, tsr) = time_series.remove(i);
-            let mut join_on = vec![col(tsq.identifier_variable.as_ref().unwrap().as_str())];
-            if let Some(tsv) = &tsq.timestamp_variable {
-                if columns.contains(tsv.as_str()) {
-                    join_on.push(col(tsv.as_str()));
-                } else {
-                    columns.insert(tsv.as_str().to_string());
-                }
-            }
-            let mut output_lf = input_lf.join(
-                tsr.clone().lazy(),
-                join_on.as_slice(),
-                join_on.as_slice(),
-                JoinType::Inner,
-            );
-
-            output_lf =
-                output_lf.drop_columns([tsq.identifier_variable.as_ref().unwrap().as_str()]);
-            columns.remove(tsq.identifier_variable.as_ref().unwrap().as_str());
-            columns.insert(obj_var.as_str().to_string());
-            return output_lf;
+        if let Some(i) = found_index {
+            let (tsq, df) = time_series.remove(i);
+            return Combiner::join_tsq(columns, input_lf, tsq, df);
         }
         input_lf
     }

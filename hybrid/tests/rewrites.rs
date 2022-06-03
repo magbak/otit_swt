@@ -3,13 +3,11 @@ use hybrid::rewriting::StaticQueryRewriter;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::timeseries_query::TimeSeriesQuery;
 use oxrdf::vocab::xsd;
-use oxrdf::{Literal, NamedNode, Term};
-use polars::prelude::Expr;
+use oxrdf::{Literal};
 use spargebra::algebra::Expression;
 use spargebra::algebra::Expression::{And, Greater, Less};
 use spargebra::term::Variable;
 use spargebra::Query;
-use std::os::linux::raw::stat;
 
 #[test]
 fn test_simple_query() {

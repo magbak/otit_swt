@@ -10,7 +10,9 @@ use spargebra::term::{
     GroundTerm, NamedNode, NamedNodePattern, TermPattern, TriplePattern, Variable,
 };
 use spargebra::Query;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 
 #[derive(Debug)]
 pub struct StaticQueryRewriter {
@@ -169,6 +171,7 @@ impl StaticQueryRewriter {
                 variables,
                 aggregates,
             } => self.rewrite_group(
+                graph_pattern,
                 inner,
                 variables,
                 aggregates,
@@ -649,10 +652,10 @@ impl StaticQueryRewriter {
 
     fn rewrite_group(
         &mut self,
+        group_graph_pattern: &GraphPattern,
         graph_pattern: &GraphPattern,
         variables: &Vec<Variable>,
         aggregates: &Vec<(Variable, AggregateExpression)>,
-
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
@@ -661,9 +664,7 @@ impl StaticQueryRewriter {
             required_change_direction,
             external_ids_in_scope,
         );
-        //let functions_of_timestamps = self.find_functions_of_timestamps(graph_pattern);
-        let functions_of_timestamps = vec![];
-        self.pushdown_aggregates(variables, aggregates, functions_of_timestamps);
+        self.pushdown_aggregates(variables, aggregates, group_graph_pattern);
         if let Some((graph_pattern_rewrite, graph_pattern_change)) = graph_pattern_rewrite_opt {
             let aggregates_rewrite = aggregates.iter().map(|(v, a)| {
                 (
@@ -2032,12 +2033,11 @@ impl StaticQueryRewriter {
         &mut self,
         variables: &Vec<Variable>,
         aggregates: &Vec<(Variable, AggregateExpression)>,
-        functions_of_timestamps: Vec<(Variable, GraphPattern)>,
+        group_graph_pattern: &GraphPattern,
     ) {
         for q in &mut self.time_series_queries {
-            q.try_pushdown_aggregates(variables, aggregates);
+            q.try_pushdown_aggregates(variables, aggregates, group_graph_pattern);
         }
-        todo!()
     }
     fn create_time_series_query(
         &mut self,
@@ -2072,4 +2072,10 @@ fn merge_external_variables_in_scope(
             trg.insert(k, v);
         }
     }
+}
+
+pub(crate) fn hash_graph_pattern(graph_pattern: &GraphPattern) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    graph_pattern.hash(&mut hasher);
+    hasher.finish()
 }
