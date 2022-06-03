@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::error::Error;
+use oxrdf::Variable;
 use polars::frame::DataFrame;
-use polars::prelude::{concat, Expr, IntoLazy, lit, LiteralValue, Operator};
-use hybrid::combiner::Combiner;
+use polars::prelude::{col, concat, Expr, IntoLazy, LazyFrame, LazyGroupBy, lit, LiteralValue, Operator};
+use spargebra::algebra::AggregateExpression;
+use hybrid::combiner::{Combiner, sparql_aggregate_expression_as_agg_expr};
 use hybrid::timeseries_database::TimeSeriesQueryable;
 use hybrid::timeseries_query::TimeSeriesQuery;
 
@@ -39,12 +41,25 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
                     });
                     lf = lf.filter(expr);
                 }
+
+
                 lfs.push(lf);
             } else {
                 panic!("Missing frame");
             }
         }
-        let collected = concat(lfs, false)?.collect()?;
+        let mut out_lf = concat(lfs, false)?;
+        if let Some(grouping) = &tsq.grouping {
+            let grouped_lf = out_lf.groupby(&[col(tsq.identifier_variable.as_ref().unwrap().as_str())]);
+            let mut aggregation_exprs = vec![];
+            for (v,agg) in &grouping.aggregations {
+                let (agg_expr,_) = sparql_aggregate_expression_as_agg_expr(v,agg, todo!());
+                aggregation_exprs.push(agg_expr);
+            }
+            out_lf = grouped_lf.agg(aggregation_exprs.as_slice());
+        }
+
+        let collected = out_lf.collect()?;
         Ok(collected)
     }
 }

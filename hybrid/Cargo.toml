@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-polars = {version="0.21.1", features=["lazy"] }
+polars = {version="0.21.1", features=["lazy", "concat_str", "random", "unique_counts", "list"] }
 arrow-flight="9.1.0"
 tokio = {version="1.18.2", features=["rt-multi-thread"]}
 log="0.4.14"
@@ -18,6 +18,6 @@ reqwest= {version="0.11.10", features=["stream"]}
 [dev-dependencies]
 bollard = "0.12.0"
 rstest = "0.13.0"
-polars = {version="0.21.1", features=["lazy", "csv-file"]}
+polars = {version="0.21.1", features=["lazy", "csv-file", "random", "unique_counts", "list"]}
 tokio = {version="1.18.2", features=["rt-multi-thread"]}
 serial_test = "0.6.0"

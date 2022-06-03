@@ -1,14 +1,12 @@
 use crate::constants::HAS_VALUE;
+use crate::rewriting::hash_graph_pattern;
 use crate::timeseries_query::TimeSeriesQuery;
 use oxrdf::vocab::xsd;
 use oxrdf::{NamedNode, Variable};
 use polars::datatypes::TimeUnit;
 use polars::export::chrono::NaiveDateTime;
 use polars::frame::DataFrame;
-use polars::prelude::{
-    col, concat, Expr, IntoLazy, JoinType, LazyFrame, LiteralValue, NamedFrom, Operator,
-    UniqueKeepStrategy,
-};
+use polars::prelude::{AggExpr, col, concat, Expr, IntoLazy, JoinType, LazyFrame, LazyGroupBy, LiteralValue, NamedFrom, Operator, UniqueKeepStrategy};
 use polars::series::Series;
 use sparesults::QuerySolution;
 use spargebra::algebra::{AggregateExpression, Expression, GraphPattern, OrderExpression};
@@ -17,7 +15,8 @@ use spargebra::Query;
 use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
-use crate::rewriting::hash_graph_pattern;
+use polars::functions::concat_str;
+use polars::prelude::Expr::Agg;
 
 pub struct Combiner {
     counter: u16,
@@ -183,7 +182,11 @@ impl Combiner {
                 variable,
                 expression,
             } => {
-                todo!()
+                let mut inner_lf = self.lazy_graph_pattern(columns, input_lf, inner, time_series);
+                let lazy_expr = Combiner::lazy_expression(expression);
+                inner_lf = inner_lf.with_column(lazy_expr.alias(variable.as_str()));
+                columns.insert(variable.as_str().to_string());
+                inner_lf
             }
             GraphPattern::Minus { left, right } => {
                 let minus_column = "minus_column".to_string() + &self.counter.to_string();
@@ -247,7 +250,14 @@ impl Combiner {
                     let (tsq, df) = time_series.remove(index);
                     Combiner::join_tsq(columns, input_lf, tsq, df)
                 } else {
-                    self.lazy_group_without_pushdown(columns, input_lf, inner, variables, aggregates, time_series)
+                    self.lazy_group_without_pushdown(
+                        columns,
+                        input_lf,
+                        inner,
+                        variables,
+                        aggregates,
+                        time_series,
+                    )
                 }
             }
             GraphPattern::Service { .. } => {
@@ -256,11 +266,54 @@ impl Combiner {
         }
     }
 
-    fn lazy_group_without_pushdown(&self, columns: &mut HashSet<String>, input_lf: LazyFrame, inner: &Box<GraphPattern>, variables: &Vec<Variable>, aggregates: &Vec<(Variable, AggregateExpression)>, time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>) -> LazyFrame {
-        todo!()
+    fn lazy_group_without_pushdown(
+        &mut self,
+        columns: &mut HashSet<String>,
+        input_lf: LazyFrame,
+        inner: &Box<GraphPattern>,
+        variables: &Vec<Variable>,
+        aggregates: &Vec<(Variable, AggregateExpression)>,
+        time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
+    ) -> LazyFrame {
+        let lazy_inner = self.lazy_graph_pattern(columns,input_lf, inner, time_series);
+        let by:Vec<Expr> = variables.iter().map(|v|col(v.as_str())).collect();
+        let lazy_group_by = lazy_inner.groupby(by.as_slice());
+        let mut column_variables = vec![];
+        'outer: for v in columns.iter() {
+            for (tsq, _) in time_series.iter() {
+                if tsq.identifier_variable.as_ref().unwrap().as_str() == v {
+                    continue 'outer;
+                }
+            }
+            column_variables.push(v.clone());
+        }
+
+        let mut grouped_concats = vec![];
+        let mut aggregate_expressions = vec![];
+        for (v, a) in aggregates {
+            let (agg, is_grouped_concat) = sparql_aggregate_expression_as_agg_expr(v,a, &column_variables);
+            aggregate_expressions.push(agg);
+            if is_grouped_concat {
+                grouped_concats.push(v);
+            }
+        }
+        let aggregated_lf = lazy_group_by.agg(aggregate_expressions.as_slice());
+        columns.clear();
+        for v in variables {
+            columns.insert(v.as_str().to_string());
+        }
+        for (v,_) in aggregates {
+            columns.insert(v.as_str().to_string());
+        }
+        aggregated_lf
     }
 
-    fn join_tsq(columns: &mut HashSet<String>, input_lf:LazyFrame, tsq:TimeSeriesQuery, df:DataFrame) -> LazyFrame {
+    fn join_tsq(
+        columns: &mut HashSet<String>,
+        input_lf: LazyFrame,
+        tsq: TimeSeriesQuery,
+        df: DataFrame,
+    ) -> LazyFrame {
         let mut join_on = vec![];
         for c in df.get_column_names() {
             if columns.contains(c) {
@@ -271,17 +324,16 @@ impl Combiner {
         }
         assert!(columns.contains(tsq.identifier_variable.as_ref().unwrap().as_str()));
 
-            let mut output_lf = input_lf.join(
-                df.lazy(),
-                join_on.as_slice(),
-                join_on.as_slice(),
-                JoinType::Inner,
-            );
+        let mut output_lf = input_lf.join(
+            df.lazy(),
+            join_on.as_slice(),
+            join_on.as_slice(),
+            JoinType::Inner,
+        );
 
-            output_lf =
-                output_lf.drop_columns([tsq.identifier_variable.as_ref().unwrap().as_str()]);
-            columns.remove(tsq.identifier_variable.as_ref().unwrap().as_str());
-            output_lf
+        output_lf = output_lf.drop_columns([tsq.identifier_variable.as_ref().unwrap().as_str()]);
+        columns.remove(tsq.identifier_variable.as_ref().unwrap().as_str());
+        output_lf
     }
 
     fn lazy_triple_pattern(
@@ -660,25 +712,24 @@ fn polars_literal_values_to_series(literal_values: Vec<LiteralValue>, name: &str
             }
             LiteralValue::DateTime(_, t) =>
             //TODO: Assert time unit lik??
-            {
-                let s =
-                Series::new(
-                    name,
-                    literal_values
-                        .into_iter()
-                        .map(|x| {
-                            if let LiteralValue::DateTime(n, t_prime) = x {
-                                assert_eq!(t, &t_prime);
-                                n
-                            } else {
-                                panic!("Not possible")
-                            }
-                        })
-                        .collect::<Vec<NaiveDateTime>>(),
-                );
-                println!("series: {}", s);
-                s
-            }
+                {
+                    let s = Series::new(
+                        name,
+                        literal_values
+                            .into_iter()
+                            .map(|x| {
+                                if let LiteralValue::DateTime(n, t_prime) = x {
+                                    assert_eq!(t, &t_prime);
+                                    n
+                                } else {
+                                    panic!("Not possible")
+                                }
+                            })
+                            .collect::<Vec<NaiveDateTime>>(),
+                    );
+                    println!("series: {}", s);
+                    s
+                }
             LiteralValue::Duration(_, _) => {
                 todo!()
             }
@@ -800,22 +851,22 @@ fn polars_literal_values_to_series(literal_values: Vec<LiteralValue>, name: &str
             }
             LiteralValue::DateTime(_, t) =>
             //TODO: Assert time unit lik??
-            {
-                Series::new(
-                    name,
-                    literal_values
-                        .into_iter()
-                        .map(|x| {
-                            if let LiteralValue::DateTime(n, t_prime) = x {
-                                assert_eq!(t, &t_prime);
-                                Some(n)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<Option<NaiveDateTime>>>(),
-                )
-            }
+                {
+                    Series::new(
+                        name,
+                        literal_values
+                            .into_iter()
+                            .map(|x| {
+                                if let LiteralValue::DateTime(n, t_prime) = x {
+                                    assert_eq!(t, &t_prime);
+                                    Some(n)
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<Option<NaiveDateTime>>>(),
+                    )
+                }
             LiteralValue::Duration(_, _) => {
                 todo!()
             }
@@ -835,4 +886,69 @@ fn polars_literal_values_to_series(literal_values: Vec<LiteralValue>, name: &str
                 .collect::<Vec<Option<bool>>>(),
         )
     }
+}
+
+pub fn sparql_aggregate_expression_as_agg_expr(
+        variable: &Variable,
+        aggregate_expression: &AggregateExpression,
+        all_proper_column_names: &Vec<String>,
+    ) -> (Expr,bool) {
+        let new_col;
+        let mut is_group_concat = false;
+        match aggregate_expression {
+            AggregateExpression::Count { expr, distinct } => {
+                if let Some(some_expr) = expr {
+                    let lazy_expr = Combiner::lazy_expression(some_expr);
+                    if *distinct {
+                        new_col = lazy_expr.n_unique();
+                    } else {
+                        new_col = lazy_expr.count();
+                    }
+                } else {
+                    let columns_expr = Expr::Columns(all_proper_column_names.clone()
+                    );
+                    if *distinct {
+                        new_col = columns_expr.n_unique();
+                    } else {
+                        new_col = columns_expr.unique();
+                    }
+                }
+            }
+            AggregateExpression::Sum { expr, distinct } => {
+                let lazy_expr = Combiner::lazy_expression(expr);
+                if *distinct {
+                    new_col = lazy_expr.unique().sum();
+                } else {
+                    new_col = lazy_expr.sum();
+                }
+            }
+            AggregateExpression::Avg { expr, distinct } => {
+                let lazy_expr = Combiner::lazy_expression(expr);
+                if *distinct {
+                    new_col = lazy_expr.unique().mean();
+                } else {
+                    new_col = lazy_expr.mean();
+                }
+            }
+            AggregateExpression::Min { expr, distinct: _ } => {
+                let lazy_expr = Combiner::lazy_expression(expr);
+                    new_col = lazy_expr.min();
+            }
+            AggregateExpression::Max { expr, distinct: _ } => {
+                let lazy_expr = Combiner::lazy_expression(expr);
+                    new_col = lazy_expr.max();
+            }
+            AggregateExpression::GroupConcat { expr, distinct, separator } => {
+                let lazy_expr = Combiner::lazy_expression(expr);
+                let use_sep = if let Some(sep) = separator { sep.to_string() } else { "".to_string()};
+                    new_col = lazy_expr.list();
+                is_group_concat = true;
+            }
+            AggregateExpression::Sample { expr, distinct } => {
+                let lazy_expr = Combiner::lazy_expression(expr);
+                new_col = lazy_expr.first();
+            }
+            AggregateExpression::Custom { .. } => new_col = todo!(),
+        }
+        (new_col.alias(variable.as_str()), is_group_concat)
 }

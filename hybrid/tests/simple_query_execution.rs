@@ -341,7 +341,6 @@ async fn test_complex_hybrid_query(
 #[rstest]
 #[tokio::test]
 #[serial]
-#[ignore]
 async fn test_group_by_hybrid_query(
     #[future] with_testdata: (),
     time_series_database: InMemoryTimeseriesDatabase,

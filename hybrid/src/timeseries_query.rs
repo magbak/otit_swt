@@ -7,8 +7,8 @@ use crate::rewriting::hash_graph_pattern;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Grouping {
     pub graph_pattern_hash: u64,
-    interval: Option<Duration>,
-    aggregations: Vec<(Variable, AggregateExpression)>,
+    pub interval: Option<Duration>,
+    pub aggregations: Vec<(Variable, AggregateExpression)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
