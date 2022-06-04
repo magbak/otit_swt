@@ -341,7 +341,7 @@ async fn test_complex_hybrid_query(
 #[rstest]
 #[tokio::test]
 #[serial]
-async fn test_group_by_hybrid_query(
+async fn test_pushdown_group_by_hybrid_query(
     #[future] with_testdata: (),
     time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
@@ -364,7 +364,7 @@ async fn test_group_by_hybrid_query(
         .await
         .expect("Hybrid error").sort(&["w"], vec![false]).expect("Sort error");
     let mut file_path = testdata_path.clone();
-    file_path.push("expected_group_by_hybrid.csv");
+    file_path.push("expected_pushdown_group_by_hybrid.csv");
 
     let file = File::open(file_path.as_path()).expect("Read file problem");
     let expected_df = CsvReader::new(file)
