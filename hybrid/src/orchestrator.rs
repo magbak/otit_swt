@@ -10,6 +10,8 @@ use oxrdf::Term;
 use polars::frame::DataFrame;
 use sparesults::QuerySolution;
 use std::error::Error;
+use crate::groupby_pushdown::find_all_groupby_pushdowns;
+use crate::sparql_result_to_polars::create_static_query_result_df;
 
 pub async fn execute_hybrid_query(
     query: &str,
@@ -24,9 +26,11 @@ pub async fn execute_hybrid_query(
         rewriter.rewrite_query(preprocessed_query).unwrap();
     let static_query_solutions = execute_sparql_query(endpoint, &static_rewrite).await?;
     complete_time_series_queries(&static_query_solutions, &mut time_series_queries);
+    let static_result_df = create_static_query_result_df(&static_rewrite, static_query_solutions);
+    find_all_groupby_pushdowns(&parsed_query,&static_result_df, &time_series_queries, &has_constraint);
     let mut time_series = execute_time_series_queries(time_series_database, time_series_queries)?;
     let mut combiner = Combiner::new();
-    let lazy_frame = combiner.combine_static_and_time_series_results(parsed_query, static_rewrite,static_query_solutions, &mut time_series);
+    let lazy_frame = combiner.combine_static_and_time_series_results(parsed_query, static_result_df, &mut time_series);
     Ok(lazy_frame.collect()?)
 }
 
@@ -65,3 +69,5 @@ fn execute_time_series_queries(
     }
     Ok(out)
 }
+
+

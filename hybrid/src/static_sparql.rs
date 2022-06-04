@@ -43,7 +43,6 @@ impl Display for QueryExecutionError {
 }
 
 impl std::error::Error for QueryExecutionError {
-
 }
 
 pub async fn execute_sparql_query(

@@ -70,7 +70,6 @@ impl StaticQueryRewriter {
     fn rewrite_graph_pattern(
         &mut self,
         graph_pattern: &GraphPattern,
-
         required_change_direction: &ChangeType,
         external_ids_in_scope: &mut HashMap<Variable, Vec<Variable>>,
     ) -> Option<(GraphPattern, ChangeType)> {
@@ -171,7 +170,6 @@ impl StaticQueryRewriter {
                 variables,
                 aggregates,
             } => self.rewrite_group(
-                graph_pattern,
                 inner,
                 variables,
                 aggregates,
@@ -652,7 +650,6 @@ impl StaticQueryRewriter {
 
     fn rewrite_group(
         &mut self,
-        group_graph_pattern: &GraphPattern,
         graph_pattern: &GraphPattern,
         variables: &Vec<Variable>,
         aggregates: &Vec<(Variable, AggregateExpression)>,
@@ -664,35 +661,36 @@ impl StaticQueryRewriter {
             required_change_direction,
             external_ids_in_scope,
         );
-        self.pushdown_aggregates(variables, aggregates, group_graph_pattern);
-        if let Some((graph_pattern_rewrite, graph_pattern_change)) = graph_pattern_rewrite_opt {
+        if let Some((graph_pattern_rewrite, ChangeType::NoChange)) = graph_pattern_rewrite_opt {
             let aggregates_rewrite = aggregates.iter().map(|(v, a)| {
                 (
                     self.rewrite_variable(v),
                     self.rewrite_aggregate_expression(a, external_ids_in_scope),
                 )
             });
-            let aggregates_rewrite = aggregates_rewrite
+            let aggregates_rewritten:Vec<(Variable, AggregateExpression)> = aggregates_rewrite
                 .into_iter()
                 .filter(|(x, y)| x.is_some() && y.is_some())
                 .map(|(x, y)| (x.unwrap(), y.unwrap()))
-                .collect::<Vec<(Variable, AggregateExpression)>>();
-            //TODO! Check if we need to handle variables_rewritten len=0
-            let variables_rewritten = variables
+                .collect();
+            let variables_rewritten:Vec<Variable> = variables
                 .iter()
                 .map(|v| self.rewrite_variable(v))
-                .filter(|x| x.is_some());
-            if aggregates_rewrite.len() > 0 {
+                .filter(|x| x.is_some())
+                .map(|x| x.unwrap()).collect();
+
+            if variables_rewritten.len() == variables.len() && aggregates_rewritten.len() == aggregates.len() {
                 return Some((
                     GraphPattern::Group {
                         inner: Box::new(graph_pattern_rewrite),
-                        variables: variables_rewritten.map(|x| x.unwrap()).collect(),
+                        variables: variables_rewritten,
                         aggregates: vec![],
                     },
-                    graph_pattern_change,
+                    ChangeType::NoChange,
                 ));
             } else {
-                return Some((graph_pattern_rewrite, graph_pattern_change));
+                //Todo: fix variable collisions here..
+                return Some((graph_pattern_rewrite, ChangeType::NoChange));
             }
         }
         None
@@ -2029,16 +2027,7 @@ impl StaticQueryRewriter {
             }
         }
     }
-    fn pushdown_aggregates(
-        &mut self,
-        variables: &Vec<Variable>,
-        aggregates: &Vec<(Variable, AggregateExpression)>,
-        group_graph_pattern: &GraphPattern,
-    ) {
-        for q in &mut self.time_series_queries {
-            q.try_pushdown_aggregates(variables, aggregates, group_graph_pattern);
-        }
-    }
+
     fn create_time_series_query(
         &mut self,
         time_series_variable: &Variable,

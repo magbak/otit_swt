@@ -9,3 +9,5 @@ pub mod timeseries_database;
 pub mod combiner;
 pub mod static_sparql;
 pub mod orchestrator;
+mod groupby_pushdown;
+mod sparql_result_to_polars;
