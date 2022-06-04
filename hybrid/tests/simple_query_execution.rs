@@ -362,7 +362,7 @@ async fn test_group_by_hybrid_query(
     "#;
     let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
-        .expect("Hybrid error");
+        .expect("Hybrid error").sort(&["w"], vec![false]).expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_group_by_hybrid.csv");
 
@@ -372,7 +372,7 @@ async fn test_group_by_hybrid_query(
         .has_header(true)
         .with_parse_dates(true)
         .finish()
-        .expect("DF read error");
+        .expect("DF read error").sort(&["w"], vec![false]).expect("Sort error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
