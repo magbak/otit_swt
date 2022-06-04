@@ -52,8 +52,10 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
         if let Some(grouping) = &tsq.grouping {
             let grouped_lf = out_lf.groupby(&[col(tsq.identifier_variable.as_ref().unwrap().as_str())]);
             let mut aggregation_exprs = vec![];
+            let timestamp_name = if let Some(ts_var) = &tsq.timestamp_variable {ts_var.as_str().to_string()} else {"timestamp".to_string()};
+            let timestamp_names = vec![timestamp_name];
             for (v,agg) in &grouping.aggregations {
-                let (agg_expr,_) = sparql_aggregate_expression_as_agg_expr(v,agg, todo!());
+                let (agg_expr,_) = sparql_aggregate_expression_as_agg_expr(v,agg, &timestamp_names);
                 aggregation_exprs.push(agg_expr);
             }
             out_lf = grouped_lf.agg(aggregation_exprs.as_slice());

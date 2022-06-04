@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 pub(crate) fn find_all_groupby_pushdowns(
     static_query: &Query,
     static_query_df: &DataFrame,
-    time_series_queries: &Vec<TimeSeriesQuery>,
+    time_series_queries: &mut Vec<TimeSeriesQuery>,
     has_constraint: &HashMap<Variable, Constraint>,
 ) {
     if let Query::Select {
@@ -18,7 +18,9 @@ pub(crate) fn find_all_groupby_pushdowns(
         pattern,
         base_iri: _,
     } = static_query
-    {}
+    {
+        find_groupby_pushdowns_in_graph_pattern(pattern, static_query_df, time_series_queries, has_constraint)
+    }
 }
 
 fn find_groupby_pushdowns_in_graph_pattern(
@@ -78,8 +80,22 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 has_constraint,
             );
         }
-        GraphPattern::Graph { inner, .. } => {}
-        GraphPattern::Extend { inner, .. } => {}
+        GraphPattern::Graph { inner, .. } => {
+            find_groupby_pushdowns_in_graph_pattern(
+                inner,
+                static_query_df,
+                time_series_queries,
+                has_constraint,
+            );
+        }
+        GraphPattern::Extend { inner, .. } => {
+            find_groupby_pushdowns_in_graph_pattern(
+                inner,
+                static_query_df,
+                time_series_queries,
+                has_constraint,
+            );
+        }
         GraphPattern::Minus { left, right } => {
             find_groupby_pushdowns_in_graph_pattern(
                 left,
