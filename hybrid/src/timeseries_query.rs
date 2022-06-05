@@ -2,13 +2,13 @@ use crate::change_types::ChangeType;
 use crate::rewriting::hash_graph_pattern;
 use spargebra::algebra::{AggregateExpression, Expression, GraphPattern};
 use spargebra::term::Variable;
-use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Grouping {
     pub graph_pattern_hash: u64,
-    pub interval: Option<Duration>,
+    pub by: Vec<Variable>,
     pub aggregations: Vec<(Variable, AggregateExpression)>,
+    pub timeseries_funcs: Vec<(Variable, Expression)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,6 +28,8 @@ impl TimeSeriesQuery {
         &mut self,
         aggregations: &Vec<(Variable, AggregateExpression)>,
         group_graph_pattern: &GraphPattern,
+        timeseries_funcs: Vec<(Variable, Expression)>,
+        by: Vec<Variable>
     ) {
         let mut keep_aggregates = vec![];
         for (v, a) in aggregations {
@@ -133,8 +135,9 @@ impl TimeSeriesQuery {
         if keep_aggregates.len() == aggregations.len() {
             self.grouping = Some(Grouping {
                 graph_pattern_hash: hash_graph_pattern(group_graph_pattern),
-                interval: None,
+                by,
                 aggregations: keep_aggregates,
+                timeseries_funcs,
             });
         }
     }

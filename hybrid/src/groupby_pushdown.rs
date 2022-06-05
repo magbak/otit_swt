@@ -2,10 +2,12 @@ use crate::constraints::Constraint;
 use crate::timeseries_query::TimeSeriesQuery;
 use oxrdf::Variable;
 use polars::prelude::{col, ChunkAgg, DataFrame, Expr};
-use spargebra::algebra::{Expression, GraphPattern};
+use spargebra::algebra::{Expression, Function, GraphPattern};
 use spargebra::term::TermPattern;
 use spargebra::Query;
 use std::collections::{HashMap, HashSet};
+use std::os::linux::raw::stat;
+use polars::prelude::GroupByMethod::Var;
 
 pub(crate) fn find_all_groupby_pushdowns(
     static_query: &Query,
@@ -189,14 +191,123 @@ fn find_groupby_pushdowns_in_graph_pattern(
                         continue 'outer;
                     }
                 }
-                if variables_isomorphic_to_time_series_id(
-                    variables,
+                let mut timeseries_funcs = vec![];
+                find_all_timeseries_funcs_in_graph_pattern(inner, &mut timeseries_funcs, tsq);
+                let mut static_grouping_variables = vec![];
+                let mut dynamic_grouping_variables = vec![];
+                'forvar: for v in variables {
+                    if let Some(tsv) = &tsq.timestamp_variable {
+                        if tsv == v {
+                            dynamic_grouping_variables.push(tsv.clone());
+                            continue 'forvar
+                        }
+                    }
+                    if let Some(vv) = &tsq.value_variable {
+                        if vv == v {
+                            dynamic_grouping_variables.push(vv.clone());
+                            continue 'forvar
+                        }
+                    }
+                    for (fv, _) in &timeseries_funcs {
+                        if fv == v {
+                            dynamic_grouping_variables.push(fv.clone());
+                            continue 'forvar
+                        }
+                    }
+                    static_grouping_variables.push(v.clone())
+                }
+                //Todo: impose constraints on graph pattern structure here ..
+                if (static_grouping_variables.is_empty() && !dynamic_grouping_variables.is_empty()) || variables_isomorphic_to_time_series_id(
+                    &static_grouping_variables,
                     tsq.identifier_variable.as_ref().unwrap().as_str(),
                     static_query_df,
                 ) {
-                    tsq.try_pushdown_aggregates(aggregates, graph_pattern);
+                    let mut by= dynamic_grouping_variables;
+                    if !static_grouping_variables.is_empty() {
+                        by.push(tsq.identifier_variable.as_ref().unwrap().clone());
+                    }
+                    tsq.try_pushdown_aggregates(aggregates, graph_pattern, timeseries_funcs, by);
                 }
             }
+        }
+        _ => {}
+    }
+}
+
+fn find_all_timeseries_funcs_in_graph_pattern(graph_pattern: &GraphPattern, timeseries_funcs: &mut Vec<(Variable, Expression)>, tsq:&TimeSeriesQuery) {
+    match graph_pattern {
+        GraphPattern::Join { left, right } => {
+            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq);
+        }
+        GraphPattern::LeftJoin { left, right, expression } => {
+            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq);
+        }
+        GraphPattern::Filter { inner, .. } => {
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+        }
+        GraphPattern::Union { left, right } => {
+            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq);
+        }
+        GraphPattern::Graph { inner, .. } => {
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+        }
+        GraphPattern::Extend { inner, variable, expression } => {
+            //Very important to process inner first here to detect nested functions.
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+            let mut function_vars = HashSet::new();
+            find_all_used_variables_in_expression(expression, &mut function_vars);
+            if !function_vars.is_empty() {
+                let mut exists_var_in_timeseries = false;
+                'outer: for v in &function_vars {
+                    if let Some(vv) = &tsq.value_variable {
+                        if vv == v {
+                            exists_var_in_timeseries = true;
+                            break 'outer;
+                        }
+                    }
+                    if let Some(tsv) = &tsq.timestamp_variable {
+                        if tsv == v {
+                            exists_var_in_timeseries = true;
+                            break 'outer;
+                        }
+                    }
+                    for (outvar, _) in timeseries_funcs.iter() {
+                        if outvar == v {
+                            exists_var_in_timeseries = true;
+                            break 'outer;
+                        }
+                    }
+                }
+                if exists_var_in_timeseries {
+                    timeseries_funcs.push((variable.clone(), expression.clone()))
+                }
+            }
+        }
+        GraphPattern::Minus { left, right } => {
+            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq);
+        }
+        GraphPattern::OrderBy { inner, expression } => {
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+            todo!("Consider expression");
+        }
+        GraphPattern::Project { inner, .. } => {
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+        }
+        GraphPattern::Distinct { inner } => {
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+        }
+        GraphPattern::Reduced { inner } => {
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+        }
+        GraphPattern::Slice { inner, .. } => {
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+        }
+        GraphPattern::Group { inner, .. } => {
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
         }
         _ => {}
     }
@@ -207,6 +318,13 @@ fn variables_isomorphic_to_time_series_id(
     time_series_identifier: &str,
     static_query_df: &DataFrame,
 ) -> bool {
+    let colnames = static_query_df.get_column_names();
+    for v in variables {
+        if !colnames.contains(&v.as_str()) {
+            //This can happen when there is an aggregation variable which is not part of the static query and not registered as a timeseries func.
+            return false;
+        }
+    }
     let n_unique_identifiers = static_query_df
         .column(time_series_identifier)
         .expect("Column problem")

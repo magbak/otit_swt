@@ -6,7 +6,7 @@ use polars::frame::DataFrame;
 use polars::prelude::{col, concat, Expr, IntoLazy, JoinType, LazyFrame, LiteralValue, Operator, UniqueKeepStrategy};
 use polars::series::Series;
 use sparesults::QuerySolution;
-use spargebra::algebra::{AggregateExpression, Expression, GraphPattern, OrderExpression};
+use spargebra::algebra::{AggregateExpression, Expression, Function, GraphPattern, OrderExpression};
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
 use std::collections::HashSet;
@@ -509,8 +509,41 @@ impl Combiner {
                 }
                 coalesced
             }
-            Expression::FunctionCall(_, _) => {
-                todo!()
+            Expression::FunctionCall(func, args) => {
+                let mut lazy_args: Vec<Expr> = args.iter().map(|e| Combiner::lazy_expression(e)).collect();
+                match func {
+                    Function::Year => {
+                        assert_eq!(lazy_args.len(), 1);
+                        let first_arg = lazy_args.remove(0);
+                        first_arg.dt().year()
+                    }
+                    Function::Month => {
+                        assert_eq!(lazy_args.len(), 1);
+                        let first_arg = lazy_args.remove(0);
+                        first_arg.dt().month()
+                    }
+                    Function::Day => {
+                        assert_eq!(lazy_args.len(), 1);
+                        let first_arg = lazy_args.remove(0);
+                        first_arg.dt().day()
+                    }
+                    Function::Hours => {
+                        assert_eq!(lazy_args.len(), 1);
+                        let first_arg = lazy_args.remove(0);
+                        first_arg.dt().hour()
+                    }
+                    Function::Minutes => {
+                        assert_eq!(lazy_args.len(), 1);
+                        let first_arg = lazy_args.remove(0);
+                        first_arg.dt().minute()
+                    }
+                    Function::Seconds => {
+                        assert_eq!(lazy_args.len(), 1);
+                        let first_arg = lazy_args.remove(0);
+                        first_arg.dt().second()
+                    }
+                    _=> {todo!()}
+                }
             }
         }
     }

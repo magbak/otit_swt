@@ -3,7 +3,7 @@ use std::error::Error;
 use oxrdf::Variable;
 use polars::frame::DataFrame;
 use polars::prelude::{col, concat, Expr, IntoLazy, LazyFrame, LazyGroupBy, lit, LiteralValue, Operator};
-use spargebra::algebra::AggregateExpression;
+use spargebra::algebra::{AggregateExpression, Expression};
 use hybrid::combiner::{Combiner, sparql_aggregate_expression_as_agg_expr};
 use hybrid::timeseries_database::TimeSeriesQueryable;
 use hybrid::timeseries_query::TimeSeriesQuery;
@@ -50,7 +50,13 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
         }
         let mut out_lf = concat(lfs, false)?;
         if let Some(grouping) = &tsq.grouping {
-            let grouped_lf = out_lf.groupby(&[col(tsq.identifier_variable.as_ref().unwrap().as_str())]);
+            //Important to do iteration in reversed direction for nested functions
+            for (v, expression) in grouping.timeseries_funcs.iter().rev() {
+                let lazy_expr = Combiner::lazy_expression(expression);
+                out_lf = out_lf.with_column(lazy_expr.alias(v.as_str()));
+            }
+            let by_cols :Vec<Expr> = grouping.by.iter().map(|v|col(v.as_str())).collect();
+            let grouped_lf = out_lf.groupby(by_cols.as_slice());
             let mut aggregation_exprs = vec![];
             let timestamp_name = if let Some(ts_var) = &tsq.timestamp_variable {ts_var.as_str().to_string()} else {"timestamp".to_string()};
             let timestamp_names = vec![timestamp_name];

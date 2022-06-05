@@ -19,6 +19,7 @@ pub async fn execute_hybrid_query(
     time_series_database: Box<dyn TimeSeriesQueryable>,
 ) -> Result<DataFrame, Box<dyn Error>> {
     let parsed_query = parse_sparql_select_query(query)?;
+    println!("{:?}", parsed_query);
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed_query);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
