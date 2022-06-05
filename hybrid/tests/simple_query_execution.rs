@@ -383,7 +383,7 @@ async fn test_pushdown_group_by_hybrid_query(
 #[rstest]
 #[tokio::test]
 #[serial]
-async fn test_pushdown_group_by_day_hybrid_query(
+async fn test_pushdown_group_by_second_hybrid_query(
     #[future] with_testdata: (),
     time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
@@ -399,19 +399,20 @@ async fn test_pushdown_group_by_day_hybrid_query(
         ?ts quarry:hasDataPoint ?dp .
         ?dp quarry:hasTimestamp ?t .
         ?dp quarry:hasValue ?v .
+        BIND(seconds(?t) as ?second)
         BIND(minutes(?t) AS ?minute)
         BIND(hours(?t) AS ?hour)
         BIND(day(?t) AS ?day)
         BIND(month(?t) AS ?month)
         BIND(year(?t) AS ?year)
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime)
-    } GROUP BY ?w ?year ?month ?day ?hour ?minute
+    } GROUP BY ?w ?year ?month ?day ?hour ?minute ?second
     "#;
     let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
-        .expect("Hybrid error").sort(&["w"], vec![false]).expect("Sort error");
+        .expect("Hybrid error").sort(&["w", "sum_v"], vec![false]).expect("Sort error");
     let mut file_path = testdata_path.clone();
-    file_path.push("expected_pushdown_group_by_hybrid.csv");
+    file_path.push("expected_pushdown_group_by_second_hybrid.csv");
 
     let file = File::open(file_path.as_path()).expect("Read file problem");
     let expected_df = CsvReader::new(file)
@@ -419,10 +420,10 @@ async fn test_pushdown_group_by_day_hybrid_query(
         .has_header(true)
         .with_parse_dates(true)
         .finish()
-        .expect("DF read error").sort(&["w"], vec![false]).expect("Sort error");
-    //assert_eq!(expected_df, df);
+        .expect("DF read error").sort(&["w", "sum_v"], vec![false]).expect("Sort error");
+    assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
     // writer.finish(&mut df).expect("writeok");
-    println!("{}", df);
+    // println!("{}", df);
 }
