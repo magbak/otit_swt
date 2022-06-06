@@ -405,3 +405,34 @@ fn test_property_path_expression() {
     assert_eq!(time_series_queries, expected_time_series_queries);
     assert_eq!(static_rewrite, expected_query);
 }
+
+#[test]
+fn test_having_query() {
+    let sparql = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX quarry:<https://github.com/magbak/quarry-rs#>
+    PREFIX types:<http://example.org/types#>
+    SELECT ?w (SUM(?v) as ?sum_v) WHERE {
+        ?w types:hasSensor ?s .
+        ?s quarry:hasTimeseries ?ts .
+        ?ts quarry:hasDataPoint ?dp .
+        ?dp quarry:hasTimestamp ?t .
+        ?dp quarry:hasValue ?v .
+        BIND(FLOOR(seconds(?t) / 5.0) as ?second_5)
+        BIND(minutes(?t) AS ?minute)
+        BIND(hours(?t) AS ?hour)
+        BIND(day(?t) AS ?day)
+        BIND(month(?t) AS ?month)
+        BIND(year(?t) AS ?year)
+        FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime)
+    } GROUP BY ?w ?year ?month ?day ?hour ?minute ?second_5
+    HAVING (?sum_v > 1000)
+    "#;
+    let parsed = parse_sparql_select_query(sparql).unwrap();
+    println!("{:?}", parsed);
+    let mut preprocessor = Preprocessor::new();
+    let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
+    let mut rewriter = StaticQueryRewriter::new(&has_constraint);
+    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
+    println!("{}", static_rewrite);
+}

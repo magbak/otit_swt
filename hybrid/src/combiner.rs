@@ -542,7 +542,22 @@ impl Combiner {
                         let first_arg = lazy_args.remove(0);
                         first_arg.dt().second()
                     }
-                    _=> {todo!()}
+                    Function::Abs => {
+                        assert_eq!(lazy_args.len(), 1);
+                        let first_arg = lazy_args.remove(0);
+                        first_arg.abs()
+                    }
+                    Function::Ceil => {
+                        assert_eq!(lazy_args.len(), 1);
+                        let first_arg = lazy_args.remove(0);
+                        first_arg.ceil()
+                    }
+                    Function::Floor => {
+                        assert_eq!(lazy_args.len(), 1);
+                        let first_arg = lazy_args.remove(0);
+                        first_arg.floor()
+                    }
+                    _ => {todo!()}
                 }
             }
         }

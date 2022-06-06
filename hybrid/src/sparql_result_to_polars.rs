@@ -74,7 +74,11 @@ pub(crate) fn sparql_literal_to_polars_literal_value(lit: &Literal) -> LiteralVa
             .parse::<NaiveDateTime>()
             .expect("Datetime parsing error");
         LiteralValue::DateTime(dt, TimeUnit::Nanoseconds)
-    } else {
+    } else if datatype == xsd::DECIMAL {
+        let d = f64::from_str(value).expect("Decimal parsing error");
+        LiteralValue::Float64(d)
+    }
+    else {
         println!("{}", datatype.as_str());
         todo!("Not implemented!")
     };
