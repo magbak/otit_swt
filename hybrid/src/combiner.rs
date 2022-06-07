@@ -1,16 +1,16 @@
 use crate::constants::HAS_VALUE;
 use crate::rewriting::hash_graph_pattern;
 use crate::timeseries_query::TimeSeriesQuery;
-use oxrdf::{Variable};
+use oxrdf::{NamedNode, NamedNodeRef, Variable};
 use polars::frame::DataFrame;
-use polars::prelude::{col, concat, Expr, IntoLazy, JoinType, LazyFrame, LiteralValue, Operator, UniqueKeepStrategy};
-use polars::series::Series;
-use sparesults::QuerySolution;
+use polars::prelude::{col, concat, concat_str, Expr, IntoLazy, JoinType, LazyFrame, LiteralValue, Operator, UniqueKeepStrategy};
 use spargebra::algebra::{AggregateExpression, Expression, Function, GraphPattern, OrderExpression};
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
 use std::collections::HashSet;
 use std::sync::Arc;
+use oxrdf::vocab::xsd;
+use polars::datatypes::DataType;
 use crate::sparql_result_to_polars::{sparql_literal_to_polars_literal_value, sparql_named_node_to_polars_literal_value};
 
 pub struct Combiner {
@@ -52,6 +52,7 @@ impl Combiner {
 
         let mut lf = static_result_df.lazy();
         lf = self.lazy_graph_pattern(&mut columns, lf, inner_graph_pattern, time_series);
+
         let projections = project_variables
             .iter()
             .map(|c| col(c.as_str()))
@@ -557,7 +558,34 @@ impl Combiner {
                         let first_arg = lazy_args.remove(0);
                         first_arg.floor()
                     }
-                    _ => {todo!()}
+                    Function::Concat => {
+                        assert!(lazy_args.len() > 1);
+                        concat_str(lazy_args, "")
+                    }
+                    Function::Round => {
+                        assert_eq!(lazy_args.len(), 1);
+                        let first_arg = lazy_args.remove(0);
+                        first_arg.round(0)
+                    }
+                    Function::Custom(nn) => {
+                        let nn_ref = NamedNodeRef::from(nn);
+                        match nn_ref {
+                            xsd::INTEGER => {
+                                assert_eq!(lazy_args.len(), 1);
+                                let first_arg = lazy_args.remove(0);
+                                first_arg.cast(DataType::Int64)
+                            }
+                            xsd::STRING => {
+                                assert_eq!(lazy_args.len(), 1);
+                                let first_arg = lazy_args.remove(0);
+                                first_arg.cast(DataType::Utf8)
+                            }
+                            _ => {todo!("{:?}", nn)}
+                        }
+                    }
+                    _ => {
+                        todo!("{:?}", func)
+                    }
                 }
             }
         }

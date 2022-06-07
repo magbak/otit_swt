@@ -19,13 +19,11 @@ pub async fn execute_hybrid_query(
     time_series_database: Box<dyn TimeSeriesQueryable>,
 ) -> Result<DataFrame, Box<dyn Error>> {
     let parsed_query = parse_sparql_select_query(query)?;
-    println!("{:?}", parsed_query);
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed_query);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, mut time_series_queries) =
         rewriter.rewrite_query(preprocessed_query).unwrap();
-    println!(":{}", static_rewrite);
     let static_query_solutions = execute_sparql_query(endpoint, &static_rewrite).await?;
     complete_time_series_queries(&static_query_solutions, &mut time_series_queries);
     let static_result_df = create_static_query_result_df(&static_rewrite, static_query_solutions);

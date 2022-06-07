@@ -4,4 +4,5 @@ pub enum Constraint {
     ExternalDataPoint,
     ExternalDataValue,
     ExternalTimestamp,
+    ExternallyDerived
 }

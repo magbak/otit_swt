@@ -1,2 +1,3 @@
 Project static values also when weakening expressions.. and, or?
 Minus problem: we should do union instead of minus if rhs contains timeseries..
+Exists - panic for variables that are functions of time series.. ??? Handle properly

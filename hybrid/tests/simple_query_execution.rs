@@ -442,13 +442,13 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX quarry:<https://github.com/magbak/quarry-rs#>
     PREFIX types:<http://example.org/types#>
-    SELECT ?w (SUM(?v) as ?sum_v) WHERE {
+    SELECT ?w (CONCAT(?year, "-", ?month, "-", ?day, "-", ?hour, "-", ?minute, "-", (?second_5 * 5)) as ?period) (SUM(?v) as ?sum_v) WHERE {
         ?w types:hasSensor ?s .
         ?s quarry:hasTimeseries ?ts .
         ?ts quarry:hasDataPoint ?dp .
         ?dp quarry:hasTimestamp ?t .
         ?dp quarry:hasValue ?v .
-        BIND(FLOOR(seconds(?t) / 5.0) as ?second_5)
+        BIND(xsd:integer(FLOOR(seconds(?t) / 5.0)) as ?second_5)
         BIND(minutes(?t) AS ?minute)
         BIND(hours(?t) AS ?hour)
         BIND(day(?t) AS ?day)
@@ -456,13 +456,13 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
         BIND(year(?t) AS ?year)
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime)
     } GROUP BY ?w ?year ?month ?day ?hour ?minute ?second_5
-    HAVING (?sum_v > 1000)
+    HAVING (SUM(?v) > 199)
     "#;
     let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error").sort(&["w", "sum_v"], vec![false]).expect("Sort error");
     let mut file_path = testdata_path.clone();
-    file_path.push("expected_pushdown_group_by_second_hybrid.csv");
+    file_path.push("expected_pushdown_group_by_second_having_hybrid.csv");
 
     let file = File::open(file_path.as_path()).expect("Read file problem");
     let expected_df = CsvReader::new(file)
@@ -471,9 +471,9 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
         .with_parse_dates(true)
         .finish()
         .expect("DF read error").sort(&["w", "sum_v"], vec![false]).expect("Sort error");
-    //assert_eq!(expected_df, df);
+    assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
     // writer.finish(&mut df).expect("writeok");
-    println!("{}", df);
+    //println!("{}", df);
 }

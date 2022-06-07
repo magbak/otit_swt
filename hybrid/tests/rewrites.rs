@@ -208,14 +208,15 @@ fn test_union_expression() {
     SELECT ?var1 ?var2 ?pv WHERE {
         ?var1 a ?var2 .
         OPTIONAL {
-            ?var2 ex:hasPropertyValue ?pv .
             {
+            ?var2 ex:hasPropertyValue ?pv .
             ?var2 qry:hasTimeseries ?ts .
             ?ts qry:hasDataPoint ?dp .
             ?dp qry:hasValue ?val .
             ?dp qry:hasTimestamp ?t .
             FILTER(?val <= 0.5 && !(?pv))
             } UNION {
+            ?var2 ex:hasPropertyValue ?pv .
             ?var2 qry:hasTimeseries ?ts .
             ?ts qry:hasDataPoint ?dp .
             ?dp qry:hasValue ?val .
@@ -234,13 +235,14 @@ fn test_union_expression() {
     SELECT ?var1 ?var2 ?pv ?ts_external_id_0 ?ts_external_id_1 WHERE {
         ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
         OPTIONAL {
-        ?var2 <https://example.com/hasPropertyValue> ?pv .
             {
+              ?var2 <https://example.com/hasPropertyValue> ?pv .
               ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
               ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
               FILTER(!?pv)
             }
             UNION {
+              ?var2 <https://example.com/hasPropertyValue> ?pv .
               ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_1 .
               ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
               FILTER(?pv)
@@ -277,7 +279,7 @@ fn test_bind_expression() {
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
-    SELECT ?var1 ?var2 ?val3 ?ts_external_id_0 ?ts_external_id_1 WHERE {
+    SELECT ?var1 ?var2 ?ts_external_id_0 ?ts_external_id_1 WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
     ?ts1 <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
     ?var1 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts1 .
@@ -372,7 +374,7 @@ fn test_property_path_expression() {
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
-    SELECT ?var1 ?var2 ?val3 ?ts_external_id_0 ?ts_external_id_1 WHERE {
+    SELECT ?var1 ?var2 ?ts_external_id_0 ?ts_external_id_1 WHERE {
      ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
      ?blank_replacement_0 <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
      ?var1 <https://github.com/magbak/quarry-rs#hasTimeseries> ?blank_replacement_0 .
@@ -407,7 +409,7 @@ fn test_property_path_expression() {
 }
 
 #[test]
-fn test_having_query() {
+fn  test_having_query() {
     let sparql = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX quarry:<https://github.com/magbak/quarry-rs#>
@@ -426,13 +428,20 @@ fn test_having_query() {
         BIND(year(?t) AS ?year)
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime)
     } GROUP BY ?w ?year ?month ?day ?hour ?minute ?second_5
-    HAVING (?sum_v > 1000)
+    HAVING (SUM(?v) > 1000)
     "#;
     let parsed = parse_sparql_select_query(sparql).unwrap();
-    println!("{:?}", parsed);
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
-    println!("{}", static_rewrite);
+    let expected_str = r#"
+    SELECT ?w ?ts_external_id_0 WHERE {
+    ?w <http://example.org/types#hasSensor> ?s .
+    ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+    ?s <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
+    }"#;
+    let expected_query = Query::parse(expected_str, None).unwrap();
+    assert_eq!(expected_query, static_rewrite);
+    //println!("{}", static_rewrite);
 }

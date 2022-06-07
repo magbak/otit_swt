@@ -3,7 +3,8 @@ use crate::constraints::Constraint;
 use spargebra::algebra::{GraphPattern, PropertyPathExpression};
 use spargebra::term::{BlankNode, NamedNodePattern, TermPattern, TriplePattern, Variable};
 use spargebra::Query;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use crate::find_query_variables::{find_all_used_variables_in_aggregate_expression, find_all_used_variables_in_expression};
 
 pub struct Preprocessor {
     counter: u16,
@@ -105,6 +106,18 @@ impl Preprocessor {
                 expression,
             } => {
                 let inner = self.preprocess_graph_pattern(inner);
+                let mut used_vars = HashSet::new();
+                find_all_used_variables_in_expression(expression, &mut used_vars);
+                for v in used_vars.drain() {
+                    if let Some(ctr) = self.has_constraint.get(&v) {
+                        if ctr == &Constraint::ExternalDataValue || ctr == &Constraint::ExternalTimestamp || ctr == &Constraint::ExternallyDerived {
+                            if !self.has_constraint.contains_key(variable) {
+                                self.has_constraint.insert(variable.clone(), Constraint::ExternallyDerived);
+                            }
+                        }
+                    }
+                }
+
                 GraphPattern::Extend {
                     inner: Box::new(inner),
                     variable: variable.clone(),
@@ -170,6 +183,18 @@ impl Preprocessor {
                 aggregates,
             } => {
                 let inner = self.preprocess_graph_pattern(inner);
+                for (variable,agg) in aggregates {
+                    let mut used_vars = HashSet::new();
+                    find_all_used_variables_in_aggregate_expression(agg, &mut used_vars);
+                    for v in used_vars.drain() {
+                        if let Some(ctr) = self.has_constraint.get(&v) {
+                            if ctr == &Constraint::ExternalDataValue || ctr == &Constraint::ExternalTimestamp || ctr == &Constraint::ExternallyDerived {
+                                self.has_constraint.insert(variable.clone(), Constraint::ExternallyDerived);
+                            }
+                        }
+                }
+                }
+
                 GraphPattern::Group {
                     inner: Box::new(inner),
                     variables: variables.clone(),
