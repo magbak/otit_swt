@@ -1,9 +1,9 @@
 use crate::constants::HAS_VALUE;
 use crate::rewriting::hash_graph_pattern;
 use crate::timeseries_query::TimeSeriesQuery;
-use oxrdf::{NamedNode, NamedNodeRef, Variable};
+use oxrdf::{NamedNodeRef, Variable};
 use polars::frame::DataFrame;
-use polars::prelude::{col, concat, concat_str, Expr, IntoLazy, JoinType, LazyFrame, LiteralValue, Operator, UniqueKeepStrategy};
+use polars::prelude::{col, concat, concat_str, Expr, GetOutput, IntoLazy, IntoSeries, JoinType, LazyFrame, LiteralValue, Operator, UniqueKeepStrategy};
 use spargebra::algebra::{AggregateExpression, Expression, Function, GraphPattern, OrderExpression};
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
@@ -11,6 +11,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use oxrdf::vocab::xsd;
 use polars::datatypes::DataType;
+use polars::prelude::DataType::Utf8;
+use polars::series::Series;
 use crate::sparql_result_to_polars::{sparql_literal_to_polars_literal_value, sparql_named_node_to_polars_literal_value};
 
 pub struct Combiner {
@@ -250,14 +252,10 @@ impl Combiner {
             column_variables.push(v.clone());
         }
 
-        let mut grouped_concats = vec![];
         let mut aggregate_expressions = vec![];
         for (v, a) in aggregates {
-            let (agg, is_grouped_concat) = sparql_aggregate_expression_as_agg_expr(v,a, &column_variables);
+            let agg = sparql_aggregate_expression_as_agg_expr(v,a, &column_variables);
             aggregate_expressions.push(agg);
-            if is_grouped_concat {
-                grouped_concats.push(v);
-            }
         }
         let aggregated_lf = lazy_group_by.agg(aggregate_expressions.as_slice());
         columns.clear();
@@ -592,13 +590,11 @@ impl Combiner {
     }
 }
 
-
-
 pub fn sparql_aggregate_expression_as_agg_expr(
         variable: &Variable,
         aggregate_expression: &AggregateExpression,
         all_proper_column_names: &Vec<String>,
-    ) -> (Expr,bool) {
+    ) -> Expr {
         let new_col;
         let mut is_group_concat = false;
         match aggregate_expression {
@@ -647,8 +643,7 @@ pub fn sparql_aggregate_expression_as_agg_expr(
             AggregateExpression::GroupConcat { expr, distinct, separator } => {
                 let lazy_expr = Combiner::lazy_expression(expr);
                 let use_sep = if let Some(sep) = separator { sep.to_string() } else { "".to_string()};
-                    new_col = lazy_expr.list();
-                is_group_concat = true;
+                new_col = lazy_expr.cast(Utf8).list().apply(move |s| { Ok(s.str_concat(use_sep.as_str()).into_series()) }, GetOutput::from_type(Utf8)).first();
             }
             AggregateExpression::Sample { expr,.. } => {
                 let lazy_expr = Combiner::lazy_expression(expr);
@@ -656,5 +651,5 @@ pub fn sparql_aggregate_expression_as_agg_expr(
             }
             AggregateExpression::Custom { .. } => {new_col = todo!();},
         }
-        (new_col.alias(variable.as_str()), is_group_concat)
+        new_col.alias(variable.as_str())
 }

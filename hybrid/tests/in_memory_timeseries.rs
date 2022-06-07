@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use std::error::Error;
-use oxrdf::Variable;
 use polars::frame::DataFrame;
-use polars::prelude::{col, concat, Expr, IntoLazy, LazyFrame, LazyGroupBy, lit, LiteralValue, Operator};
-use spargebra::algebra::{AggregateExpression, Expression};
+use polars::prelude::{col, concat, Expr, IntoLazy, lit, LiteralValue, Operator};
 use hybrid::combiner::{Combiner, sparql_aggregate_expression_as_agg_expr};
 use hybrid::timeseries_database::TimeSeriesQueryable;
 use hybrid::timeseries_query::TimeSeriesQuery;
@@ -61,7 +59,7 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
             let timestamp_name = if let Some(ts_var) = &tsq.timestamp_variable {ts_var.as_str().to_string()} else {"timestamp".to_string()};
             let timestamp_names = vec![timestamp_name];
             for (v,agg) in &grouping.aggregations {
-                let (agg_expr,_) = sparql_aggregate_expression_as_agg_expr(v,agg, &timestamp_names);
+                let agg_expr= sparql_aggregate_expression_as_agg_expr(v,agg, &timestamp_names);
                 aggregation_exprs.push(agg_expr);
             }
             out_lf = grouped_lf.agg(aggregation_exprs.as_slice());

@@ -15,7 +15,7 @@ pub(crate) fn create_static_query_result_df(static_query:&Query, static_query_so
         base_iri: _,
     } = static_query
     {
-        if let GraphPattern::Project { inner, variables } = pattern {
+        if let GraphPattern::Project { variables, .. } = pattern {
             column_variables = variables.clone();
         } else {
             panic!("");

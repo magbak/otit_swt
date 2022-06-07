@@ -9,7 +9,7 @@ use hybrid::orchestrator::execute_hybrid_query;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::static_sparql::execute_sparql_query;
 use oxrdf::{NamedNode, Term, Variable};
-use polars::prelude::{col, CsvReader, CsvWriter, SerReader, SerWriter, TimeUnit};
+use polars::prelude::{CsvReader, CsvWriter, SerReader, SerWriter};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::StatusCode;
 use rstest::*;
@@ -471,6 +471,49 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
         .with_parse_dates(true)
         .finish()
         .expect("DF read error").sort(&["w", "sum_v"], vec![false]).expect("Sort error");
+    assert_eq!(expected_df, df);
+    // let file = File::create(file_path.as_path()).expect("could not open file");
+    // let writer = CsvWriter::new(file);
+    // writer.finish(&mut df).expect("writeok");
+    //println!("{}", df);
+}
+
+#[rstest]
+#[tokio::test]
+#[serial]
+async fn test_pushdown_group_by_concat_agg_hybrid_query(
+    #[future] with_testdata: (),
+    time_series_database: InMemoryTimeseriesDatabase,
+    testdata_path: PathBuf,
+) {
+    let _ = with_testdata.await;
+    let query = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX quarry:<https://github.com/magbak/quarry-rs#>
+    PREFIX types:<http://example.org/types#>
+    SELECT ?w ?seconds_5 (GROUP_CONCAT(?v ; separator="-") as ?cc) WHERE {
+        ?w types:hasSensor ?s .
+        ?s quarry:hasTimeseries ?ts .
+        ?ts quarry:hasDataPoint ?dp .
+        ?dp quarry:hasTimestamp ?t .
+        ?dp quarry:hasValue ?v .
+        BIND(xsd:integer(FLOOR(seconds(?t) / 5.0)) as ?seconds_5)
+        FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime)
+    } GROUP BY ?w ?seconds_5
+    "#;
+    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+        .await
+        .expect("Hybrid error").sort(&["w"], vec![false]).expect("Sort error");
+    let mut file_path = testdata_path.clone();
+    file_path.push("expected_pushdown_group_by_concat_agg_hybrid.csv");
+
+    let file = File::open(file_path.as_path()).expect("Read file problem");
+    let expected_df = CsvReader::new(file)
+        .infer_schema(None)
+        .has_header(true)
+        .with_parse_dates(true)
+        .finish()
+        .expect("DF read error").sort(&["w"], vec![false]).expect("Sort error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
