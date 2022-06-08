@@ -445,3 +445,37 @@ fn  test_having_query() {
     assert_eq!(expected_query, static_rewrite);
     //println!("{}", static_rewrite);
 }
+
+#[test]
+#[ignore]
+fn  test_exists_query() {
+    let sparql = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX quarry:<https://github.com/magbak/quarry-rs#>
+    PREFIX types:<http://example.org/types#>
+    SELECT ?w ?s WHERE {
+        ?w types:hasSensor ?s .
+        FILTER EXISTS {SELECT ?s WHERE {
+            ?s quarry:hasTimeseries ?ts .
+            ?ts quarry:hasDataPoint ?dp .
+            ?dp quarry:hasTimestamp ?t .
+            ?dp quarry:hasValue ?v .
+            FILTER(?v > 300)}}
+    }
+    "#;
+    let parsed = parse_sparql_select_query(sparql).unwrap();
+    let mut preprocessor = Preprocessor::new();
+    let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
+    let mut rewriter = StaticQueryRewriter::new(&has_constraint);
+    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
+    println!("{}", static_rewrite);
+    let expected_str = r#"
+    SELECT ?w ?ts_external_id_0 WHERE {
+    ?w <http://example.org/types#hasSensor> ?s .
+    ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+    ?s <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
+    }"#;
+    let expected_query = Query::parse(expected_str, None).unwrap();
+    assert_eq!(expected_query, static_rewrite);
+    //println!("{}", static_rewrite);
+}

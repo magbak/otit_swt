@@ -1,10 +1,13 @@
 use crate::constants::{HAS_DATA_POINT, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE};
 use crate::constraints::Constraint;
-use spargebra::algebra::{GraphPattern, PropertyPathExpression};
+use crate::find_query_variables::{
+    find_all_used_variables_in_aggregate_expression, find_all_used_variables_in_expression,
+};
+use polars::prelude::Expr;
+use spargebra::algebra::{AggregateExpression, Expression, GraphPattern, OrderExpression, PropertyPathExpression};
 use spargebra::term::{BlankNode, NamedNodePattern, TermPattern, TriplePattern, Variable};
 use spargebra::Query;
 use std::collections::{HashMap, HashSet};
-use crate::find_query_variables::{find_all_used_variables_in_aggregate_expression, find_all_used_variables_in_expression};
 
 pub struct Preprocessor {
     counter: u16,
@@ -72,17 +75,22 @@ impl Preprocessor {
             } => {
                 let left = self.preprocess_graph_pattern(left);
                 let right = self.preprocess_graph_pattern(right);
+                let preprocessed_expression = if let Some(e) = expression {
+                    Some(self.preprocess_expression(e))
+                } else {
+                    None
+                };
                 GraphPattern::LeftJoin {
                     left: Box::new(left),
                     right: Box::new(right),
-                    expression: expression.clone(),
+                    expression: preprocessed_expression,
                 }
             }
             GraphPattern::Filter { expr, inner } => {
                 let inner = self.preprocess_graph_pattern(inner);
                 GraphPattern::Filter {
                     inner: Box::new(inner),
-                    expr: expr.clone(),
+                    expr: self.preprocess_expression(expr),
                 }
             }
             GraphPattern::Union { left, right } => {
@@ -110,9 +118,13 @@ impl Preprocessor {
                 find_all_used_variables_in_expression(expression, &mut used_vars);
                 for v in used_vars.drain() {
                     if let Some(ctr) = self.has_constraint.get(&v) {
-                        if ctr == &Constraint::ExternalDataValue || ctr == &Constraint::ExternalTimestamp || ctr == &Constraint::ExternallyDerived {
+                        if ctr == &Constraint::ExternalDataValue
+                            || ctr == &Constraint::ExternalTimestamp
+                            || ctr == &Constraint::ExternallyDerived
+                        {
                             if !self.has_constraint.contains_key(variable) {
-                                self.has_constraint.insert(variable.clone(), Constraint::ExternallyDerived);
+                                self.has_constraint
+                                    .insert(variable.clone(), Constraint::ExternallyDerived);
                             }
                         }
                     }
@@ -121,7 +133,7 @@ impl Preprocessor {
                 GraphPattern::Extend {
                     inner: Box::new(inner),
                     variable: variable.clone(),
-                    expression: expression.clone(),
+                    expression: self.preprocess_expression(expression),
                 }
             }
             GraphPattern::Minus { left, right } => {
@@ -143,7 +155,7 @@ impl Preprocessor {
                 let inner = self.preprocess_graph_pattern(inner);
                 GraphPattern::OrderBy {
                     inner: Box::new(inner),
-                    expression: expression.clone(),
+                    expression: expression.iter().map(|oe| self.preprocess_order_expression(oe)).collect()
                 }
             }
             GraphPattern::Project { inner, variables } => {
@@ -183,22 +195,30 @@ impl Preprocessor {
                 aggregates,
             } => {
                 let inner = self.preprocess_graph_pattern(inner);
-                for (variable,agg) in aggregates {
+                for (variable, agg) in aggregates {
                     let mut used_vars = HashSet::new();
                     find_all_used_variables_in_aggregate_expression(agg, &mut used_vars);
                     for v in used_vars.drain() {
                         if let Some(ctr) = self.has_constraint.get(&v) {
-                            if ctr == &Constraint::ExternalDataValue || ctr == &Constraint::ExternalTimestamp || ctr == &Constraint::ExternallyDerived {
-                                self.has_constraint.insert(variable.clone(), Constraint::ExternallyDerived);
+                            if ctr == &Constraint::ExternalDataValue
+                                || ctr == &Constraint::ExternalTimestamp
+                                || ctr == &Constraint::ExternallyDerived
+                            {
+                                self.has_constraint
+                                    .insert(variable.clone(), Constraint::ExternallyDerived);
                             }
                         }
+                    }
                 }
+                let mut preprocessed_aggregates = vec![];
+                for (var, agg) in aggregates {
+                    preprocessed_aggregates
+                        .push((var.clone(), self.preprocess_aggregate_expression(agg)))
                 }
-
                 GraphPattern::Group {
                     inner: Box::new(inner),
                     variables: variables.clone(),
-                    aggregates: aggregates.clone(),
+                    aggregates: preprocessed_aggregates,
                 }
             }
             GraphPattern::Service {
@@ -273,6 +293,29 @@ impl Preprocessor {
         }
     }
 
+    fn preprocess_expression(&mut self, expression: &Expression) -> Expression {
+        match expression {
+            Expression::Or(left, right) => Expression::Or(
+                Box::new(self.preprocess_expression(left)),
+                Box::new(self.preprocess_expression(right)),
+            ),
+            Expression::And(left, right) => Expression::And(
+                Box::new(self.preprocess_expression(left)),
+                Box::new(self.preprocess_expression(right)),
+            ),
+            Expression::Not(inner) => Expression::Not(Box::new(self.preprocess_expression(inner))),
+            Expression::Exists(graph_pattern) => {
+                Expression::Exists(Box::new(self.preprocess_graph_pattern(graph_pattern)))
+            }
+            Expression::If(left, middle, right) => Expression::If(
+                Box::new(self.preprocess_expression(left)),
+                Box::new(self.preprocess_expression(middle)),
+                Box::new(self.preprocess_expression(right)),
+            ),
+            _ => expression.clone(),
+        }
+    }
+
     fn preprocess_path(
         &mut self,
         subject: &TermPattern,
@@ -285,6 +328,68 @@ impl Preprocessor {
             subject: new_subject,
             path: path.clone(),
             object: new_object,
+        }
+    }
+    fn preprocess_aggregate_expression(
+        &mut self,
+        aggregate_expression: &AggregateExpression,
+    ) -> AggregateExpression {
+        match aggregate_expression {
+            AggregateExpression::Count { expr, distinct } => {
+                let rewritten_expression = if let Some(e) = expr {
+                    Some(Box::new(self.preprocess_expression(e)))
+                } else {
+                    None
+                };
+                AggregateExpression::Count {
+                    expr: rewritten_expression,
+                    distinct: *distinct,
+                }
+            }
+            AggregateExpression::Sum { expr, distinct } => AggregateExpression::Sum {
+                expr: Box::new(self.preprocess_expression(expr)),
+                distinct: *distinct,
+            },
+            AggregateExpression::Avg { expr, distinct } => AggregateExpression::Avg {
+                expr: Box::new(self.preprocess_expression(expr)),
+                distinct: *distinct,
+            },
+            AggregateExpression::Min { expr, distinct } => AggregateExpression::Min {
+                expr: Box::new(self.preprocess_expression(expr)),
+                distinct: *distinct,
+            },
+            AggregateExpression::Max { expr, distinct } => AggregateExpression::Max {
+                expr: Box::new(self.preprocess_expression(expr)),
+                distinct: *distinct,
+            },
+            AggregateExpression::GroupConcat {
+                expr,
+                distinct,
+                separator,
+            } => AggregateExpression::GroupConcat {
+                expr: Box::new(self.preprocess_expression(expr)),
+                distinct: *distinct,
+                separator: separator.clone(),
+            },
+            AggregateExpression::Sample { expr, distinct } => AggregateExpression::Sample {
+                expr: Box::new(self.preprocess_expression(expr)),
+                distinct: *distinct,
+            },
+            AggregateExpression::Custom {
+                name,
+                expr,
+                distinct,
+            } => AggregateExpression::Custom {
+                name: name.clone(),
+                expr: Box::new(self.preprocess_expression(expr)),
+                distinct: *distinct,
+            },
+        }
+    }
+    fn preprocess_order_expression(&mut self, order_expression: &OrderExpression) -> OrderExpression {
+        match order_expression {
+            OrderExpression::Asc(e) => {OrderExpression::Asc(self.preprocess_expression(e))}
+            OrderExpression::Desc(e) => {OrderExpression::Desc(self.preprocess_expression(e))}
         }
     }
 }

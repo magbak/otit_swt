@@ -55,6 +55,11 @@ async fn find_container(docker: &Docker, container_name: &str) -> Option<Contain
 }
 
 #[fixture]
+fn use_logger() {
+    env_logger::init();
+}
+
+#[fixture]
 fn testdata_path() -> PathBuf {
     let manidir = env!("CARGO_MANIFEST_DIR");
     let mut testdata_path = PathBuf::new();
@@ -209,7 +214,7 @@ fn compare_all_solutions(mut expected: Vec<QuerySolution>, mut actual: Vec<Query
 #[rstest]
 #[tokio::test]
 #[serial]
-async fn test_static_query(#[future] with_testdata: ()) {
+async fn test_static_query(#[future] with_testdata: (), use_logger: ()) {
     let _ = with_testdata.await;
     let query = parse_sparql_select_query(
         r#"
@@ -252,7 +257,7 @@ async fn test_static_query(#[future] with_testdata: ()) {
 async fn test_simple_hybrid_query(
     #[future] with_testdata: (),
     time_series_database: InMemoryTimeseriesDatabase,
-    testdata_path: PathBuf,
+    testdata_path: PathBuf, use_logger: ()
 ) {
     let _ = with_testdata.await;
     let query = r#"
@@ -296,6 +301,7 @@ async fn test_complex_hybrid_query(
     #[future] with_testdata: (),
     time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
+    use_logger: ()
 ) {
     let _ = with_testdata.await;
     let query = r#"
@@ -345,6 +351,7 @@ async fn test_pushdown_group_by_hybrid_query(
     #[future] with_testdata: (),
     time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
+    use_logger: (),
 ) {
     let _ = with_testdata.await;
     let query = r#"
@@ -387,6 +394,7 @@ async fn test_pushdown_group_by_second_hybrid_query(
     #[future] with_testdata: (),
     time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
+    use_logger: (),
 ) {
     let _ = with_testdata.await;
     let query = r#"
@@ -436,6 +444,7 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
     #[future] with_testdata: (),
     time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
+    use_logger: (),
 ) {
     let _ = with_testdata.await;
     let query = r#"
@@ -485,6 +494,7 @@ async fn test_pushdown_group_by_concat_agg_hybrid_query(
     #[future] with_testdata: (),
     time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
+    use_logger: ()
 ) {
     let _ = with_testdata.await;
     let query = r#"
@@ -519,4 +529,93 @@ async fn test_pushdown_group_by_concat_agg_hybrid_query(
     // let writer = CsvWriter::new(file);
     // writer.finish(&mut df).expect("writeok");
     //println!("{}", df);
+}
+
+#[rstest]
+#[tokio::test]
+#[serial]
+async fn test_pushdown_groupby_exists_something_hybrid_query(
+    #[future] with_testdata: (),
+    time_series_database: InMemoryTimeseriesDatabase,
+    testdata_path: PathBuf,
+    use_logger: (),
+) {
+    let _ = with_testdata.await;
+    let query = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX quarry:<https://github.com/magbak/quarry-rs#>
+    PREFIX types:<http://example.org/types#>
+    SELECT ?w ?seconds_3 (AVG(?v) as ?mean) WHERE {
+        ?w types:hasSensor ?s .
+        ?s quarry:hasTimeseries ?ts .
+        ?ts quarry:hasDataPoint ?dp .
+        ?dp quarry:hasTimestamp ?t .
+        ?dp quarry:hasValue ?v .
+        BIND(xsd:integer(FLOOR(seconds(?t) / 3.0)) as ?seconds_3)
+        FILTER EXISTS {SELECT ?w WHERE {?w types:hasSomething ?smth}}
+    } GROUP BY ?w ?seconds_3
+    "#;
+    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+        .await
+        .expect("Hybrid error").sort(&["w"], vec![false]).expect("Sort error");
+    let mut file_path = testdata_path.clone();
+    file_path.push("expected_pushdown_groupby_exists_something_hybrid.csv");
+
+    let file = File::open(file_path.as_path()).expect("Read file problem");
+    let expected_df = CsvReader::new(file)
+        .infer_schema(None)
+        .has_header(true)
+        .with_parse_dates(true)
+        .finish()
+        .expect("DF read error").sort(&["w"], vec![false]).expect("Sort error");
+    assert_eq!(expected_df, df);
+    // let file = File::create(file_path.as_path()).expect("could not open file");
+    // let writer = CsvWriter::new(file);
+    // writer.finish(&mut df).expect("writeok");
+    // println!("{}", df);
+}
+
+#[rstest]
+#[tokio::test]
+#[serial]
+#[ignore]
+async fn test_pushdown_groupby_exists_timeseries_value_hybrid_query(
+    #[future] with_testdata: (),
+    time_series_database: InMemoryTimeseriesDatabase,
+    testdata_path: PathBuf,
+    use_logger: (),
+) {
+    let _ = with_testdata.await;
+    let query = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX quarry:<https://github.com/magbak/quarry-rs#>
+    PREFIX types:<http://example.org/types#>
+    SELECT ?w ?s WHERE {
+        ?w types:hasSensor ?s .
+        FILTER EXISTS {SELECT ?s WHERE {
+            ?s quarry:hasTimeseries ?ts .
+            ?ts quarry:hasDataPoint ?dp .
+            ?dp quarry:hasTimestamp ?t .
+            ?dp quarry:hasValue ?v .
+            FILTER(?v > 300)}}
+    }
+    "#;
+    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+        .await
+        .expect("Hybrid error").sort(&["w"], vec![false]).expect("Sort error");
+    let mut file_path = testdata_path.clone();
+    file_path.push("expected_pushdown_groupby_exists_something_hybrid.csv");
+
+    let file = File::open(file_path.as_path()).expect("Read file problem");
+    let expected_df = CsvReader::new(file)
+        .infer_schema(None)
+        .has_header(true)
+        .with_parse_dates(true)
+        .finish()
+        .expect("DF read error").sort(&["w"], vec![false]).expect("Sort error");
+    assert_eq!(expected_df, df);
+    // let file = File::create(file_path.as_path()).expect("could not open file");
+    // let writer = CsvWriter::new(file);
+    // writer.finish(&mut df).expect("writeok");
+    println!("{}", df);
 }
