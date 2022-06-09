@@ -344,71 +344,66 @@ impl Combiner {
             Expression::Literal(lit) => Expr::Literal(sparql_literal_to_polars_literal_value(lit)),
             Expression::Variable(v) => Expr::Column(Arc::from(v.as_str())),
             Expression::Or(left, right) => {
-
-                let left_expr = Combiner::lazy_expression(left);
-                let right_expr = Combiner::lazy_expression(right);
-                Expr::BinaryExpr {
-                    left: Box::new(left_expr),
-                    op: Operator::Or,
-                    right: Box::new(right_expr),
-                }
+                let left_column_name = column_name.to_string() + "_left";
+                let mut inner_lf = Combiner::lazy_expression(left, inner_lf, columns, &left_column_name, time_series);
+                let right_column_name = column_name.to_string() + "_right";
+                inner_lf = Combiner::lazy_expression(right, inner_lf, columns, &right_column_name, time_series);
+                inner_lf = inner_lf.with_column((col(&minus_column_name) || col(&minus_column_name)).alias(column_name)).drop_columns([&left_column_name, right_column_name]);
+                inner_lf
             }
             Expression::And(left, right) => {
-                let left_expr = Combiner::lazy_expression(left);
-                let right_expr = Combiner::lazy_expression(right);
-                Expr::BinaryExpr {
-                    left: Box::new(left_expr),
-                    op: Operator::And,
-                    right: Box::new(right_expr),
-                }
+                let left_column_name = column_name.to_string() + "_left";
+                let mut inner_lf = Combiner::lazy_expression(left, inner_lf, columns, &left_column_name, time_series);
+                let right_column_name = column_name.to_string() + "_right";
+                inner_lf = Combiner::lazy_expression(right, inner_lf, columns, &right_column_name, time_series);
+                inner_lf = inner_lf.with_column((col(&minus_column_name) && col(&minus_column_name)).alias(column_name)).drop_columns([&left_column_name, right_column_name]);
+                inner_lf
             }
             Expression::Equal(left, right) => {
-                let left_expr = Combiner::lazy_expression(left);
-                let right_expr = Combiner::lazy_expression(right);
-                Expr::BinaryExpr {
-                    left: Box::new(left_expr),
-                    op: Operator::Eq,
-                    right: Box::new(right_expr),
-                }
+                let left_column_name = column_name.to_string() + "_left";
+                let mut inner_lf = Combiner::lazy_expression(left, inner_lf, columns, &left_column_name, time_series);
+                let right_column_name = column_name.to_string() + "_right";
+                inner_lf = Combiner::lazy_expression(right, inner_lf, columns, &right_column_name, time_series);
+                inner_lf = inner_lf.with_column((col(&minus_column_name) == col(&minus_column_name)).alias(column_name)).drop_columns([&left_column_name, right_column_name]);
+                inner_lf
             }
             Expression::SameTerm(_, _) => {
                 todo!("Not implemented")
             }
             Expression::Greater(left, right) => {
-                let left_expr = Combiner::lazy_expression(left);
-                let right_expr = Combiner::lazy_expression(right);
-                Expr::BinaryExpr {
-                    left: Box::new(left_expr),
-                    op: Operator::Gt,
-                    right: Box::new(right_expr),
-                }
+                let left_column_name = column_name.to_string() + "_left";
+                let mut inner_lf = Combiner::lazy_expression(left, inner_lf, columns, &left_column_name, time_series);
+                let right_column_name = column_name.to_string() + "_right";
+                inner_lf = Combiner::lazy_expression(right, inner_lf, columns, &right_column_name, time_series);
+                inner_lf = inner_lf.with_column((col(&minus_column_name) > col(&minus_column_name)).alias(column_name)).drop_columns([&left_column_name, right_column_name]);
+                inner_lf
             }
             Expression::GreaterOrEqual(left, right) => {
-                let left_expr = Combiner::lazy_expression(left);
-                let right_expr = Combiner::lazy_expression(right);
-                Expr::BinaryExpr {
-                    left: Box::new(left_expr),
-                    op: Operator::GtEq,
-                    right: Box::new(right_expr),
-                }
+                let left_column_name = column_name.to_string() + "_left";
+                let mut inner_lf = Combiner::lazy_expression(left, inner_lf, columns, &left_column_name, time_series);
+                let right_column_name = column_name.to_string() + "_right";
+                let mut inner_lf = Combiner::lazy_expression(right, inner_lf, columns, &right_column_name, time_series);
+
+                inner_lf = inner_lf.with_column((col(&minus_column_name) >= col(&minus_column_name)).alias(column_name)).drop_columns([&left_column_name, right_column_name]);
+                inner_lf
             }
             Expression::Less(left, right) => {
-                let left_expr = Combiner::lazy_expression(left);
-                let right_expr = Combiner::lazy_expression(right);
-                Expr::BinaryExpr {
-                    left: Box::new(left_expr),
-                    op: Operator::Lt,
-                    right: Box::new(right_expr),
-                }
+                let left_column_name = column_name.to_string() + "_left";
+                let mut inner_lf = Combiner::lazy_expression(left, inner_lf, columns, &left_column_name, time_series);
+                let right_column_name = column_name.to_string() + "_right";
+                let mut inner_lf = Combiner::lazy_expression(right, inner_lf, columns, &right_column_name, time_series);
+
+                inner_lf = inner_lf.with_column((col(&minus_column_name) < col(&minus_column_name)).alias(column_name)).drop_columns([&left_column_name, right_column_name]);
+                inner_lf
             }
             Expression::LessOrEqual(left, right) => {
-                let left_expr = Combiner::lazy_expression(left);
-                let right_expr = Combiner::lazy_expression(right);
-                Expr::BinaryExpr {
-                    left: Box::new(left_expr),
-                    op: Operator::LtEq,
-                    right: Box::new(right_expr),
-                }
+                let left_column_name = column_name.to_string() + "_left";
+                let mut inner_lf = Combiner::lazy_expression(left, inner_lf, columns, &left_column_name, time_series);
+                let right_column_name = column_name.to_string() + "_right";
+                let mut inner_lf = Combiner::lazy_expression(right, inner_lf, columns, &right_column_name, time_series);
+
+                inner_lf = inner_lf.with_column((col(&minus_column_name) <= col(&minus_column_name)).alias(column_name)).drop_columns([&left_column_name, right_column_name]);
+                inner_lf
             }
             Expression::In(left, right) => {
                 let left_expr = Combiner::lazy_expression(left);
@@ -428,52 +423,52 @@ impl Combiner {
                 expr
             }
             Expression::Add(left, right) => {
-                let left_expr = Combiner::lazy_expression(left);
-                let right_expr = Combiner::lazy_expression(right);
-                Expr::BinaryExpr {
-                    left: Box::new(left_expr),
-                    op: Operator::Plus,
-                    right: Box::new(right_expr),
-                }
+                let left_column_name = column_name.to_string() + "_left";
+                let mut inner_lf = Combiner::lazy_expression(inner, inner_lf, columns, &left_column_name, time_series);
+                let right_column_name = column_name.to_string() + "_right";
+                let mut inner_lf = Combiner::lazy_expression(inner, inner_lf, columns, &right_column_name, time_series);
+
+                inner_lf = inner_lf.with_column((col(&minus_column_name) + col(&minus_column_name)).alias(column_name)).drop_columns([&left_column_name, right_column_name]);
+                inner_lf
             }
             Expression::Subtract(left, right) => {
-                let left_expr = Combiner::lazy_expression(left);
-                let right_expr = Combiner::lazy_expression(right);
-                Expr::BinaryExpr {
-                    left: Box::new(left_expr),
-                    op: Operator::Minus,
-                    right: Box::new(right_expr),
-                }
+                let left_column_name = column_name.to_string() + "_left";
+                let mut inner_lf = Combiner::lazy_expression(inner, inner_lf, columns, &left_column_name, time_series);
+                let right_column_name = column_name.to_string() + "_right";
+                let mut inner_lf = Combiner::lazy_expression(inner, inner_lf, columns, &right_column_name, time_series);
+
+                inner_lf = inner_lf.with_column((col(&minus_column_name) - col(&minus_column_name)).alias(column_name)).drop_columns([&left_column_name, right_column_name]);
+                inner_lf
             }
             Expression::Multiply(left, right) => {
-                let left_expr = Combiner::lazy_expression(left);
-                let right_expr = Combiner::lazy_expression(right);
-                Expr::BinaryExpr {
-                    left: Box::new(left_expr),
-                    op: Operator::Multiply,
-                    right: Box::new(right_expr),
-                }
+                let left_column_name = column_name.to_string() + "_left";
+                let mut inner_lf = Combiner::lazy_expression(inner, inner_lf, columns, &left_column_name, time_series);
+                let right_column_name = column_name.to_string() + "_right";
+                let mut inner_lf = Combiner::lazy_expression(inner, inner_lf, columns, &right_column_name, time_series);
+
+                inner_lf = inner_lf.with_column((col(&minus_column_name) * col(&minus_column_name)).alias(column_name)).drop_columns([&left_column_name, right_column_name]);
+                inner_lf
             }
             Expression::Divide(left, right) => {
-                let left_expr = Combiner::lazy_expression(left);
-                let right_expr = Combiner::lazy_expression(right);
-                Expr::BinaryExpr {
-                    left: Box::new(left_expr),
-                    op: Operator::Divide,
-                    right: Box::new(right_expr),
-                }
+                let left_column_name = column_name.to_string() + "_left";
+                let mut inner_lf = Combiner::lazy_expression(inner, inner_lf, columns, &left_column_name, time_series);
+                let right_column_name = column_name.to_string() + "_right";
+                let mut inner_lf = Combiner::lazy_expression(inner, inner_lf, columns, &right_column_name, time_series);
+
+                inner_lf = inner_lf.with_column((col(&minus_column_name) / col(&minus_column_name)).alias(column_name)).drop_columns([&left_column_name, right_column_name]);
+                inner_lf
             }
             Expression::UnaryPlus(inner) => {
-                let inner_expr = Combiner::lazy_expression(inner);
-                inner_expr
+                let plus_column_name = column_name.to_string() + "_plus";
+                let mut inner_lf = Combiner::lazy_expression(inner, inner_lf, columns, &plus_column_name, time_series);
+                inner_lf = inner_lf.with_column(Expr::Literal((LiteralValue::Int32(0) + col(&minus_column_name)).alias(column_name)).drop_columns([&plus_column_name]);
+                inner_lf
             }
             Expression::UnaryMinus(inner) => {
-                let inner_expr = Combiner::lazy_expression(inner);
-                Expr::BinaryExpr {
-                    left: Box::new(Expr::Literal(LiteralValue::Int32(0))),
-                    op: Operator::Minus,
-                    right: Box::new(inner_expr),
-                }
+                let minus_column_name = column_name.to_string() + "_minus";
+                let mut inner_lf = Combiner::lazy_expression(inner, inner_lf, columns, &minus_column_name, time_series);
+                inner_lf = inner_lf.with_column(Expr::Literal((LiteralValue::Int32(0) - col(&minus_column_name)).alias(column_name)).drop_columns([&minus_column_name]);
+                inner_lf
             }
             Expression::Not(inner) => {
                 let not_column_name = column_name.to_string() + "_not";
