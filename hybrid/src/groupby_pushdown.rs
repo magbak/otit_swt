@@ -241,7 +241,7 @@ fn find_all_timeseries_funcs_in_graph_pattern(graph_pattern: &GraphPattern, time
             find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq);
             find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq);
         }
-        GraphPattern::LeftJoin { left, right, expression } => {
+        GraphPattern::LeftJoin { left, right, expression:_ } => {
             find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq);
             find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq);
         }

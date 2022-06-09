@@ -12,7 +12,6 @@ use std::sync::Arc;
 use oxrdf::vocab::xsd;
 use polars::datatypes::DataType;
 use polars::prelude::DataType::Utf8;
-use polars::series::Series;
 use crate::sparql_result_to_polars::{sparql_literal_to_polars_literal_value, sparql_named_node_to_polars_literal_value};
 
 pub struct Combiner {
@@ -337,14 +336,15 @@ impl Combiner {
         }
     }
 
-    pub fn lazy_expression(expr: &Expression) -> Expr {
+    pub fn lazy_expression(expr: &Expression, inner_lf:LazyFrame, columns:&HashSet<String>, column_name:&str, time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>) -> LazyFrame {
         match expr {
             Expression::NamedNode(nn) => {
-                Expr::Literal(sparql_named_node_to_polars_literal_value(nn))
+                inner_lf.with_column(Expr::Literal(sparql_named_node_to_polars_literal_value(nn)).alias(column_name))
             }
             Expression::Literal(lit) => Expr::Literal(sparql_literal_to_polars_literal_value(lit)),
             Expression::Variable(v) => Expr::Column(Arc::from(v.as_str())),
             Expression::Or(left, right) => {
+
                 let left_expr = Combiner::lazy_expression(left);
                 let right_expr = Combiner::lazy_expression(right);
                 Expr::BinaryExpr {
@@ -476,11 +476,19 @@ impl Combiner {
                 }
             }
             Expression::Not(inner) => {
-                let inner_expr = Combiner::lazy_expression(inner);
-                Expr::Not(Box::new(inner_expr))
+                let not_column_name = column_name.to_string() + "_not";
+                let mut inner_lf = Combiner::lazy_expression(inner, inner_lf, columns, &not_column_name, time_series);
+                inner_lf = inner_lf.with_column(col(&not_column_name).not().alias(column_name)).drop_columns([&not_column_name]);
+                inner_lf
             }
-            Expression::Exists(_) => {
-                todo!()
+            Expression::Exists(inner) => {
+                let exists_helper_col = column_name.to_string() + "_exists_helper";
+                let mut exists_inner_lf = inner_lf.with_column(Expr::Literal(LiteralValue::Boolean(true)).cumcount(false).alias(&exists_helper_col));
+                let mut combiner = Combiner::new();
+                let lf = combiner.lazy_graph_pattern(&mut columns.clone(), exists_inner_lf.clone(), inner, time_series);
+                exists_inner_lf = exists_inner_lf.with_column(col(&exists_helper_col).is_in(lf.select(&exists_helper_col)));
+                exists_inner_lf = exists_inner_lf.drop_columns( [column_name.as_str()]);
+                exists_inner_lf
             }
             Expression::Bound(v) => Expr::IsNotNull(Box::new(Expr::Column(Arc::from(v.as_str())))),
             Expression::If(left, middle, right) => {
@@ -590,6 +598,7 @@ impl Combiner {
     }
 }
 
+
 pub fn sparql_aggregate_expression_as_agg_expr(
         variable: &Variable,
         aggregate_expression: &AggregateExpression,
@@ -649,7 +658,7 @@ pub fn sparql_aggregate_expression_as_agg_expr(
                 let lazy_expr = Combiner::lazy_expression(expr);
                 new_col = lazy_expr.first();
             }
-            AggregateExpression::Custom { .. } => {new_col = todo!();},
+            AggregateExpression::Custom { .. } => {new_col = todo!()},
         }
         new_col.alias(variable.as_str())
 }

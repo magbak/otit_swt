@@ -447,7 +447,6 @@ fn  test_having_query() {
 }
 
 #[test]
-#[ignore]
 fn  test_exists_query() {
     let sparql = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -470,11 +469,12 @@ fn  test_exists_query() {
     let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     println!("{}", static_rewrite);
     let expected_str = r#"
-    SELECT ?w ?ts_external_id_0 WHERE {
+    SELECT ?w ?s ?ts ?ts_external_id_0 WHERE {
     ?w <http://example.org/types#hasSensor> ?s .
-    ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
-    ?s <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
-    }"#;
+    OPTIONAL {
+            ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+            ?s <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts . } }
+    "#;
     let expected_query = Query::parse(expected_str, None).unwrap();
     assert_eq!(expected_query, static_rewrite);
     //println!("{}", static_rewrite);

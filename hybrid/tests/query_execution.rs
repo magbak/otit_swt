@@ -578,7 +578,6 @@ async fn test_pushdown_groupby_exists_something_hybrid_query(
 #[rstest]
 #[tokio::test]
 #[serial]
-#[ignore]
 async fn test_pushdown_groupby_exists_timeseries_value_hybrid_query(
     #[future] with_testdata: (),
     time_series_database: InMemoryTimeseriesDatabase,
