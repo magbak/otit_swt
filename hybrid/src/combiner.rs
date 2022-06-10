@@ -16,6 +16,7 @@ use spargebra::algebra::{
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
 use std::collections::HashSet;
+use log::debug;
 
 pub struct Combiner {
     counter: u16,
@@ -823,11 +824,11 @@ impl Combiner {
             }
             Expression::Exists(inner) => {
                 let exists_helper_column = column_name.to_string() + "_exists_helper";
-                let mut df = inner_lf.with_column(
-                    Expr::Literal(LiteralValue::Boolean(true))
-                        .cumcount(false)
+                let lf = inner_lf.with_column(
+                    Expr::Literal(LiteralValue::Int64(1))
                         .alias(&exists_helper_column)
-                ).collect().expect("Collect lazy error");
+                );
+                let mut df = lf.with_column(col(&exists_helper_column).cumsum(false).keep_name()).collect().expect("Collect lazy error");
                 let mut combiner = Combiner::new();
                 let new_inner = if let GraphPattern::Project{ inner, variables } = &**inner {
                     let mut new_variables = variables.clone();
@@ -840,10 +841,13 @@ impl Combiner {
                     &new_inner,
                     time_series,
                 ).collect().expect("Collect lazy exists error");
+                debug!("Exists dataframe: {}", exists_df);
+                debug!("Exists original dataframe: {}", df);
                 let mut ser = Series::from(df.column(&exists_helper_column).unwrap().is_in(exists_df.column(&exists_helper_column).unwrap()).unwrap());
                 ser.rename(&column_name);
                 df.with_column(ser).unwrap();
                 df = df.drop(&exists_helper_column).unwrap();
+                debug!("Dataframe after {}", df);
                 df.lazy()
             }
             Expression::Bound(v) => {

@@ -603,7 +603,7 @@ async fn test_pushdown_groupby_exists_timeseries_value_hybrid_query(
         .await
         .expect("Hybrid error").sort(&["w"], vec![false]).expect("Sort error");
     let mut file_path = testdata_path.clone();
-    file_path.push("expected_pushdown_groupby_exists_something_hybrid.csv");
+    file_path.push("expected_pushdown_exists_timeseries_value_hybrid.csv");
 
     let file = File::open(file_path.as_path()).expect("Read file problem");
     let expected_df = CsvReader::new(file)
@@ -616,5 +616,5 @@ async fn test_pushdown_groupby_exists_timeseries_value_hybrid_query(
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
     // writer.finish(&mut df).expect("writeok");
-    println!("{}", df);
+    // println!("{}", df);
 }
