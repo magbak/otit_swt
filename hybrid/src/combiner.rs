@@ -4,19 +4,23 @@ use crate::sparql_result_to_polars::{
     sparql_literal_to_polars_literal_value, sparql_named_node_to_polars_literal_value,
 };
 use crate::timeseries_query::TimeSeriesQuery;
+use log::debug;
 use oxrdf::vocab::xsd;
 use oxrdf::{NamedNodeRef, Variable};
 use polars::datatypes::DataType;
 use polars::frame::DataFrame;
 use polars::prelude::DataType::Utf8;
-use polars::prelude::{col, concat, concat_str, Expr, GetOutput, IntoLazy, IntoSeries, JoinType, LazyFrame, LiteralValue, Operator, Series, UniqueKeepStrategy};
+use polars::prelude::{
+    col, concat, concat_str, Expr, GetOutput, IntoLazy, IntoSeries, JoinType, LazyFrame,
+    LiteralValue, Operator, Series, UniqueKeepStrategy,
+};
 use spargebra::algebra::{
     AggregateExpression, Expression, Function, GraphPattern, OrderExpression,
 };
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
 use std::collections::HashSet;
-use log::debug;
+use crate::exists_helper::rewrite_exists_graph_pattern;
 
 pub struct Combiner {
     counter: u16,
@@ -196,10 +200,18 @@ impl Combiner {
             }
             GraphPattern::OrderBy { inner, expression } => {
                 let mut inner_lf = self.lazy_graph_pattern(columns, input_lf, inner, time_series);
-                let order_expression_colnames:Vec<String> = (0..expression.len()).map(|i|"ordering_column_".to_string() + &i.to_string()).collect();
+                let order_expression_colnames: Vec<String> = (0..expression.len())
+                    .map(|i| "ordering_column_".to_string() + &i.to_string())
+                    .collect();
                 let mut asc_ordering = vec![];
                 for i in 0..expression.len() {
-                  let (lf, reverse) = Combiner::lazy_order_expression(expression.get(i).unwrap(), inner_lf, columns, order_expression_colnames.get(0).unwrap(), time_series);
+                    let (lf, reverse) = Combiner::lazy_order_expression(
+                        expression.get(i).unwrap(),
+                        inner_lf,
+                        columns,
+                        order_expression_colnames.get(0).unwrap(),
+                        time_series,
+                    );
                     inner_lf = lf;
                     asc_ordering.push(reverse);
                 }
@@ -210,13 +222,14 @@ impl Combiner {
                         .collect::<Vec<Expr>>(),
                     asc_ordering.iter().map(|asc| asc.clone()).collect(),
                 );
-                inner_lf = inner_lf.drop_columns(order_expression_colnames.iter().collect::<Vec<&String>>());
+                inner_lf = inner_lf
+                    .drop_columns(order_expression_colnames.iter().collect::<Vec<&String>>());
                 inner_lf
             }
             GraphPattern::Project { inner, variables } => {
                 let mut inner_lf = self.lazy_graph_pattern(columns, input_lf, inner, time_series);
-                let mut cols:Vec<Expr> = variables.iter().map(|c|col(c.as_str())).collect();
-                for (tsq,_) in time_series {
+                let mut cols: Vec<Expr> = variables.iter().map(|c| col(c.as_str())).collect();
+                for (tsq, _) in time_series {
                     cols.push(col(tsq.identifier_variable.as_ref().unwrap().as_str()));
                 }
                 inner_lf.select(cols.as_slice())
@@ -292,7 +305,15 @@ impl Combiner {
         for i in 0..aggregates.len() {
             let (v, a) = aggregates.get(i).unwrap();
             let column_name = "aggregate_expression_helper_column_".to_string() + &i.to_string();
-            let (lf, expr, used_col) = sparql_aggregate_expression_as_lazy_column_and_expression(v, a, &column_variables, columns, &column_name, lazy_inner, time_series);
+            let (lf, expr, used_col) = sparql_aggregate_expression_as_lazy_column_and_expression(
+                v,
+                a,
+                &column_variables,
+                columns,
+                &column_name,
+                lazy_inner,
+                time_series,
+            );
             lazy_inner = lf;
             aggregate_expressions.push(expr);
             if used_col {
@@ -302,7 +323,9 @@ impl Combiner {
 
         let lazy_group_by = lazy_inner.groupby(by.as_slice());
 
-        let aggregated_lf = lazy_group_by.agg(aggregate_expressions.as_slice()).drop_columns(aggregate_columns.as_slice());
+        let aggregated_lf = lazy_group_by
+            .agg(aggregate_expressions.as_slice())
+            .drop_columns(aggregate_columns.as_slice());
         columns.clear();
         for v in variables {
             columns.insert(v.as_str().to_string());
@@ -371,11 +394,22 @@ impl Combiner {
         input_lf
     }
 
-    fn lazy_order_expression(oexpr: &OrderExpression, lazy_frame:LazyFrame, columns:&HashSet<String>, column_name:&str, time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
-) -> (LazyFrame, bool) {
+    fn lazy_order_expression(
+        oexpr: &OrderExpression,
+        lazy_frame: LazyFrame,
+        columns: &HashSet<String>,
+        column_name: &str,
+        time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
+    ) -> (LazyFrame, bool) {
         match oexpr {
-            OrderExpression::Asc(expr) => (Combiner::lazy_expression(expr, lazy_frame, columns, column_name, time_series), true),
-            OrderExpression::Desc(expr) => (Combiner::lazy_expression(expr, lazy_frame, columns, column_name, time_series), false),
+            OrderExpression::Asc(expr) => (
+                Combiner::lazy_expression(expr, lazy_frame, columns, column_name, time_series),
+                true,
+            ),
+            OrderExpression::Desc(expr) => (
+                Combiner::lazy_expression(expr, lazy_frame, columns, column_name, time_series),
+                false,
+            ),
         }
     }
 
@@ -825,25 +859,35 @@ impl Combiner {
             Expression::Exists(inner) => {
                 let exists_helper_column = column_name.to_string() + "_exists_helper";
                 let lf = inner_lf.with_column(
-                    Expr::Literal(LiteralValue::Int64(1))
-                        .alias(&exists_helper_column)
+                    Expr::Literal(LiteralValue::Int64(1)).alias(&exists_helper_column),
                 );
-                let mut df = lf.with_column(col(&exists_helper_column).cumsum(false).keep_name()).collect().expect("Collect lazy error");
+                let mut df = lf
+                    .with_column(col(&exists_helper_column).cumsum(false).keep_name())
+                    .collect()
+                    .expect("Collect lazy error");
                 let mut combiner = Combiner::new();
-                let new_inner = if let GraphPattern::Project{ inner, variables } = &**inner {
-                    let mut new_variables = variables.clone();
-                    new_variables.push(Variable::new_unchecked(&exists_helper_column));
-                    GraphPattern::Project {inner:inner.clone(), variables:new_variables}
-                } else {(**inner).clone()};
-                let exists_df = combiner.lazy_graph_pattern(
-                    &mut columns.clone(),
-                    df.clone().lazy(),
-                    &new_inner,
-                    time_series,
-                ).collect().expect("Collect lazy exists error");
+                let new_inner = rewrite_exists_graph_pattern(inner, &exists_helper_column);
+                let exists_df = combiner
+                    .lazy_graph_pattern(
+                        &mut columns.clone(),
+                        df.clone().lazy(),
+                        &new_inner,
+                        time_series,
+                    ).select([col(&exists_helper_column)])
+                    .unique(
+                        None,
+                        UniqueKeepStrategy::First,
+                    )
+                    .collect()
+                    .expect("Collect lazy exists error");
                 debug!("Exists dataframe: {}", exists_df);
                 debug!("Exists original dataframe: {}", df);
-                let mut ser = Series::from(df.column(&exists_helper_column).unwrap().is_in(exists_df.column(&exists_helper_column).unwrap()).unwrap());
+                let mut ser = Series::from(
+                    df.column(&exists_helper_column)
+                        .unwrap()
+                        .is_in(exists_df.column(&exists_helper_column).unwrap())
+                        .unwrap(),
+                );
                 ser.rename(&column_name);
                 df.with_column(ser).unwrap();
                 df = df.drop(&exists_helper_column).unwrap();
@@ -851,7 +895,8 @@ impl Combiner {
                 df.lazy()
             }
             Expression::Bound(v) => {
-                inner_lf.with_column(col(v.as_str()).is_null().alias(column_name))},
+                inner_lf.with_column(col(v.as_str()).is_null().alias(column_name))
+            }
             Expression::If(left, middle, right) => {
                 let left_column_name = column_name.to_string() + "_left";
                 let mut inner_lf = Combiner::lazy_expression(
@@ -891,15 +936,17 @@ impl Combiner {
                 inner_lf
             }
             Expression::Coalesce(inner) => {
-                let mut inner_columns:Vec<String> = (0..inner.len()).map(|i|column_name.to_string() + "_coalesce_arg_" + &i.to_string()).collect();
+                let mut inner_columns: Vec<String> = (0..inner.len())
+                    .map(|i| column_name.to_string() + "_coalesce_arg_" + &i.to_string())
+                    .collect();
                 let mut inner_lf = inner_lf;
                 for i in 0..inner.len() {
                     inner_lf = Combiner::lazy_expression(
-                    inner.get(i).unwrap(),
-                    inner_lf,
-                    columns,
-                    inner_columns.get(i).unwrap(),
-                    time_series,
+                        inner.get(i).unwrap(),
+                        inner_lf,
+                        columns,
+                        inner_columns.get(i).unwrap(),
+                        time_series,
                     );
                 }
 
@@ -911,12 +958,15 @@ impl Combiner {
                         falsy: Box::new(col(c)),
                     }
                 }
-                inner_lf = inner_lf.with_column(coalesced.alias(column_name)).drop_columns(inner_columns.iter().collect::<Vec<&String>>());
+                inner_lf = inner_lf
+                    .with_column(coalesced.alias(column_name))
+                    .drop_columns(inner_columns.iter().collect::<Vec<&String>>());
                 inner_lf
             }
             Expression::FunctionCall(func, args) => {
-                let args_cols:Vec<String> = (0..args.len())
-                    .map(|i| column_name.to_string() + "_function_arg_" + &i.to_string()).collect();
+                let args_cols: Vec<String> = (0..args.len())
+                    .map(|i| column_name.to_string() + "_function_arg_" + &i.to_string())
+                    .collect();
                 let mut inner_lf = inner_lf;
                 for i in 0..args.len() {
                     inner_lf = Combiner::lazy_expression(

@@ -12,3 +12,4 @@ pub mod orchestrator;
 mod groupby_pushdown;
 mod sparql_result_to_polars;
 pub(crate) mod find_query_variables;
+mod exists_helper;
