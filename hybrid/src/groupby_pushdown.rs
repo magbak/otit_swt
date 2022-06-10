@@ -293,7 +293,7 @@ fn find_all_timeseries_funcs_in_graph_pattern(graph_pattern: &GraphPattern, time
         }
         GraphPattern::OrderBy { inner, expression } => {
             find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
-            todo!("Consider expression");
+            //TODO: Expressions? Handle?
         }
         GraphPattern::Project { inner, .. } => {
             find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
