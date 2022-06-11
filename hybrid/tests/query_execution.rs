@@ -70,7 +70,7 @@ fn testdata_path() -> PathBuf {
     let mut testdata_path = PathBuf::new();
     testdata_path.push(manidir);
     testdata_path.push("tests");
-    testdata_path.push("testdata");
+    testdata_path.push("query_execution_testdata");
     testdata_path
 }
 
@@ -538,7 +538,7 @@ async fn test_pushdown_group_by_concat_agg_hybrid_query(
     let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error")
-        .sort(&["w"], vec![false])
+        .sort(&["w", "seconds_5"], vec![false])
         .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_group_by_concat_agg_hybrid.csv");
@@ -550,7 +550,7 @@ async fn test_pushdown_group_by_concat_agg_hybrid_query(
         .with_parse_dates(true)
         .finish()
         .expect("DF read error")
-        .sort(&["w"], vec![false])
+        .sort(&["w", "seconds_5"], vec![false])
         .expect("Sort error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
@@ -587,7 +587,7 @@ async fn test_pushdown_groupby_exists_something_hybrid_query(
     let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error")
-        .sort(&["w"], vec![false])
+        .sort(&["w", "seconds_3"], vec![false])
         .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_group_by_exists_something_hybrid.csv");
@@ -599,7 +599,7 @@ async fn test_pushdown_groupby_exists_something_hybrid_query(
         .with_parse_dates(true)
         .finish()
         .expect("DF read error")
-        .sort(&["w"], vec![false])
+        .sort(&["w", "seconds_3"], vec![false])
         .expect("Sort error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");

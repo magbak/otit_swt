@@ -46,12 +46,9 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
         }
         let mut out_lf = concat(lfs, false)?;
         if let Some(grouping) = &tsq.grouping {
-            let grouping_expr_columns:Vec<String> = (grouping.timeseries_funcs.len()..0).map(|i|"grouping_column_name_".to_string() + &i.to_string()).collect();
             //Important to do iteration in reversed direction for nested functions
-            for i in grouping.timeseries_funcs.len()..0 {
-                let (_, expression) = grouping.timeseries_funcs.get(i).unwrap();
-                let column_name = grouping_expr_columns.get(i).unwrap();
-                out_lf = Combiner::lazy_expression(expression, out_lf, &columns, column_name,&mut vec![]);
+            for (v,expression) in grouping.timeseries_funcs.iter().rev() {
+                out_lf = Combiner::lazy_expression(expression, out_lf, &columns, v.as_str(),&mut vec![]);
             }
             let mut aggregation_exprs = vec![];
             let timestamp_name = if let Some(ts_var) = &tsq.timestamp_variable {ts_var.as_str().to_string()} else {"timestamp".to_string()};
@@ -62,12 +59,13 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
                 let aggregation_helper_column_name = "aggregation_helper_column_".to_string() + &i.to_string();
                 let (lf, agg_expr, used_column) = sparql_aggregate_expression_as_lazy_column_and_expression(v, agg, &timestamp_names, &columns, &aggregation_helper_column_name, out_lf, &mut vec![]);
                 out_lf = lf;
+                println!("{:?}", agg_expr);
                 aggregation_exprs.push(agg_expr);
                 if used_column {
                     aggregate_helper_columns.push(aggregation_helper_column_name);
                 }
             }
-            let by:Vec<Expr> = grouping_expr_columns.iter().map(|c|col(c)).collect();
+            let by:Vec<Expr> = grouping.by.iter().map(|c|col(c.as_str())).collect();
             let grouped_lf = out_lf.groupby(by);
             out_lf = grouped_lf.agg(aggregation_exprs.as_slice()).drop_columns(aggregate_helper_columns.iter().collect::<Vec<&String>>());
         }
