@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use polars::frame::DataFrame;
-use polars::prelude::{col, concat, Expr, IntoLazy, lit, LiteralValue, Operator};
+use polars::prelude::{col, concat, Expr, IntoLazy, lit};
 use hybrid::combiner::{Combiner, sparql_aggregate_expression_as_lazy_column_and_expression};
 use hybrid::timeseries_database::TimeSeriesQueryable;
 use hybrid::timeseries_query::TimeSeriesQuery;
@@ -49,7 +49,7 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
             let grouping_expr_columns:Vec<String> = (grouping.timeseries_funcs.len()..0).map(|i|"grouping_column_name_".to_string() + &i.to_string()).collect();
             //Important to do iteration in reversed direction for nested functions
             for i in grouping.timeseries_funcs.len()..0 {
-                let (v, expression) = grouping.timeseries_funcs.get(i).unwrap();
+                let (_, expression) = grouping.timeseries_funcs.get(i).unwrap();
                 let column_name = grouping_expr_columns.get(i).unwrap();
                 out_lf = Combiner::lazy_expression(expression, out_lf, &columns, column_name,&mut vec![]);
             }
@@ -63,7 +63,9 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
                 let (lf, agg_expr, used_column) = sparql_aggregate_expression_as_lazy_column_and_expression(v, agg, &timestamp_names, &columns, &aggregation_helper_column_name, out_lf, &mut vec![]);
                 out_lf = lf;
                 aggregation_exprs.push(agg_expr);
-                aggregate_helper_columns.push(aggregation_helper_column_name);
+                if used_column {
+                    aggregate_helper_columns.push(aggregation_helper_column_name);
+                }
             }
             let by:Vec<Expr> = grouping_expr_columns.iter().map(|c|col(c)).collect();
             let grouped_lf = out_lf.groupby(by);

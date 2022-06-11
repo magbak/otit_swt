@@ -291,9 +291,9 @@ fn find_all_timeseries_funcs_in_graph_pattern(graph_pattern: &GraphPattern, time
             find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq);
             find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq);
         }
-        GraphPattern::OrderBy { inner, expression } => {
+        GraphPattern::OrderBy { inner, expression:_ } => {
+            //No ordering expressions should be pushed down, not supported
             find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
-            //TODO: Expressions? Handle?
         }
         GraphPattern::Project { inner, .. } => {
             find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);

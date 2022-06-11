@@ -215,6 +215,7 @@ fn compare_all_solutions(mut expected: Vec<QuerySolution>, mut actual: Vec<Query
 #[tokio::test]
 #[serial]
 async fn test_static_query(#[future] with_testdata: (), use_logger: ()) {
+    let _ = use_logger;
     let _ = with_testdata.await;
     let query = parse_sparql_select_query(
         r#"
@@ -257,8 +258,10 @@ async fn test_static_query(#[future] with_testdata: (), use_logger: ()) {
 async fn test_simple_hybrid_query(
     #[future] with_testdata: (),
     time_series_database: InMemoryTimeseriesDatabase,
-    testdata_path: PathBuf, use_logger: ()
+    testdata_path: PathBuf,
+    use_logger: (),
 ) {
+    let _ = use_logger;
     let _ = with_testdata.await;
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -301,8 +304,9 @@ async fn test_complex_hybrid_query(
     #[future] with_testdata: (),
     time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
-    use_logger: ()
+    use_logger: (),
 ) {
+    let _ = use_logger;
     let _ = with_testdata.await;
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -353,6 +357,7 @@ async fn test_pushdown_group_by_hybrid_query(
     testdata_path: PathBuf,
     use_logger: (),
 ) {
+    let _ = use_logger;
     let _ = with_testdata.await;
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -369,7 +374,9 @@ async fn test_pushdown_group_by_hybrid_query(
     "#;
     let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
-        .expect("Hybrid error").sort(&["w"], vec![false]).expect("Sort error");
+        .expect("Hybrid error")
+        .sort(&["w"], vec![false])
+        .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_group_by_hybrid.csv");
 
@@ -379,7 +386,9 @@ async fn test_pushdown_group_by_hybrid_query(
         .has_header(true)
         .with_parse_dates(true)
         .finish()
-        .expect("DF read error").sort(&["w"], vec![false]).expect("Sort error");
+        .expect("DF read error")
+        .sort(&["w"], vec![false])
+        .expect("Sort error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
@@ -396,6 +405,7 @@ async fn test_pushdown_group_by_second_hybrid_query(
     testdata_path: PathBuf,
     use_logger: (),
 ) {
+    let _ = use_logger;
     let _ = with_testdata.await;
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -418,7 +428,9 @@ async fn test_pushdown_group_by_second_hybrid_query(
     "#;
     let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
-        .expect("Hybrid error").sort(&["w", "sum_v"], vec![false]).expect("Sort error");
+        .expect("Hybrid error")
+        .sort(&["w", "sum_v"], vec![false])
+        .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_group_by_second_hybrid.csv");
 
@@ -428,14 +440,15 @@ async fn test_pushdown_group_by_second_hybrid_query(
         .has_header(true)
         .with_parse_dates(true)
         .finish()
-        .expect("DF read error").sort(&["w", "sum_v"], vec![false]).expect("Sort error");
+        .expect("DF read error")
+        .sort(&["w", "sum_v"], vec![false])
+        .expect("Sort error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
     // writer.finish(&mut df).expect("writeok");
     // println!("{}", df);
 }
-
 
 #[rstest]
 #[tokio::test]
@@ -446,6 +459,7 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
     testdata_path: PathBuf,
     use_logger: (),
 ) {
+    let _ = use_logger;
     let _ = with_testdata.await;
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -469,7 +483,9 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
     "#;
     let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
-        .expect("Hybrid error").sort(&["w", "sum_v"], vec![false]).expect("Sort error");
+        .expect("Hybrid error")
+        .sort(&["w", "sum_v"], vec![false])
+        .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_group_by_second_having_hybrid.csv");
 
@@ -479,7 +495,9 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
         .has_header(true)
         .with_parse_dates(true)
         .finish()
-        .expect("DF read error").sort(&["w", "sum_v"], vec![false]).expect("Sort error");
+        .expect("DF read error")
+        .sort(&["w", "sum_v"], vec![false])
+        .expect("Sort error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
@@ -494,8 +512,9 @@ async fn test_pushdown_group_by_concat_agg_hybrid_query(
     #[future] with_testdata: (),
     time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
-    use_logger: ()
+    use_logger: (),
 ) {
+    let _ = use_logger;
     let _ = with_testdata.await;
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -513,7 +532,9 @@ async fn test_pushdown_group_by_concat_agg_hybrid_query(
     "#;
     let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
-        .expect("Hybrid error").sort(&["w"], vec![false]).expect("Sort error");
+        .expect("Hybrid error")
+        .sort(&["w"], vec![false])
+        .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_group_by_concat_agg_hybrid.csv");
 
@@ -523,7 +544,9 @@ async fn test_pushdown_group_by_concat_agg_hybrid_query(
         .has_header(true)
         .with_parse_dates(true)
         .finish()
-        .expect("DF read error").sort(&["w"], vec![false]).expect("Sort error");
+        .expect("DF read error")
+        .sort(&["w"], vec![false])
+        .expect("Sort error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
@@ -540,6 +563,7 @@ async fn test_pushdown_groupby_exists_something_hybrid_query(
     testdata_path: PathBuf,
     use_logger: (),
 ) {
+    let _ = use_logger;
     let _ = with_testdata.await;
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -557,9 +581,11 @@ async fn test_pushdown_groupby_exists_something_hybrid_query(
     "#;
     let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
-        .expect("Hybrid error").sort(&["w"], vec![false]).expect("Sort error");
+        .expect("Hybrid error")
+        .sort(&["w"], vec![false])
+        .expect("Sort error");
     let mut file_path = testdata_path.clone();
-    file_path.push("expected_pushdown_groupby_exists_something_hybrid.csv");
+    file_path.push("expected_pushdown_group_by_exists_something_hybrid.csv");
 
     let file = File::open(file_path.as_path()).expect("Read file problem");
     let expected_df = CsvReader::new(file)
@@ -567,7 +593,9 @@ async fn test_pushdown_groupby_exists_something_hybrid_query(
         .has_header(true)
         .with_parse_dates(true)
         .finish()
-        .expect("DF read error").sort(&["w"], vec![false]).expect("Sort error");
+        .expect("DF read error")
+        .sort(&["w"], vec![false])
+        .expect("Sort error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
@@ -584,6 +612,7 @@ async fn test_pushdown_groupby_exists_timeseries_value_hybrid_query(
     testdata_path: PathBuf,
     use_logger: (),
 ) {
+    let _ = use_logger;
     let _ = with_testdata.await;
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -601,7 +630,9 @@ async fn test_pushdown_groupby_exists_timeseries_value_hybrid_query(
     "#;
     let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
-        .expect("Hybrid error").sort(&["w"], vec![false]).expect("Sort error");
+        .expect("Hybrid error")
+        .sort(&["w"], vec![false])
+        .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_exists_timeseries_value_hybrid.csv");
 
@@ -611,7 +642,9 @@ async fn test_pushdown_groupby_exists_timeseries_value_hybrid_query(
         .has_header(true)
         .with_parse_dates(true)
         .finish()
-        .expect("DF read error").sort(&["w"], vec![false]).expect("Sort error");
+        .expect("DF read error")
+        .sort(&["w"], vec![false])
+        .expect("Sort error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
@@ -628,6 +661,7 @@ async fn test_pushdown_groupby_exists_aggregated_timeseries_value_hybrid_query(
     testdata_path: PathBuf,
     use_logger: (),
 ) {
+    let _ = use_logger;
     let _ = with_testdata.await;
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -648,20 +682,24 @@ async fn test_pushdown_groupby_exists_aggregated_timeseries_value_hybrid_query(
     "#;
     let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
-        .expect("Hybrid error").sort(&["w"], vec![false]).expect("Sort error");
+        .expect("Hybrid error")
+        .sort(&["w"], vec![false])
+        .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_exists_aggregated_timeseries_value_hybrid.csv");
 
-    // let file = File::open(file_path.as_path()).expect("Read file problem");
-    // let expected_df = CsvReader::new(file)
-    //     .infer_schema(None)
-    //     .has_header(true)
-    //     .with_parse_dates(true)
-    //     .finish()
-    //     .expect("DF read error").sort(&["w"], vec![false]).expect("Sort error");
-    // assert_eq!(expected_df, df);
-    let file = File::create(file_path.as_path()).expect("could not open file");
-    let writer = CsvWriter::new(file);
-    writer.finish(&mut df).expect("writeok");
-    println!("{}", df);
+    let file = File::open(file_path.as_path()).expect("Read file problem");
+    let expected_df = CsvReader::new(file)
+        .infer_schema(None)
+        .has_header(true)
+        .with_parse_dates(true)
+        .finish()
+        .expect("DF read error")
+        .sort(&["w"], vec![false])
+        .expect("Sort error");
+    assert_eq!(expected_df, df);
+    // let file = File::create(file_path.as_path()).expect("could not open file");
+    // let writer = CsvWriter::new(file);
+    // writer.finish(&mut df).expect("writeok");
+    // println!("{}", df);
 }

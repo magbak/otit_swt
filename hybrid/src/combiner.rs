@@ -162,8 +162,8 @@ impl Combiner {
                     .unique(None, UniqueKeepStrategy::First)
                     .drop_columns(&[&union_distinct_column])
             }
-            GraphPattern::Graph { name, inner } => {
-                todo!()
+            GraphPattern::Graph { name:_, inner } => {
+                self.lazy_graph_pattern(columns, input_lf, inner, time_series)
             }
             GraphPattern::Extend {
                 inner,
@@ -193,10 +193,11 @@ impl Combiner {
                 output_lf
             }
             GraphPattern::Values {
-                variables,
-                bindings,
+                variables: _,
+                bindings: _,
             } => {
-                todo!()
+                //These are handled by the static query.
+                input_lf
             }
             GraphPattern::OrderBy { inner, expression } => {
                 let mut inner_lf = self.lazy_graph_pattern(columns, input_lf, inner, time_series);
@@ -227,7 +228,7 @@ impl Combiner {
                 inner_lf
             }
             GraphPattern::Project { inner, variables } => {
-                let mut inner_lf = self.lazy_graph_pattern(columns, input_lf, inner, time_series);
+                let inner_lf = self.lazy_graph_pattern(columns, input_lf, inner, time_series);
                 let mut cols: Vec<Expr> = variables.iter().map(|c| col(c.as_str())).collect();
                 for (tsq, _) in time_series {
                     cols.push(col(tsq.identifier_variable.as_ref().unwrap().as_str()));
@@ -1153,14 +1154,25 @@ pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
             } else {
                 "".to_string()
             };
-            out_expr = col(column_name)
+            if *distinct{
+                out_expr = col(column_name)
                 .cast(Utf8)
                 .list()
                 .apply(
-                    move |s| Ok(s.str_concat(use_sep.as_str()).into_series()),
+                    move |s| Ok(s.unique_stable().expect("Unique stable error").str_concat(use_sep.as_str()).into_series()),
                     GetOutput::from_type(Utf8),
                 )
                 .first();
+            } else {
+                out_expr = col(column_name)
+                    .cast(Utf8)
+                    .list()
+                    .apply(
+                        move |s| Ok(s.str_concat(use_sep.as_str()).into_series()),
+                        GetOutput::from_type(Utf8),
+                    )
+                    .first();
+            }
         }
         AggregateExpression::Sample { expr, .. } => {
             out_lf = Combiner::lazy_expression(expr, lf, columns, column_name, time_series);
