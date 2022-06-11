@@ -20,6 +20,7 @@ use spargebra::algebra::{
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
 use std::collections::HashSet;
+use std::ops::Not;
 use crate::exists_helper::rewrite_exists_graph_pattern;
 
 pub struct Combiner {
@@ -221,7 +222,7 @@ impl Combiner {
                         .iter()
                         .map(|c| col(c))
                         .collect::<Vec<Expr>>(),
-                    asc_ordering.iter().map(|asc| asc.clone()).collect(),
+                    asc_ordering.iter().map(|asc| !asc).collect(),
                 );
                 inner_lf = inner_lf
                     .drop_columns(order_expression_colnames.iter().collect::<Vec<&String>>());

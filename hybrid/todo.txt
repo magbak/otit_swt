@@ -1,3 +1,13 @@
-Exists - panic for variables that are functions of time series.. ??? Handle properly
 Pushups also via GPReturn?
 Qualify groupby expression structure.
+Groupby that is not pushed down test.
+
+Test coverage:
+- Left join
+- Join
+- Ordering
+- If
+- Coalesce
+- Distinct
+- Values
+- Minus

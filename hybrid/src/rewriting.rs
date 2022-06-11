@@ -987,6 +987,7 @@ impl StaticQueryRewriter {
             }
             //Todo: redusere scope??
             if variables_rewrite.len() > 0 {
+                println!("{:?}", inner);
                 let inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
                 gpr_inner.with_graph_pattern(GraphPattern::Project {
                     inner: Box::new(inner_graph_pattern),
@@ -1018,6 +1019,8 @@ impl StaticQueryRewriter {
                     inner: Box::new(inner_graph_pattern),
                     expression: order_expressions_rewrite.iter_mut().filter(|oer|oer.order_expression.is_some()).map(|oer|oer.order_expression.take().unwrap()).collect(),
                 });
+            } else {
+                gpr_inner.with_graph_pattern(inner_graph_pattern);
             }
             return Some(gpr_inner);
         }
