@@ -21,6 +21,7 @@ use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
 use std::time::Duration;
+use log::{debug, SetLoggerError};
 use tokio::time::sleep;
 
 pub mod in_memory_timeseries;
@@ -56,7 +57,11 @@ async fn find_container(docker: &Docker, container_name: &str) -> Option<Contain
 
 #[fixture]
 fn use_logger() {
-    env_logger::init();
+    let res = env_logger::try_init();
+    match res {
+        Ok(_) => {}
+        Err(_) => {debug!("Tried to initialize logger which is already initialize")}
+    }
 }
 
 #[fixture]
