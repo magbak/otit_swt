@@ -5,7 +5,6 @@ Groupby that is not pushed down test.
 Test coverage:
 - Left join
 - Join
-- Ordering
 - If
 - Coalesce
 - Distinct

@@ -635,22 +635,25 @@ impl StaticQueryRewriter {
                         &gpr_left.variables_in_scope,
                     ));
                 }
-                if let Some(mut expression_rewrite) = expression_rewrite_opt {
-                    if (expression_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
-                        || expression_rewrite.change_type.as_ref().unwrap() == &ChangeType::Relaxed)
-                        && (&gpr_left.change_type == &ChangeType::NoChange
+                if expression_rewrite_opt.is_some() && expression_rewrite_opt.as_ref().unwrap().expression.is_some() {
+                    if let Some(mut expression_rewrite) = expression_rewrite_opt {
+                        if (expression_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
+                            || expression_rewrite.change_type.as_ref().unwrap() == &ChangeType::Relaxed)
+                            && (&gpr_left.change_type == &ChangeType::NoChange
                             || &gpr_left.change_type == &ChangeType::Relaxed)
-                    {
-                        let left_graph_pattern = gpr_left.graph_pattern.take().unwrap();
-                        gpr_left
-                            .with_graph_pattern(GraphPattern::Filter {
-                                expr: expression_rewrite.expression.take().unwrap(),
-                                inner: Box::new(apply_pushups(left_graph_pattern, &mut expression_rewrite.graph_pattern_pushups)),
-                            })
-                            .with_change_type(ChangeType::Relaxed);
-                        return Some(gpr_left);
+                        {
+                            let left_graph_pattern = gpr_left.graph_pattern.take().unwrap();
+                            gpr_left
+                                .with_graph_pattern(GraphPattern::Filter {
+                                    expr: expression_rewrite.expression.take().unwrap(),
+                                    inner: Box::new(apply_pushups(left_graph_pattern, &mut expression_rewrite.graph_pattern_pushups)),
+                                })
+                                .with_change_type(ChangeType::Relaxed);
+                            return Some(gpr_left);
+                        }
                     }
-                } else {
+                }
+                else {
                     if &gpr_left.change_type == &ChangeType::NoChange
                         || &gpr_left.change_type == &ChangeType::Relaxed
                     {
@@ -670,7 +673,7 @@ impl StaticQueryRewriter {
                 ));
             }
             if let Some(mut expression_rewrite) = expression_rewrite_opt {
-                if (expression_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
+                if expression_rewrite.expression.is_some() && (expression_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
                     || expression_rewrite.change_type.as_ref().unwrap() == &ChangeType::Relaxed)
                     && (&gpr_right.change_type == &ChangeType::NoChange
                         || &gpr_right.change_type == &ChangeType::Relaxed)

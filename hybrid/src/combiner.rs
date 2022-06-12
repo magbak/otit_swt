@@ -1,4 +1,5 @@
 use crate::constants::HAS_VALUE;
+use crate::exists_helper::rewrite_exists_graph_pattern;
 use crate::rewriting::hash_graph_pattern;
 use crate::sparql_result_to_polars::{
     sparql_literal_to_polars_literal_value, sparql_named_node_to_polars_literal_value,
@@ -10,6 +11,7 @@ use oxrdf::{NamedNodeRef, Variable};
 use polars::datatypes::DataType;
 use polars::frame::DataFrame;
 use polars::prelude::DataType::Utf8;
+use polars::prelude::Expr::Literal;
 use polars::prelude::{
     col, concat, concat_str, Expr, GetOutput, IntoLazy, IntoSeries, JoinType, LazyFrame,
     LiteralValue, Operator, Series, UniqueKeepStrategy,
@@ -21,7 +23,6 @@ use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
 use std::collections::HashSet;
 use std::ops::Not;
-use crate::exists_helper::rewrite_exists_graph_pattern;
 
 pub struct Combiner {
     counter: u16,
@@ -110,9 +111,25 @@ impl Combiner {
                         .cumcount(false)
                         .alias(&left_join_distinct_column),
                 );
-                let left_lf = self.lazy_graph_pattern(columns, input_lf, left, time_series);
+                let mut left_df = self
+                    .lazy_graph_pattern(columns, input_lf, left, time_series)
+                    .collect()
+                    .expect("Collect error");
+
+                let ts_identifiers: Vec<String> = time_series
+                    .iter()
+                    .map(|(tsq, _)| {
+                        tsq.identifier_variable
+                            .as_ref()
+                            .unwrap()
+                            .as_str()
+                            .to_string()
+                    })
+                    .collect();
+
                 let mut right_lf =
-                    self.lazy_graph_pattern(columns, left_lf.clone(), right, time_series);
+                    self.lazy_graph_pattern(columns, left_df.clone().lazy(), right, time_series);
+
                 if let Some(expr) = expression {
                     let column_name = "filtering_column_name";
                     right_lf = Combiner::lazy_expression(
@@ -126,13 +143,51 @@ impl Combiner {
                         .filter(col(column_name))
                         .drop_columns([column_name]);
                 }
-                let mut output_lf = concat(vec![left_lf, right_lf], false).expect("Concat error");
-                output_lf = output_lf
-                    .unique(
-                        Some(vec![left_join_distinct_column.clone()]),
-                        UniqueKeepStrategy::Last,
+
+                let mut right_df = right_lf.collect().expect("Collect right problem");
+
+                for id in ts_identifiers {
+                    if !columns.contains(&id) {
+                        left_df.drop(&id).expect("Drop problem");
+                    }
+                }
+                left_df = left_df
+                    .filter(
+                        &left_df
+                            .column(&left_join_distinct_column)
+                            .expect("Did not find left helper")
+                            .is_in(
+                                right_df
+                                    .column(&left_join_distinct_column)
+                                    .expect("Did not find right helper"),
+                            )
+                            .expect("Is in problem")
+                            .not(),
                     )
-                    .drop_columns(&[&left_join_distinct_column]);
+                    .expect("Filter problem");
+
+                for c in right_df.get_column_names_owned().iter() {
+                    if !left_df.get_column_names().contains(&c.as_str()) {
+                        left_df = left_df
+                            .lazy()
+                            .with_column(Expr::Literal(LiteralValue::Null).alias(c))
+                            .collect()
+                            .expect("Not ok");
+                        left_df
+                            .with_column(
+                                left_df
+                                    .column(c)
+                                    .expect("Col c prob")
+                                    .cast(right_df.column(c).unwrap().dtype())
+                                    .expect("Cast error"),
+                            )
+                            .expect("TODO: panic message");
+                    }
+                }
+
+                let mut output_lf =
+                    concat(vec![left_df.lazy(), right_df.lazy()], false).expect("Concat error");
+                output_lf = output_lf.drop_columns(&[&left_join_distinct_column]);
 
                 output_lf
             }
@@ -163,7 +218,7 @@ impl Combiner {
                     .unique(None, UniqueKeepStrategy::First)
                     .drop_columns(&[&union_distinct_column])
             }
-            GraphPattern::Graph { name:_, inner } => {
+            GraphPattern::Graph { name: _, inner } => {
                 self.lazy_graph_pattern(columns, input_lf, inner, time_series)
             }
             GraphPattern::Extend {
@@ -875,11 +930,9 @@ impl Combiner {
                         df.clone().lazy(),
                         &new_inner,
                         time_series,
-                    ).select([col(&exists_helper_column)])
-                    .unique(
-                        None,
-                        UniqueKeepStrategy::First,
                     )
+                    .select([col(&exists_helper_column)])
+                    .unique(None, UniqueKeepStrategy::First)
                     .collect()
                     .expect("Collect lazy exists error");
                 debug!("Exists dataframe: {}", exists_df);
@@ -1155,15 +1208,20 @@ pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
             } else {
                 "".to_string()
             };
-            if *distinct{
+            if *distinct {
                 out_expr = col(column_name)
-                .cast(Utf8)
-                .list()
-                .apply(
-                    move |s| Ok(s.unique_stable().expect("Unique stable error").str_concat(use_sep.as_str()).into_series()),
-                    GetOutput::from_type(Utf8),
-                )
-                .first();
+                    .cast(Utf8)
+                    .list()
+                    .apply(
+                        move |s| {
+                            Ok(s.unique_stable()
+                                .expect("Unique stable error")
+                                .str_concat(use_sep.as_str())
+                                .into_series())
+                        },
+                        GetOutput::from_type(Utf8),
+                    )
+                    .first();
             } else {
                 out_expr = col(column_name)
                     .cast(Utf8)
