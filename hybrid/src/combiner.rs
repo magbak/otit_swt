@@ -426,7 +426,6 @@ impl Combiner {
             }
         }
         assert!(columns.contains(tsq.identifier_variable.as_ref().unwrap().as_str()));
-
         let mut output_lf = input_lf.join(
             df.lazy(),
             join_on.as_slice(),

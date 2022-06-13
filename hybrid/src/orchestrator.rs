@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use crate::combiner::Combiner;
 use crate::preprocessing::Preprocessor;
 use crate::rewriting::StaticQueryRewriter;
@@ -43,19 +44,21 @@ fn complete_time_series_queries(
     time_series_queries: &mut Vec<TimeSeriesQuery>,
 ) {
     for tsq in time_series_queries {
-        let mut ids = vec![];
+        let mut ids = HashSet::new();
         if let Some(id_var) = &tsq.identifier_variable {
             for sqs in static_query_solutions {
                 if let Some(Term::Literal(lit)) = sqs.get(id_var) {
                     if lit.datatype() == xsd::STRING {
-                        ids.push(lit.value().to_string());
+                        ids.insert(lit.value().to_string());
                     } else {
                         todo!()
                     }
                 }
             }
         }
-        tsq.ids = Some(ids);
+        let mut ids_vec:Vec<String> = ids.into_iter().collect();
+        ids_vec.sort();
+        tsq.ids = Some(ids_vec);
     }
 }
 

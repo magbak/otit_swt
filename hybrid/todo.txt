@@ -7,5 +7,3 @@ Test coverage:
 - If
 - Coalesce
 - Distinct
-- Values
-- In
