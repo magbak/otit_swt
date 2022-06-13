@@ -8,4 +8,4 @@ Test coverage:
 - Coalesce
 - Distinct
 - Values
-- Minus
+- In
