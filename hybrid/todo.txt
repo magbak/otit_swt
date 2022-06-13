@@ -3,7 +3,6 @@ Qualify groupby expression structure.
 Groupby that is not pushed down test.
 
 Test coverage:
-- Left join
 - Join
 - If
 - Coalesce

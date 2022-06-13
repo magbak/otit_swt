@@ -106,15 +106,14 @@ impl Combiner {
                 let left_join_distinct_column =
                     "left_join_distinct_column_".to_string() + &self.counter.to_string();
                 self.counter += 1;
-                let input_lf = input_lf.with_column(
-                    col(columns.iter().next().unwrap())
-                        .cumcount(false)
-                        .alias(&left_join_distinct_column),
-                );
                 let mut left_df = self
                     .lazy_graph_pattern(columns, input_lf, left, time_series)
+                    .with_column(
+                        Expr::Literal(LiteralValue::Int64(1)).alias(&left_join_distinct_column),
+                    )
+                    .with_column(col(&left_join_distinct_column).cumsum(false).keep_name())
                     .collect()
-                    .expect("Collect error");
+                    .expect("Left join collect left problem");
 
                 let ts_identifiers: Vec<String> = time_series
                     .iter()
@@ -239,14 +238,33 @@ impl Combiner {
             }
             GraphPattern::Minus { left, right } => {
                 let minus_column = "minus_column".to_string() + &self.counter.to_string();
-                let left_lf = self.lazy_graph_pattern(columns, input_lf, left, time_series);
-                let right_lf =
-                    self.lazy_graph_pattern(columns, left_lf.clone(), right, time_series);
-                let mut output_lf = concat(vec![left_lf, right_lf], false).expect("Noprob");
-                output_lf = output_lf
-                    .filter(col(&minus_column).is_duplicated().not())
-                    .drop_columns(&[&minus_column]);
-                output_lf
+                self.counter += 1;
+                debug!("Left graph pattern {}", left);
+                let mut left_df = self
+                    .lazy_graph_pattern(columns, input_lf, left, time_series)
+                    .with_column(Expr::Literal(LiteralValue::Int64(1)).alias(&minus_column))
+                    .with_column(col(&minus_column).cumsum(false).keep_name())
+                    .collect()
+                    .expect("Minus collect left problem");
+
+                debug!("Minus left hand side: {:?}", left_df);
+                //TODO: determine only variables actually used before copy
+                let right_df = self
+                    .lazy_graph_pattern(columns, left_df.clone().lazy(), right, time_series)
+                    .select([col(&minus_column)])
+                    .collect()
+                    .expect("Minus right df collect problem");
+                left_df = left_df
+                    .filter(
+                        &left_df
+                            .column(&minus_column)
+                            .unwrap()
+                            .is_in(right_df.column(&minus_column).unwrap())
+                            .unwrap()
+                            .not(),
+                    )
+                    .expect("Filter minus left hand side problem");
+                left_df.drop(&minus_column).unwrap().lazy()
             }
             GraphPattern::Values {
                 variables: _,

@@ -149,6 +149,17 @@ impl OEReturn {
     }
 }
 
+#[derive(Clone)]
+struct PushdownContext {
+    minus:bool,
+}
+
+impl PushdownContext {
+    fn new() -> PushdownContext {
+        PushdownContext {minus:false}
+    }
+}
+
 #[derive(Debug)]
 pub struct StaticQueryRewriter {
     variable_counter: u16,
@@ -176,7 +187,7 @@ impl StaticQueryRewriter {
         {
             let required_change_direction = ChangeType::Relaxed;
             let pattern_rewrite_opt =
-                self.rewrite_graph_pattern(pattern, &required_change_direction);
+                self.rewrite_graph_pattern(pattern, &required_change_direction, PushdownContext::new());
             if let Some(mut gpr_inner) = pattern_rewrite_opt {
                 if &gpr_inner.change_type == &ChangeType::NoChange
                     || &gpr_inner.change_type == &ChangeType::Relaxed
@@ -204,6 +215,7 @@ impl StaticQueryRewriter {
         &mut self,
         graph_pattern: &GraphPattern,
         required_change_direction: &ChangeType,
+        pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
         match graph_pattern {
             GraphPattern::Bgp { patterns } => self.rewrite_bgp(patterns),
@@ -213,61 +225,61 @@ impl StaticQueryRewriter {
                 object,
             } => self.rewrite_path(subject, path, object),
             GraphPattern::Join { left, right } => {
-                self.rewrite_join(left, right, required_change_direction)
+                self.rewrite_join(left, right, required_change_direction, pushdown_context)
             }
             GraphPattern::LeftJoin {
                 left,
                 right,
                 expression,
-            } => self.rewrite_left_join(left, right, expression, required_change_direction),
+            } => self.rewrite_left_join(left, right, expression, required_change_direction, pushdown_context),
             GraphPattern::Filter { expr, inner } => {
-                self.rewrite_filter(expr, inner, required_change_direction)
+                self.rewrite_filter(expr, inner, required_change_direction, pushdown_context)
             }
             GraphPattern::Union { left, right } => {
-                self.rewrite_union(left, right, required_change_direction)
+                self.rewrite_union(left, right, required_change_direction, pushdown_context)
             }
             GraphPattern::Graph { name, inner } => {
-                self.rewrite_graph(name, inner, required_change_direction)
+                self.rewrite_graph(name, inner, required_change_direction, pushdown_context)
             }
             GraphPattern::Extend {
                 inner,
                 variable,
                 expression,
-            } => self.rewrite_extend(inner, variable, expression, required_change_direction),
+            } => self.rewrite_extend(inner, variable, expression, required_change_direction, pushdown_context),
             GraphPattern::Minus { left, right } => {
-                self.rewrite_minus(left, right, required_change_direction)
+                self.rewrite_minus(left, right, required_change_direction, pushdown_context)
             }
             GraphPattern::Values {
                 variables,
                 bindings,
             } => self.rewrite_values(variables, bindings),
             GraphPattern::OrderBy { inner, expression } => {
-                self.rewrite_order_by(inner, expression, required_change_direction)
+                self.rewrite_order_by(inner, expression, required_change_direction, pushdown_context)
             }
             GraphPattern::Project { inner, variables } => {
-                self.rewrite_project(inner, variables, required_change_direction)
+                self.rewrite_project(inner, variables, required_change_direction, pushdown_context)
             }
             GraphPattern::Distinct { inner } => {
-                self.rewrite_distinct(inner, required_change_direction)
+                self.rewrite_distinct(inner, required_change_direction, pushdown_context)
             }
             GraphPattern::Reduced { inner } => {
-                self.rewrite_reduced(inner, required_change_direction)
+                self.rewrite_reduced(inner, required_change_direction, pushdown_context)
             }
             GraphPattern::Slice {
                 inner,
                 start,
                 length,
-            } => self.rewrite_slice(inner, start, length, required_change_direction),
+            } => self.rewrite_slice(inner, start, length, required_change_direction, pushdown_context),
             GraphPattern::Group {
                 inner,
                 variables,
                 aggregates,
-            } => self.rewrite_group(inner, variables, aggregates, required_change_direction),
+            } => self.rewrite_group(inner, variables, aggregates, required_change_direction, pushdown_context),
             GraphPattern::Service {
                 name,
                 inner,
                 silent,
-            } => self.rewrite_service(name, inner, silent),
+            } => self.rewrite_service(name, inner, silent, pushdown_context),
         }
     }
 
@@ -292,8 +304,9 @@ impl StaticQueryRewriter {
         name: &NamedNodePattern,
         inner: &GraphPattern,
         required_change_direction: &ChangeType,
+        pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
-        if let Some(mut inner_gpr) = self.rewrite_graph_pattern(inner, required_change_direction) {
+        if let Some(mut inner_gpr) = self.rewrite_graph_pattern(inner, required_change_direction, pushdown_context) {
             let inner_rewrite = inner_gpr.graph_pattern.take().unwrap();
             inner_gpr.with_graph_pattern(GraphPattern::Graph {
                 name: name.clone(),
@@ -308,11 +321,11 @@ impl StaticQueryRewriter {
         &mut self,
         left: &GraphPattern,
         right: &GraphPattern,
-
         required_change_direction: &ChangeType,
+        pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
-        let left_rewrite_opt = self.rewrite_graph_pattern(left, required_change_direction);
-        let right_rewrite_opt = self.rewrite_graph_pattern(right, required_change_direction);
+        let left_rewrite_opt = self.rewrite_graph_pattern(left, required_change_direction, pushdown_context.clone());
+        let right_rewrite_opt = self.rewrite_graph_pattern(right, required_change_direction, pushdown_context);
 
         match required_change_direction {
             ChangeType::Relaxed => {
@@ -442,9 +455,10 @@ impl StaticQueryRewriter {
         left: &GraphPattern,
         right: &GraphPattern,
         required_change_direction: &ChangeType,
+        pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
-        let left_rewrite_opt = self.rewrite_graph_pattern(left, required_change_direction);
-        let right_rewrite_opt = self.rewrite_graph_pattern(right, required_change_direction);
+        let left_rewrite_opt = self.rewrite_graph_pattern(left, required_change_direction, pushdown_context.clone());
+        let right_rewrite_opt = self.rewrite_graph_pattern(right, required_change_direction, pushdown_context.clone());
 
         if let Some(mut gpr_left) = left_rewrite_opt {
             if let Some(mut gpr_right) = right_rewrite_opt {
@@ -505,11 +519,12 @@ impl StaticQueryRewriter {
         right: &GraphPattern,
         expression_opt: &Option<Expression>,
         required_change_direction: &ChangeType,
+        pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
-        let left_rewrite_opt = self.rewrite_graph_pattern(left, required_change_direction);
-        let right_rewrite_opt = self.rewrite_graph_pattern(right, required_change_direction);
+        let left_rewrite_opt = self.rewrite_graph_pattern(left, required_change_direction, pushdown_context.clone());
+        let right_rewrite_opt = self.rewrite_graph_pattern(right, required_change_direction, pushdown_context.clone());
         if let Some(expression) = expression_opt {
-            self.pushdown_expression(expression);
+            self.pushdown_expression(expression, &pushdown_context);
         }
         let mut expression_rewrite_opt = None;
 
@@ -704,9 +719,10 @@ impl StaticQueryRewriter {
         expression: &Expression,
         inner: &GraphPattern,
         required_change_direction: &ChangeType,
+        pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
-        let inner_rewrite_opt = self.rewrite_graph_pattern(inner, required_change_direction);
-        self.pushdown_expression(expression);
+        let inner_rewrite_opt = self.rewrite_graph_pattern(inner, required_change_direction, pushdown_context.clone());
+        self.pushdown_expression(expression, &pushdown_context);
         if let Some(mut gpr_inner) = inner_rewrite_opt {
             let mut expression_rewrite = self.rewrite_expression(
                 expression,
@@ -758,9 +774,10 @@ impl StaticQueryRewriter {
         variables: &Vec<Variable>,
         aggregates: &Vec<(Variable, AggregateExpression)>,
         required_change_direction: &ChangeType,
+                pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
         let graph_pattern_rewrite_opt =
-            self.rewrite_graph_pattern(graph_pattern, required_change_direction);
+            self.rewrite_graph_pattern(graph_pattern, required_change_direction, pushdown_context);
         if let Some(mut gpr_inner) = graph_pattern_rewrite_opt {
             if gpr_inner.change_type == ChangeType::NoChange {
                 let variables_rewritten:Vec<Option<Variable>> = variables.iter().map(|v| {
@@ -937,10 +954,10 @@ impl StaticQueryRewriter {
     fn rewrite_distinct(
         &mut self,
         inner: &GraphPattern,
-
         required_change_direction: &ChangeType,
+                pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
-        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(inner, required_change_direction) {
+        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(inner, required_change_direction, pushdown_context) {
             let inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
             gpr_inner.with_graph_pattern(GraphPattern::Distinct {
                 inner: Box::new(inner_graph_pattern),
@@ -956,8 +973,9 @@ impl StaticQueryRewriter {
         inner: &GraphPattern,
         variables: &Vec<Variable>,
         required_change_direction: &ChangeType,
+                pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
-        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(inner, required_change_direction) {
+        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(inner, required_change_direction, pushdown_context) {
             let mut variables_rewrite = variables
                 .iter()
                 .map(|v| self.rewrite_variable(v))
@@ -1007,8 +1025,9 @@ impl StaticQueryRewriter {
         inner: &GraphPattern,
         order_expressions: &Vec<OrderExpression>,
         required_change_direction: &ChangeType,
+        pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
-        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(inner, required_change_direction) {
+        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(inner, required_change_direction, pushdown_context) {
             let mut order_expressions_rewrite = order_expressions
                 .iter()
                 .map(|e| self.rewrite_order_expression(e, &gpr_inner.variables_in_scope))
@@ -1063,10 +1082,13 @@ impl StaticQueryRewriter {
         left: &GraphPattern,
         right: &GraphPattern,
         required_change_direction: &ChangeType,
+                pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
-        let left_rewrite_opt = self.rewrite_graph_pattern(left, required_change_direction);
+        let left_rewrite_opt = self.rewrite_graph_pattern(left, required_change_direction, pushdown_context.clone());
+        let mut right_pushdown_context = pushdown_context.clone();
+        right_pushdown_context.minus = true;
         let right_rewrite_opt =
-            self.rewrite_graph_pattern(right, &required_change_direction.opposite());
+            self.rewrite_graph_pattern(right, &required_change_direction.opposite(), right_pushdown_context);
 
         if let Some(mut gpr_left) = left_rewrite_opt {
             if let Some(mut gpr_right) = right_rewrite_opt {
@@ -1894,7 +1916,7 @@ impl StaticQueryRewriter {
             }
             Expression::Exists(wrapped) => {
                 let wrapped_rewrite =
-                    self.rewrite_graph_pattern(&wrapped, &ChangeType::NoChange);
+                    self.rewrite_graph_pattern(&wrapped, &ChangeType::NoChange, PushdownContext::new());
                 let mut exr = ExReturn::new();
                 if let Some(mut gpret) = wrapped_rewrite {
                     if gpret.change_type == ChangeType::NoChange {
@@ -2028,8 +2050,9 @@ impl StaticQueryRewriter {
         var: &Variable,
         expr: &Expression,
         required_change_direction: &ChangeType,
+        pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
-        let inner_rewrite_opt = self.rewrite_graph_pattern(inner, required_change_direction);
+        let inner_rewrite_opt = self.rewrite_graph_pattern(inner, required_change_direction, pushdown_context);
         if let Some(mut gpr_inner) = inner_rewrite_opt {
             let mut expr_rewrite =
                 self.rewrite_expression(expr, &ChangeType::NoChange, &gpr_inner.variables_in_scope);
@@ -2061,8 +2084,9 @@ impl StaticQueryRewriter {
         start: &usize,
         length: &Option<usize>,
         required_change_direction: &ChangeType,
+                pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
-        let rewrite_inner_opt = self.rewrite_graph_pattern(inner, required_change_direction);
+        let rewrite_inner_opt = self.rewrite_graph_pattern(inner, required_change_direction, pushdown_context);
         if let Some(mut gpr_inner) = rewrite_inner_opt {
             let inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
             gpr_inner.with_graph_pattern(GraphPattern::Slice {
@@ -2079,8 +2103,9 @@ impl StaticQueryRewriter {
         &mut self,
         inner: &GraphPattern,
         required_change_direction: &ChangeType,
+        pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
-        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(inner, required_change_direction) {
+        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(inner, required_change_direction, pushdown_context) {
             let inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
             gpr_inner.with_graph_pattern(GraphPattern::Reduced {
                 inner: Box::new(inner_graph_pattern),
@@ -2095,8 +2120,9 @@ impl StaticQueryRewriter {
         name: &NamedNodePattern,
         inner: &GraphPattern,
         silent: &bool,
+        pushdown_context: PushdownContext
     ) -> Option<GPReturn> {
-        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(inner, &ChangeType::NoChange) {
+        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(inner, &ChangeType::NoChange, pushdown_context) {
             let inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
             gpr_inner.with_graph_pattern(GraphPattern::Service {
                 name: name.clone(),
@@ -2223,9 +2249,11 @@ impl StaticQueryRewriter {
         }
     }
 
-    fn pushdown_expression(&mut self, expr: &Expression) {
-        for t in &mut self.time_series_queries {
-            t.try_rewrite_expression(expr);
+    fn pushdown_expression(&mut self, expr: &Expression, pushdown_context: &PushdownContext) {
+        if !pushdown_context.minus {
+            for t in &mut self.time_series_queries {
+                t.try_rewrite_expression(expr);
+            }
         }
     }
 
