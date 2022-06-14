@@ -871,7 +871,7 @@ async fn test_minus_query(
     "#;
     let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
-        .expect("Hybrid error");
+        .expect("Hybrid error").sort(&["w", "v"], vec![false]).expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_minus_query.csv");
 
@@ -881,7 +881,7 @@ async fn test_minus_query(
         .has_header(true)
         .with_parse_dates(true)
         .finish()
-        .expect("DF read error");
+        .expect("DF read error").sort(&["w", "v"], vec![false]).expect("Sort error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);

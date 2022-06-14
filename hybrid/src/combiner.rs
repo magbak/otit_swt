@@ -11,7 +11,6 @@ use oxrdf::{NamedNodeRef, Variable};
 use polars::datatypes::DataType;
 use polars::frame::DataFrame;
 use polars::prelude::DataType::Utf8;
-use polars::prelude::Expr::Literal;
 use polars::prelude::{
     col, concat, concat_str, Expr, GetOutput, IntoLazy, IntoSeries, JoinType, LazyFrame,
     LiteralValue, Operator, Series, UniqueKeepStrategy,
@@ -143,7 +142,7 @@ impl Combiner {
                         .drop_columns([column_name]);
                 }
 
-                let mut right_df = right_lf.collect().expect("Collect right problem");
+                let right_df = right_lf.collect().expect("Collect right problem");
 
                 for id in ts_identifiers {
                     if !columns.contains(&id) {
