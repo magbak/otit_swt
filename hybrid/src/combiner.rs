@@ -40,6 +40,7 @@ impl Combiner {
     ) -> LazyFrame {
         let project_variables;
         let inner_graph_pattern;
+        let mut distinct= false;
         if let Query::Select {
             dataset: _,
             pattern,
@@ -49,8 +50,16 @@ impl Combiner {
             if let GraphPattern::Project { inner, variables } = pattern {
                 project_variables = variables.clone();
                 inner_graph_pattern = inner;
+            } else if let GraphPattern::Distinct{ inner } = pattern {
+                if let GraphPattern::Project {inner, variables} = inner.as_ref() {
+                    distinct = true;
+                    project_variables = variables.clone();
+                    inner_graph_pattern = inner;
+                } else {
+                    panic!("Wrong!");
+                }
             } else {
-                panic!("Wrong!!!");
+                panic!("Also wrong!");
             }
         } else {
             panic!("Wrong!!!");
@@ -69,6 +78,9 @@ impl Combiner {
             .map(|c| col(c.as_str()))
             .collect::<Vec<Expr>>();
         lf = lf.select(projections.as_slice());
+        if distinct {
+            lf = lf.unique_stable(None, UniqueKeepStrategy::First);
+        }
         lf
     }
 
@@ -310,7 +322,7 @@ impl Combiner {
             }
             GraphPattern::Distinct { inner } => self
                 .lazy_graph_pattern(columns, input_lf, inner, time_series)
-                .unique(None, UniqueKeepStrategy::First),
+                .unique_stable(None, UniqueKeepStrategy::First),
             GraphPattern::Reduced { .. } => {
                 todo!()
             }
