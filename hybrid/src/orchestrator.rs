@@ -23,8 +23,8 @@ pub async fn execute_hybrid_query(
     let parsed_query = parse_sparql_select_query(query)?;
     debug!("Parsed query: {:?}", parsed_query);
     let mut preprocessor = Preprocessor::new();
-    let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed_query);
-    let mut rewriter = StaticQueryRewriter::new(&has_constraint);
+    let (preprocessed_query, variable_constraints) = preprocessor.preprocess(&parsed_query);
+    let mut rewriter = StaticQueryRewriter::new(&variable_constraints);
     let (static_rewrite, mut time_series_queries) =
         rewriter.rewrite_query(preprocessed_query).unwrap();
     debug!("Produced static rewrite: {:?}", static_rewrite);
@@ -32,7 +32,7 @@ pub async fn execute_hybrid_query(
     complete_time_series_queries(&static_query_solutions, &mut time_series_queries);
     let static_result_df = create_static_query_result_df(&static_rewrite, static_query_solutions);
     debug!("Static result dataframe: {}", static_result_df);
-    find_all_groupby_pushdowns(&parsed_query,&static_result_df, &mut time_series_queries, &has_constraint);
+    find_all_groupby_pushdowns(&parsed_query,&static_result_df, &mut time_series_queries, &variable_constraints);
     let mut time_series = execute_time_series_queries(time_series_database, time_series_queries)?;
     let mut combiner = Combiner::new();
     let lazy_frame = combiner.combine_static_and_time_series_results(parsed_query, static_result_df, &mut time_series);

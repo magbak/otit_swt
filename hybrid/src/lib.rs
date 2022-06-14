@@ -13,3 +13,4 @@ mod groupby_pushdown;
 mod sparql_result_to_polars;
 mod find_query_variables;
 mod exists_helper;
+pub mod query_context;

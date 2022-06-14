@@ -1051,3 +1051,51 @@ async fn test_distinct_query(
     // writer.finish(&mut df).expect("writeok");
     // println!("{}", df);
 }
+
+#[rstest]
+#[tokio::test]
+#[serial]
+async fn test_union_query(
+    #[future] with_testdata: (),
+    time_series_database: InMemoryTimeseriesDatabase,
+    testdata_path: PathBuf,
+    use_logger: (),
+) {
+    let _ = use_logger;
+    let _ = with_testdata.await;
+    let query = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX quarry:<https://github.com/magbak/quarry-rs#>
+    PREFIX types:<http://example.org/types#>
+    SELECT ?w ?v WHERE {
+        { ?w a types:BigWidget .
+        ?w types:hasSensor/quarry:hasTimeseries/quarry:hasDataPoint ?dp .
+        ?dp quarry:hasValue ?v .
+        FILTER(?v > 100) }
+        UNION {
+            ?w a types:SmallWidget .
+            ?w types:hasSensor/quarry:hasTimeseries/quarry:hasDataPoint ?dp .
+            ?dp quarry:hasValue ?v .
+            FILTER(?v < 100)
+        }
+    }
+    "#;
+    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+        .await
+        .expect("Hybrid error");
+    let mut file_path = testdata_path.clone();
+    file_path.push("expected_union_query.csv");
+
+    let file = File::open(file_path.as_path()).expect("Read file problem");
+    let expected_df = CsvReader::new(file)
+        .infer_schema(None)
+        .has_header(true)
+        .with_parse_dates(true)
+        .finish()
+        .expect("DF read error");
+    assert_eq!(expected_df, df);
+    // let file = File::create(file_path.as_path()).expect("could not open file");
+    // let writer = CsvWriter::new(file);
+    // writer.finish(&mut df).expect("writeok");
+    // println!("{}", df);
+}

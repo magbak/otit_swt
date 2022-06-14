@@ -1,17 +1,20 @@
-use crate::constraints::Constraint;
+use crate::constraints::{Constraint, VariableConstraints};
+use crate::find_query_variables::{
+    find_all_used_variables_in_expression, find_all_used_variables_in_graph_pattern,
+};
 use crate::timeseries_query::TimeSeriesQuery;
+use crate::query_context::{Context, ExpressionInContext, PathEntry};
 use oxrdf::Variable;
 use polars::prelude::{ChunkAgg, DataFrame};
 use spargebra::algebra::{Expression, GraphPattern};
 use spargebra::Query;
-use std::collections::{HashMap, HashSet};
-use crate::find_query_variables::{find_all_used_variables_in_expression, find_all_used_variables_in_graph_pattern};
+use std::collections::HashSet;
 
 pub(crate) fn find_all_groupby_pushdowns(
     static_query: &Query,
     static_query_df: &DataFrame,
     time_series_queries: &mut Vec<TimeSeriesQuery>,
-    has_constraint: &HashMap<Variable, Constraint>,
+    variable_constraints: &VariableConstraints,
 ) {
     if let Query::Select {
         dataset: _,
@@ -19,7 +22,13 @@ pub(crate) fn find_all_groupby_pushdowns(
         base_iri: _,
     } = static_query
     {
-        find_groupby_pushdowns_in_graph_pattern(pattern, static_query_df, time_series_queries, has_constraint)
+        find_groupby_pushdowns_in_graph_pattern(
+            pattern,
+            static_query_df,
+            time_series_queries,
+            variable_constraints,
+            &Context::new()
+        )
     }
 }
 
@@ -27,7 +36,8 @@ fn find_groupby_pushdowns_in_graph_pattern(
     graph_pattern: &GraphPattern,
     static_query_df: &DataFrame,
     time_series_queries: &mut Vec<TimeSeriesQuery>,
-    has_constraint: &HashMap<Variable, Constraint>,
+    variable_constraints: &VariableConstraints,
+    context: &Context,
 ) {
     match graph_pattern {
         GraphPattern::Join { left, right } => {
@@ -35,13 +45,15 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 left,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                &context.extension_with(PathEntry::JoinLeftSide),
             );
             find_groupby_pushdowns_in_graph_pattern(
                 right,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                                &context.extension_with(PathEntry::JoinRightSide)
             );
         }
         GraphPattern::LeftJoin { left, right, .. } => {
@@ -49,13 +61,15 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 left,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                &context.extension_with(PathEntry::LeftJoinLeftSide),
             );
             find_groupby_pushdowns_in_graph_pattern(
                 right,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                &context.extension_with(PathEntry::LeftJoinRightSide),
             );
         }
         GraphPattern::Filter { inner, .. } => {
@@ -63,7 +77,8 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 inner,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                &context.extension_with(PathEntry::FilterInner),
             );
         }
         GraphPattern::Union { left, right } => {
@@ -71,13 +86,15 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 left,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                &context.extension_with(PathEntry::UnionLeftSide),
             );
             find_groupby_pushdowns_in_graph_pattern(
                 right,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                &context.extension_with(PathEntry::UnionRightSide),
             );
         }
         GraphPattern::Graph { inner, .. } => {
@@ -85,7 +102,8 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 inner,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                                &context.extension_with(PathEntry::GraphInner)
             );
         }
         GraphPattern::Extend { inner, .. } => {
@@ -93,7 +111,8 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 inner,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                &context.extension_with(PathEntry::ExtendInner),
             );
         }
         GraphPattern::Minus { left, right } => {
@@ -101,13 +120,15 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 left,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                &context.extension_with(PathEntry::MinusLeftSide),
             );
             find_groupby_pushdowns_in_graph_pattern(
                 right,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                &context.extension_with(PathEntry::MinusRightSide),
             );
         }
         GraphPattern::OrderBy { inner, .. } => {
@@ -115,7 +136,8 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 inner,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                &context.extension_with(PathEntry::OrderByInner),
             );
         }
         GraphPattern::Project { inner, .. } => {
@@ -123,7 +145,8 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 inner,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                &context.extension_with(PathEntry::ProjectInner),
             );
         }
         GraphPattern::Distinct { inner } => {
@@ -131,7 +154,8 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 inner,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                &context.extension_with(PathEntry::DistinctInner),
             );
         }
         GraphPattern::Reduced { inner } => {
@@ -139,7 +163,8 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 inner,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                &context.extension_with(PathEntry::ReducedInner),
             );
         }
         GraphPattern::Slice { inner, .. } => {
@@ -147,7 +172,8 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 inner,
                 static_query_df,
                 time_series_queries,
-                has_constraint,
+                variable_constraints,
+                &context.extension_with(PathEntry::SliceInner),
             );
         }
         GraphPattern::Group {
@@ -162,27 +188,39 @@ fn find_groupby_pushdowns_in_graph_pattern(
             find_all_used_variables_in_graph_pattern(inner, &mut used_vars);
             let vs_and_cs: Vec<(Variable, Constraint)> = used_vars
                 .iter()
-                .filter(|v| has_constraint.contains_key(v))
-                .map(|v| (v.clone(), has_constraint.get(v).unwrap().clone()))
+                .filter(|v| variable_constraints.contains(v, context))
+                .map(|v| (v.clone(), variable_constraints.get_constraint(v, context).unwrap().clone()))
                 .collect();
             'outer: for tsq in time_series_queries {
                 for (v, c) in &vs_and_cs {
                     let in_tsq = match c {
                         Constraint::ExternalTimeseries => {
                             tsq.timeseries_variable.is_some()
-                                && tsq.timeseries_variable.as_ref().unwrap() == v
+                                && tsq
+                                    .timeseries_variable
+                                    .as_ref()
+                                    .unwrap()
+                                    .equivalent(v, context)
                         }
                         Constraint::ExternalDataPoint => {
                             tsq.data_point_variable.is_some()
-                                && tsq.data_point_variable.as_ref().unwrap() == v
+                                && tsq
+                                    .data_point_variable
+                                    .as_ref()
+                                    .unwrap()
+                                    .equivalent(v, context)
                         }
                         Constraint::ExternalDataValue => {
                             tsq.value_variable.is_some()
-                                && tsq.value_variable.as_ref().unwrap() == v
+                                && tsq.value_variable.as_ref().unwrap().equivalent(v, context)
                         }
                         Constraint::ExternalTimestamp => {
                             tsq.timestamp_variable.is_some()
-                                && tsq.timestamp_variable.as_ref().unwrap() == v
+                                && tsq
+                                    .timestamp_variable
+                                    .as_ref()
+                                    .unwrap()
+                                    .equivalent(v, context)
                         }
                         Constraint::ExternallyDerived => {
                             true //true since we do not want to disqualify our timeseries query.. TODO figure out
@@ -193,41 +231,43 @@ fn find_groupby_pushdowns_in_graph_pattern(
                     }
                 }
                 let mut timeseries_funcs = vec![];
-                find_all_timeseries_funcs_in_graph_pattern(inner, &mut timeseries_funcs, tsq);
+                find_all_timeseries_funcs_in_graph_pattern(inner, &mut timeseries_funcs, tsq, &context.extension_with(PathEntry::GroupInner));
                 let mut static_grouping_variables = vec![];
                 let mut dynamic_grouping_variables = vec![];
                 'forvar: for v in variables {
                     if let Some(tsv) = &tsq.timestamp_variable {
-                        if tsv == v {
-                            dynamic_grouping_variables.push(tsv.clone());
-                            continue 'forvar
+                        if tsv.equivalent(v, context) {
+                            dynamic_grouping_variables.push(tsv.variable.clone());
+                            continue 'forvar;
                         }
                     }
                     if let Some(vv) = &tsq.value_variable {
-                        if vv == v {
-                            dynamic_grouping_variables.push(vv.clone());
-                            continue 'forvar
+                        if vv.equivalent(v, context) {
+                            dynamic_grouping_variables.push(vv.variable.clone());
+                            continue 'forvar;
                         }
                     }
                     for (fv, _) in &timeseries_funcs {
                         if fv == v {
                             dynamic_grouping_variables.push(fv.clone());
-                            continue 'forvar
+                            continue 'forvar;
                         }
                     }
                     static_grouping_variables.push(v.clone())
                 }
                 //Todo: impose constraints on graph pattern structure here ..
-                if (static_grouping_variables.is_empty() && !dynamic_grouping_variables.is_empty()) || variables_isomorphic_to_time_series_id(
-                    &static_grouping_variables,
-                    tsq.identifier_variable.as_ref().unwrap().as_str(),
-                    static_query_df,
-                ) {
-                    let mut by= dynamic_grouping_variables;
+                if (static_grouping_variables.is_empty() && !dynamic_grouping_variables.is_empty())
+                    || variables_isomorphic_to_time_series_id(
+                        &static_grouping_variables,
+                        tsq.identifier_variable.as_ref().unwrap().as_str(),
+                        static_query_df,
+                    )
+                {
+                    let mut by = dynamic_grouping_variables;
                     if !static_grouping_variables.is_empty() {
                         by.push(tsq.identifier_variable.as_ref().unwrap().clone());
                     }
-                    tsq.try_pushdown_aggregates(aggregates, graph_pattern, timeseries_funcs, by);
+                    tsq.try_pushdown_aggregates(aggregates, graph_pattern, timeseries_funcs, by, context);
                 }
             }
         }
@@ -235,42 +275,55 @@ fn find_groupby_pushdowns_in_graph_pattern(
     }
 }
 
-fn find_all_timeseries_funcs_in_graph_pattern(graph_pattern: &GraphPattern, timeseries_funcs: &mut Vec<(Variable, Expression)>, tsq:&TimeSeriesQuery) {
+fn find_all_timeseries_funcs_in_graph_pattern(
+    graph_pattern: &GraphPattern,
+    timeseries_funcs: &mut Vec<(Variable, ExpressionInContext)>,
+    tsq: &TimeSeriesQuery,
+    context: &Context,
+) {
     match graph_pattern {
         GraphPattern::Join { left, right } => {
-            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq);
-            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq, &context.extension_with(PathEntry::JoinLeftSide));
+            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq, &context.extension_with(PathEntry::JoinRightSide));
         }
-        GraphPattern::LeftJoin { left, right, expression:_ } => {
-            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq);
-            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq);
+        GraphPattern::LeftJoin {
+            left,
+            right,
+            expression: _,
+        } => {
+            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq, &context.extension_with(PathEntry::LeftJoinLeftSide));
+            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq, &context.extension_with(PathEntry::LeftJoinRightSide));
         }
         GraphPattern::Filter { inner, .. } => {
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::FilterInner));
         }
         GraphPattern::Union { left, right } => {
-            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq);
-            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq, &context.extension_with(PathEntry::UnionLeftSide));
+            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq, &context.extension_with(PathEntry::UnionRightSide));
         }
         GraphPattern::Graph { inner, .. } => {
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::GraphInner));
         }
-        GraphPattern::Extend { inner, variable, expression } => {
+        GraphPattern::Extend {
+            inner,
+            variable,
+            expression,
+        } => {
             //Very important to process inner first here to detect nested functions.
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::ExtendInner));
             let mut function_vars = HashSet::new();
             find_all_used_variables_in_expression(expression, &mut function_vars);
             if !function_vars.is_empty() {
                 let mut exists_var_in_timeseries = false;
                 'outer: for v in &function_vars {
                     if let Some(vv) = &tsq.value_variable {
-                        if vv == v {
+                        if vv.equivalent(v, context) {
                             exists_var_in_timeseries = true;
                             break 'outer;
                         }
                     }
                     if let Some(tsv) = &tsq.timestamp_variable {
-                        if tsv == v {
+                        if tsv.equivalent(v, context) {
                             exists_var_in_timeseries = true;
                             break 'outer;
                         }
@@ -283,32 +336,35 @@ fn find_all_timeseries_funcs_in_graph_pattern(graph_pattern: &GraphPattern, time
                     }
                 }
                 if exists_var_in_timeseries {
-                    timeseries_funcs.push((variable.clone(), expression.clone()))
+                    timeseries_funcs.push((variable.clone(), ExpressionInContext::new(expression.clone(), context.clone())))
                 }
             }
         }
         GraphPattern::Minus { left, right } => {
-            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq);
-            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq, &context.extension_with(PathEntry::MinusLeftSide));
+            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq, &context.extension_with(PathEntry::MinusRightSide));
         }
-        GraphPattern::OrderBy { inner, expression:_ } => {
+        GraphPattern::OrderBy {
+            inner,
+            expression: _,
+        } => {
             //No ordering expressions should be pushed down, not supported
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::OrderByInner));
         }
         GraphPattern::Project { inner, .. } => {
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::ProjectInner));
         }
         GraphPattern::Distinct { inner } => {
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::DistinctInner));
         }
         GraphPattern::Reduced { inner } => {
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::ReducedInner));
         }
         GraphPattern::Slice { inner, .. } => {
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::SliceInner));
         }
         GraphPattern::Group { inner, .. } => {
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq);
+            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::GroupInner));
         }
         _ => {}
     }
@@ -343,4 +399,3 @@ fn variables_isomorphic_to_time_series_id(
         .expect("Sum problem");
     n_unique_identifiers == n_unique_n_tuples
 }
-

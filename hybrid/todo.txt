@@ -4,5 +4,7 @@ Groupby that is not pushed down test.
 
 Test coverage:
 - Coalesce
-- Distinct
 - Union
+
+Possible bug in left join, scope for expression should be only right side?????
+Project all static variables should it also have the context set for expression typse?!?!??!
