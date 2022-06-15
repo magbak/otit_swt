@@ -1,3 +1,7 @@
+use std::collections::HashSet;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
+use polars::frame::DataFrame;
 use crate::change_types::ChangeType;
 use crate::query_context::{
     AggregateExpressionInContext, Context, ExpressionInContext, PathEntry, VariableInContext,
@@ -24,6 +28,54 @@ pub struct TimeSeriesQuery {
     pub ids: Option<Vec<String>>,
     pub grouping: Option<Grouping>,
     pub conditions: Vec<ExpressionInContext>,
+}
+
+#[derive(Debug)]
+pub struct TimeSeriesValidationError {
+    missing_columns: Vec<String>,
+    extra_columns: Vec<String>
+}
+
+impl Display for TimeSeriesValidationError {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "Missing columns: {}, Extra columns: {}", &self.missing_columns.join(","), &self.extra_columns.join(","))
+    }
+}
+
+impl Error for TimeSeriesValidationError {
+}
+
+impl TimeSeriesQuery {
+    pub(crate) fn validate(&self, df: &DataFrame) -> Result<(), TimeSeriesValidationError> {
+        let mut expected_columns = HashSet::new();
+        expected_columns.insert(self.identifier_variable.as_ref().unwrap().as_str());
+        if let Some(grouping) = &self.grouping {
+            for v in &grouping.by {
+                expected_columns.insert(v.as_str());
+            }
+            for (v, _) in &grouping.aggregations {
+                expected_columns.insert(v.as_str());
+            }
+        } else {
+            if let Some(vv) = &self.value_variable {
+                expected_columns.insert(vv.variable.as_str());
+            }
+            if let Some(tsv) = &self.timestamp_variable {
+                expected_columns.insert(tsv.variable.as_str());
+            }
+        }
+
+        let df_columns:HashSet<&str> = df.get_column_names().into_iter().collect();
+        if expected_columns != df_columns {
+            let err = TimeSeriesValidationError {
+                missing_columns: expected_columns.difference(&df_columns).map(|x|x.to_string()).collect(),
+                extra_columns: df_columns.difference(&expected_columns).map(|x|x.to_string()).collect()
+            };
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl TimeSeriesQuery {

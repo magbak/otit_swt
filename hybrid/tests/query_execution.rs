@@ -1007,7 +1007,7 @@ async fn test_if_query(
         .finish()
         .expect("DF read error")
         .sort(&["w", "v_with_min"], vec![false]).expect("Sort problem");
-;
+
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
@@ -1086,7 +1086,7 @@ async fn test_union_query(
     let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error").sort(&["w", "v"], vec![false]).expect("Sort problem");
-;
+
     let mut file_path = testdata_path.clone();
     file_path.push("expected_union_query.csv");
 
@@ -1098,7 +1098,7 @@ async fn test_union_query(
         .finish()
         .expect("DF read error")
                 .sort(&["w", "v"], vec![false]).expect("Sort problem");
-;
+
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);

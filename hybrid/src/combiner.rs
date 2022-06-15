@@ -121,9 +121,7 @@ impl Combiner {
                 right,
                 expression,
             } => {
-                let left_join_distinct_column =
-                    "left_join_distinct_column_".to_string() + &self.counter.to_string();
-                self.counter += 1;
+                let left_join_distinct_column = context.to_string();
                 let mut left_df = self
                     .lazy_graph_pattern(columns, input_lf, left, time_series, &context.extension_with(PathEntry::LeftJoinLeftSide))
                     .with_column(

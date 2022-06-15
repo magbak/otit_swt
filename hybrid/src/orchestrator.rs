@@ -72,7 +72,12 @@ fn execute_time_series_queries(
     for tsq in time_series_queries {
         let df_res = time_series_database.execute(&tsq);
         match df_res {
-            Ok(df) => out.push((tsq, df)),
+            Ok(df) => {
+                match tsq.validate(&df) {
+                    Ok(_) => {},
+                    Err(err) => {return Err(Box::new(err))}
+                }
+                out.push((tsq, df))},
             Err(err) => return Err(err),
         }
     }
