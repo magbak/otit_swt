@@ -1105,3 +1105,53 @@ async fn test_union_query(
     // writer.finish(&mut df).expect("writeok");
     // println!("{}", df);
 }
+
+#[rstest]
+#[tokio::test]
+#[serial]
+async fn test_coalesce_query(
+    #[future] with_testdata: (),
+    time_series_database: InMemoryTimeseriesDatabase,
+    testdata_path: PathBuf,
+    use_logger: (),
+) {
+    let _ = use_logger;
+    let _ = with_testdata.await;
+    let query = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX quarry:<https://github.com/magbak/quarry-rs#>
+    PREFIX types:<http://example.org/types#>
+    SELECT ?s1 ?s2 ?t ?v1 ?v2 (COALESCE(?v1, ?v2) as ?c) WHERE {
+        ?s1 quarry:hasTimeseries/quarry:hasDataPoint ?dp1 .
+        ?dp1 quarry:hasValue ?v1 .
+        ?dp1 quarry:hasTimestamp ?t .
+        OPTIONAL {
+        ?s2 quarry:hasTimeseries/quarry:hasDataPoint ?dp2 .
+        ?dp2 quarry:hasValue ?v2 .
+        ?dp2 quarry:hasTimestamp ?t .
+        FILTER((?v1 > 300) && ((?v2 = 203) || (?v2 = 204)))
+        }
+    }
+    "#;
+    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+        .await
+        .expect("Hybrid error").sort(&["s1", "s2", "v1", "v2", "t"], vec![false]).expect("Sort problem");
+
+    let mut file_path = testdata_path.clone();
+    file_path.push("expected_coalesce_query.csv");
+
+    let file = File::open(file_path.as_path()).expect("Read file problem");
+    let expected_df = CsvReader::new(file)
+        .infer_schema(None)
+        .has_header(true)
+        .with_parse_dates(true)
+        .finish()
+        .expect("DF read error")
+        .sort(&["s1", "s2", "v1", "v2", "t"], vec![false]).expect("Sort problem");
+
+    assert_eq!(expected_df, df);
+    // let file = File::create(file_path.as_path()).expect("could not open file");
+    // let writer = CsvWriter::new(file);
+    // writer.finish(&mut df).expect("writeok");
+    // println!("{}", df);
+}

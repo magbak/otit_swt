@@ -1,0 +1,7 @@
+s1,s2,t,v1,v2,c
+http://example.org/case#mySensor1,http://example.org/case#mySensor1,2022-06-01T08:46:55.000000000,301,,301
+http://example.org/case#mySensor1,http://example.org/case#mySensor1,2022-06-01T08:46:57.000000000,303,,303
+http://example.org/case#mySensor1,http://example.org/case#mySensor1,2022-06-01T08:46:58.000000000,304,,304
+http://example.org/case#mySensor1,http://example.org/case#mySensor2,2022-06-01T08:46:55.000000000,301,,301
+http://example.org/case#mySensor1,http://example.org/case#mySensor2,2022-06-01T08:46:57.000000000,303,203,303
+http://example.org/case#mySensor1,http://example.org/case#mySensor2,2022-06-01T08:46:58.000000000,304,204,304

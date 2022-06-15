@@ -165,7 +165,7 @@ impl Combiner {
 
                 for id in ts_identifiers {
                     if !columns.contains(&id) {
-                        left_df.drop(&id).expect("Drop problem");
+                        left_df = left_df.drop(&id).expect("Drop problem");
                     }
                 }
                 left_df = left_df
@@ -205,7 +205,7 @@ impl Combiner {
                 let mut output_lf =
                     concat(vec![left_df.lazy(), right_df.lazy()], false).expect("Concat error");
                 output_lf = output_lf.drop_columns(&[&left_join_distinct_column]);
-
+                output_lf = output_lf.collect().expect("Left join collect problem").lazy();
                 output_lf
             }
             GraphPattern::Filter { expr, inner } => {
