@@ -22,9 +22,13 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
 
                 if let Some(value_variable) = &tsq.value_variable {
                     df.rename("value", value_variable.variable.as_str()).expect("Rename problem");
+                } else {
+                    df.drop("value").expect("Drop value problem");
                 }
                 if let Some(timestamp_variable) = &tsq.timestamp_variable {
                     df.rename("timestamp", timestamp_variable.variable.as_str()).expect("Rename problem");
+                } else {
+                    df.drop("timestamp").expect("Drop timestamp problem");
                 }
                 columns = HashSet::from_iter(df.get_column_names_owned().into_iter());
                 let mut lf = df.lazy();

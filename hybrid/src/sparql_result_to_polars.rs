@@ -85,7 +85,6 @@ pub(crate) fn sparql_literal_to_polars_literal_value(lit: &Literal) -> LiteralVa
         LiteralValue::Float64(d)
     }
     else {
-        println!("{}", datatype.as_str());
         todo!("Not implemented!")
     };
     literal_value
@@ -226,7 +225,6 @@ fn polars_literal_values_to_series(literal_values: Vec<LiteralValue>, name: &str
                             })
                             .collect::<Vec<NaiveDateTime>>(),
                     );
-                    println!("series: {}", s);
                     s
                 }
             LiteralValue::Duration(_, _) => {

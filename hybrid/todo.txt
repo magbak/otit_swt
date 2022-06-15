@@ -8,3 +8,5 @@ Test coverage:
 
 Possible bug in left join, scope for expression should be only right side?????
 Project all static variables should it also have the context set for expression typse?!?!??!
+
+Legg inn sjekk på at tsq inneholder riktige kolonner

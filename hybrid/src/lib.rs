@@ -1,3 +1,7 @@
+extern crate strum;
+#[macro_use]
+extern crate strum_macros;
+
 pub mod splitter;
 pub mod preprocessing;
 pub mod rewriting;

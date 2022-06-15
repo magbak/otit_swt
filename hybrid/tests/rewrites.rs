@@ -1,9 +1,10 @@
 use hybrid::preprocessing::Preprocessor;
+use hybrid::query_context::{Context, ExpressionInContext, PathEntry, VariableInContext};
 use hybrid::rewriting::StaticQueryRewriter;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::timeseries_query::TimeSeriesQuery;
 use oxrdf::vocab::xsd;
-use oxrdf::{Literal};
+use oxrdf::Literal;
 use spargebra::algebra::Expression;
 use spargebra::algebra::Expression::{And, Greater, Less};
 use spargebra::term::Variable;
@@ -323,29 +324,71 @@ fn test_fix_dropped_triple() {
     let expected_query = Query::parse(expected_str, None).unwrap();
     assert_eq!(static_rewrite, expected_query);
 
+    println!("{:?}", time_series_queries);
     let expected_time_series_queries = vec![TimeSeriesQuery {
         identifier_variable: Some(Variable::new_unchecked("ts_external_id_0")),
-        timeseries_variable: Some(Variable::new_unchecked("ts")),
-        data_point_variable: Some(Variable::new_unchecked("dp")),
-        value_variable: Some(Variable::new_unchecked("v")),
-        timestamp_variable: Some(Variable::new_unchecked("t")),
+        timeseries_variable: Some(VariableInContext::new(
+            Variable::new_unchecked("ts"),
+            Context {
+                path: vec![
+                    PathEntry::ProjectInner,
+                    PathEntry::FilterInner,
+                    PathEntry::BGP,
+                ],
+            },
+        )),
+        data_point_variable: Some(VariableInContext::new(
+            Variable::new_unchecked("dp"),
+            Context {
+                path: vec![
+                    PathEntry::ProjectInner,
+                    PathEntry::FilterInner,
+                    PathEntry::BGP,
+                ],
+            },
+        )),
+        value_variable: Some(VariableInContext::new(
+            Variable::new_unchecked("v"),
+            Context {
+                path: vec![
+                    PathEntry::ProjectInner,
+                    PathEntry::FilterInner,
+                    PathEntry::BGP,
+                ],
+            },
+        )),
+        timestamp_variable: Some(VariableInContext::new(
+            Variable::new_unchecked("t"),
+            Context {
+                path: vec![
+                    PathEntry::ProjectInner,
+                    PathEntry::FilterInner,
+                    PathEntry::BGP,
+                ],
+            },
+        )),
         ids: None,
         grouping: None,
-        conditions: vec![And(
-            Box::new(Greater(
-                Box::new(Expression::Variable(Variable::new_unchecked("t"))),
-                Box::new(Expression::Literal(Literal::new_typed_literal(
-                    "2022-06-01T08:46:53",
-                    xsd::DATE_TIME,
-                ))),
-            )),
-            Box::new(Less(
-                Box::new(Expression::Variable(Variable::new_unchecked("v"))),
-                Box::new(Expression::Literal(Literal::new_typed_literal(
-                    "50",
-                    xsd::INTEGER,
-                ))),
-            )),
+        conditions: vec![ExpressionInContext::new(
+            And(
+                Box::new(Greater(
+                    Box::new(Expression::Variable(Variable::new_unchecked("t"))),
+                    Box::new(Expression::Literal(Literal::new_typed_literal(
+                        "2022-06-01T08:46:53",
+                        xsd::DATE_TIME,
+                    ))),
+                )),
+                Box::new(Less(
+                    Box::new(Expression::Variable(Variable::new_unchecked("v"))),
+                    Box::new(Expression::Literal(Literal::new_typed_literal(
+                        "50",
+                        xsd::INTEGER,
+                    ))),
+                )),
+            ),
+            Context {
+                path: vec![PathEntry::ProjectInner, PathEntry::FilterExpression],
+            },
         )],
     }];
     assert_eq!(time_series_queries, expected_time_series_queries);
@@ -385,20 +428,92 @@ fn test_property_path_expression() {
     let expected_time_series_queries = vec![
         TimeSeriesQuery {
             identifier_variable: Some(Variable::new_unchecked("ts_external_id_0")),
-            timeseries_variable: Some(Variable::new_unchecked("blank_replacement_0")),
-            data_point_variable: Some(Variable::new_unchecked("dp1")),
-            value_variable: Some(Variable::new_unchecked("val1")),
-            timestamp_variable: Some(Variable::new_unchecked("t")),
+            timeseries_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("blank_replacement_0"),
+                Context {
+                    path: vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ],
+                },
+            )),
+            data_point_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("dp1"),
+                Context {
+                    path: vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ],
+                },
+            )),
+            value_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("val1"),
+                Context {
+                    path: vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ],
+                },
+            )),
+            timestamp_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("t"),
+                Context {
+                    path: vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ],
+                },
+            )),
             ids: None,
             grouping: None,
             conditions: vec![],
         },
         TimeSeriesQuery {
             identifier_variable: Some(Variable::new_unchecked("ts_external_id_1")),
-            timeseries_variable: Some(Variable::new_unchecked("blank_replacement_1")),
-            data_point_variable: Some(Variable::new_unchecked("dp2")),
-            value_variable: Some(Variable::new_unchecked("val2")),
-            timestamp_variable: Some(Variable::new_unchecked("t")),
+            timeseries_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("blank_replacement_1"),
+                Context {
+                    path: vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ],
+                },
+            )),
+            data_point_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("dp2"),
+                Context {
+                    path: vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ],
+                },
+            )),
+            value_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("val2"),
+                Context {
+                    path: vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ],
+                },
+            )),
+            timestamp_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("t"),
+                Context {
+                    path: vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ],
+                },
+            )),
             ids: None,
             grouping: None,
             conditions: vec![],
@@ -409,7 +524,7 @@ fn test_property_path_expression() {
 }
 
 #[test]
-fn  test_having_query() {
+fn test_having_query() {
     let sparql = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX quarry:<https://github.com/magbak/quarry-rs#>
@@ -447,7 +562,7 @@ fn  test_having_query() {
 }
 
 #[test]
-fn  test_exists_query() {
+fn test_exists_query() {
     let sparql = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX quarry:<https://github.com/magbak/quarry-rs#>

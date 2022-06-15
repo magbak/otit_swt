@@ -24,6 +24,7 @@ pub async fn execute_hybrid_query(
     debug!("Parsed query: {:?}", parsed_query);
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, variable_constraints) = preprocessor.preprocess(&parsed_query);
+    debug!("Constraints: {:?}", variable_constraints);
     let mut rewriter = StaticQueryRewriter::new(&variable_constraints);
     let (static_rewrite, mut time_series_queries) =
         rewriter.rewrite_query(preprocessed_query).unwrap();
@@ -34,6 +35,7 @@ pub async fn execute_hybrid_query(
     debug!("Static result dataframe: {}", static_result_df);
     find_all_groupby_pushdowns(&parsed_query,&static_result_df, &mut time_series_queries, &variable_constraints);
     let mut time_series = execute_time_series_queries(time_series_database, time_series_queries)?;
+    debug!("Time series: {:?}", time_series);
     let mut combiner = Combiner::new();
     let lazy_frame = combiner.combine_static_and_time_series_results(parsed_query, static_result_df, &mut time_series);
     Ok(lazy_frame.collect()?)

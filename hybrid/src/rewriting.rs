@@ -796,7 +796,7 @@ impl StaticQueryRewriter {
             required_change_direction,
             &context.extension_with(PathEntry::FilterInner),
         );
-        self.pushdown_expression(expression, &context);
+        self.pushdown_expression(expression, &context.extension_with(PathEntry::FilterExpression));
         if let Some(mut gpr_inner) = inner_rewrite_opt {
             let mut expression_rewrite = self.rewrite_expression(
                 expression,
@@ -1147,7 +1147,6 @@ impl StaticQueryRewriter {
             }
             //Todo: redusere scope??
             if variables_rewrite.len() > 0 {
-                println!("{:?}", inner);
                 let inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
                 gpr_inner.with_graph_pattern(GraphPattern::Project {
                     inner: Box::new(inner_graph_pattern),
@@ -1167,7 +1166,7 @@ impl StaticQueryRewriter {
         context: &Context,
     ) -> Option<GPReturn> {
         if let Some(mut gpr_inner) =
-            self.rewrite_graph_pattern(inner, required_change_direction, context)
+            self.rewrite_graph_pattern(inner, required_change_direction, &context.extension_with(PathEntry::OrderByInner))
         {
             let mut order_expressions_rewrite = order_expressions
                 .iter()
@@ -2478,10 +2477,8 @@ impl StaticQueryRewriter {
     }
 
     fn pushdown_expression(&mut self, expr: &Expression, context: &Context) {
-        if !context.contains(&PathEntry::MinusRightSide){
-            for t in &mut self.time_series_queries {
-                t.try_rewrite_expression(expr, context);
-            }
+        for t in &mut self.time_series_queries {
+            t.try_rewrite_expression(expr, context);
         }
     }
 
@@ -2495,7 +2492,7 @@ impl StaticQueryRewriter {
                             TermPattern::Variable(subject_variable),
                         ) = (&q.timeseries_variable, &t.subject)
                         {
-                            if q_timeseries_variable.equivalent(subject_variable, context) {
+                            if q_timeseries_variable.partial(subject_variable, context) {
                                 if let TermPattern::Variable(ts_var) = &t.object {
                                     q.data_point_variable = Some(VariableInContext::new(
                                         ts_var.clone(),
@@ -2513,34 +2510,38 @@ impl StaticQueryRewriter {
             if let NamedNodePattern::NamedNode(named_predicate_node) = &t.predicate {
                 if named_predicate_node == HAS_VALUE {
                     for q in &mut self.time_series_queries {
-                        if let (
-                            Some(q_data_point_variable),
-                            TermPattern::Variable(subject_variable),
-                        ) = (&q.data_point_variable, &t.subject)
-                        {
-                            if q_data_point_variable.equivalent(subject_variable, context) {
-                                if let TermPattern::Variable(value_var) = &t.object {
-                                    q.value_variable = Some(VariableInContext::new(
-                                        value_var.clone(),
-                                        context.clone(),
-                                    ));
+                        if q.value_variable.is_none() {
+                            if let (
+                                Some(q_data_point_variable),
+                                TermPattern::Variable(subject_variable),
+                            ) = (&q.data_point_variable, &t.subject)
+                            {
+                                if q_data_point_variable.partial(subject_variable, context) {
+                                    if let TermPattern::Variable(value_var) = &t.object {
+                                        q.value_variable = Some(VariableInContext::new(
+                                            value_var.clone(),
+                                            context.clone(),
+                                        ));
+                                    }
                                 }
                             }
                         }
                     }
                 } else if named_predicate_node == HAS_TIMESTAMP {
                     for q in &mut self.time_series_queries {
-                        if let (
-                            Some(q_data_point_variable),
-                            TermPattern::Variable(subject_variable),
-                        ) = (&q.data_point_variable, &t.subject)
-                        {
-                            if q_data_point_variable.equivalent(subject_variable, context) {
-                                if let TermPattern::Variable(timestamp_var) = &t.object {
-                                    q.timestamp_variable = Some(VariableInContext::new(
-                                        timestamp_var.clone(),
-                                        context.clone(),
-                                    ));
+                        if q.timestamp_variable.is_none() {
+                            if let (
+                                Some(q_data_point_variable),
+                                TermPattern::Variable(subject_variable),
+                            ) = (&q.data_point_variable, &t.subject)
+                            {
+                                if q_data_point_variable.partial(subject_variable, context) {
+                                    if let TermPattern::Variable(timestamp_var) = &t.object {
+                                        q.timestamp_variable = Some(VariableInContext::new(
+                                            timestamp_var.clone(),
+                                            context.clone(),
+                                        ));
+                                    }
                                 }
                             }
                         }

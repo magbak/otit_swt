@@ -6,7 +6,7 @@ use crate::timeseries_query::TimeSeriesQuery;
 use crate::query_context::{Context, ExpressionInContext, PathEntry};
 use oxrdf::Variable;
 use polars::prelude::{ChunkAgg, DataFrame};
-use spargebra::algebra::{Expression, GraphPattern};
+use spargebra::algebra::{GraphPattern};
 use spargebra::Query;
 use std::collections::HashSet;
 

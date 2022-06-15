@@ -19,7 +19,7 @@ impl VariableConstraints {
     pub fn get_constraint(&self, variable:&Variable, context:&Context) -> Option<&Constraint> {
         let mut constraint = None;
         for (v, c) in &self.variable_constraints {
-            if v.same_name(variable) && v.in_scope(context) {
+            if v.same_name(variable) && v.in_scope(context, true) {
                 if constraint.is_none() {
                     constraint = Some(c);
                 }

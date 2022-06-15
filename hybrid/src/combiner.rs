@@ -148,18 +148,19 @@ impl Combiner {
                     self.lazy_graph_pattern(columns, left_df.clone().lazy(), right, time_series, &context.extension_with(PathEntry::LeftJoinRightSide));
 
                 if let Some(expr) = expression {
-                    let column_name = "filtering_column_name";
+                    let expression_context = context.extension_with(PathEntry::LeftJoinExpression);
+                    let expression_context_column_name = expression_context.to_string();
                     right_lf = Combiner::lazy_expression(
                         expr,
                         right_lf,
                         columns,
-                        column_name,
+                        &expression_context_column_name,
                         time_series,
-                        &context.extension_with(PathEntry::LeftJoinExpression)
+                        &expression_context
                     );
                     right_lf = right_lf
-                        .filter(col(column_name))
-                        .drop_columns([column_name]);
+                        .filter(col(&expression_context_column_name))
+                        .drop_columns([&expression_context_column_name]);
                 }
 
                 let right_df = right_lf.collect().expect("Collect right problem");
@@ -211,30 +212,34 @@ impl Combiner {
             }
             GraphPattern::Filter { expr, inner } => {
                 let mut inner_lf = self.lazy_graph_pattern(columns, input_lf, inner, time_series, &context.extension_with(PathEntry::FilterInner));
-                let column_name = "filtering_column_name";
+                let expression_context = context.extension_with(PathEntry::FilterExpression);
+                let expression_context_column_name = expression_context.to_string();
                 inner_lf =
-                    Combiner::lazy_expression(expr, inner_lf, columns, column_name, time_series, &context.extension_with(PathEntry::FilterExpression));
+                    Combiner::lazy_expression(expr, inner_lf, columns, &expression_context_column_name, time_series, &expression_context);
                 inner_lf = inner_lf
-                    .filter(col(column_name))
-                    .drop_columns([column_name]);
+                    .filter(col(&expression_context_column_name))
+                    .drop_columns([&expression_context_column_name]);
                 inner_lf
             }
             GraphPattern::Union { left, right } => {
                 let mut left_columns = columns.clone();
                 let original_timeseries_columns: Vec<String> = time_series.iter().map(|(tsq, _)|tsq.identifier_variable.as_ref().unwrap().as_str().to_string()).collect();
-                let left_lf =
+                let mut left_lf =
                     self.lazy_graph_pattern(&mut left_columns, input_lf.clone(), left, time_series, &context.extension_with(PathEntry::UnionLeftSide));
                 let mut right_columns = columns.clone();
+                let mut right_input_lf = input_lf;
                 for t in &original_timeseries_columns {
                     if !left_columns.contains(t) {
                         right_columns.remove(t);
+                        right_input_lf = right_input_lf.drop_columns([t]);
                     }
                 }
-                let right_lf = self.lazy_graph_pattern(&mut right_columns, input_lf, right, time_series, &context.extension_with(PathEntry::UnionRightSide));
+                let right_lf = self.lazy_graph_pattern(&mut right_columns, right_input_lf, right, time_series, &context.extension_with(PathEntry::UnionRightSide));
 
                 for t in &original_timeseries_columns {
                     if !right_columns.contains(t) {
                         left_columns.remove(t);
+                        left_lf = left_lf.drop_columns([t]);
                     }
                 }
                 left_columns.extend(right_columns.drain());
@@ -247,8 +252,7 @@ impl Combiner {
                 columns.extend(left_columns.drain());
 
                 let output_lf = concat(vec![left_lf, right_lf], false).expect("Concat problem");
-                output_lf
-                    .unique(None, UniqueKeepStrategy::First)
+                output_lf.unique(None, UniqueKeepStrategy::First).collect().expect("Union error").lazy()
             }
             GraphPattern::Graph { name: _, inner } => {
                 self.lazy_graph_pattern(columns, input_lf, inner, time_series, &context.extension_with(PathEntry::GraphInner))
@@ -416,7 +420,7 @@ impl Combiner {
         let mut aggregate_columns = vec![];
         for i in 0..aggregates.len() {
             let (v, a) = aggregates.get(i).unwrap();
-            let column_name = "aggregate_expression_helper_column_".to_string() + &i.to_string();
+            let column_name = context.to_string() + &i.to_string();
             let (lf, expr, used_col) = sparql_aggregate_expression_as_lazy_column_and_expression(
                 v,
                 a,
@@ -674,7 +678,7 @@ impl Combiner {
                             op: Operator::Gt,
                             right: Box::new(col(&right_column_name)),
                         })
-                        .alias(column_name),
+                        .alias(column_name)
                     )
                     .drop_columns([&left_column_name, &right_column_name]);
                 inner_lf

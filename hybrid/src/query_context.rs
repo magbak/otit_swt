@@ -1,8 +1,9 @@
-use std::cmp::{max, min};
+use std::cmp::{min};
 use oxrdf::Variable;
 use spargebra::algebra::{AggregateExpression, Expression};
+use std::string::ToString;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Display)]
 pub enum PathEntry {
     BGP,
     UnionLeftSide,
@@ -69,11 +70,11 @@ pub enum PathEntry {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Context {
-    path: Vec<PathEntry>
+    pub path: Vec<PathEntry>
 }
 
 impl Context {
-    pub fn in_scope(&self, other: &Context) -> bool {
+    pub fn in_scope(&self, other: &Context, partial_scope:bool) -> bool {
         let min_i = min(self.path.len(), other.path.len());
         let mut self_divergence = vec![];
         let mut other_divergence = vec![];
@@ -93,9 +94,11 @@ impl Context {
                 return false;
             }
         }
-        for other_entry in other_divergence {
-            if !maintains_scope(other_entry) {
-                return false;
+        if !partial_scope {
+            for other_entry in other_divergence {
+                if !maintains_full_downward_scope(other_entry) {
+                    return false;
+                }
             }
         }
         true
@@ -172,7 +175,7 @@ fn exposes_variables(path_entry: &PathEntry) -> bool {
     }
 }
 
-fn maintains_scope(path_entry: &PathEntry) -> bool {
+fn maintains_full_downward_scope(path_entry: &PathEntry) -> bool {
     match path_entry {
         PathEntry::BGP => {false}
         PathEntry::UnionLeftSide => {false}
@@ -245,6 +248,11 @@ impl Context {
         }
     }
 
+    pub fn to_string(&self) -> String {
+        let strings: Vec<String> = self.path.iter().map(|x|x.to_string()).collect();
+        strings.join("-")
+    }
+
     pub fn extension_with(&self, p:PathEntry) -> Context {
         let mut path = self.path.clone();
         path.push(p);
@@ -265,12 +273,17 @@ impl VariableInContext {
         self.variable.as_str() == v.as_str()
     }
 
-    pub fn in_scope(&self, context: &Context) -> bool {
-        self.context.in_scope(context)
+    pub fn in_scope(&self, context: &Context, partial_scope:bool) -> bool {
+        self.context.in_scope(context, partial_scope)
     }
 
     pub fn equivalent(&self, variable:&Variable, context:&Context) -> bool {
-        self.same_name(variable) && self.in_scope(context)
+        let ret = self.same_name(variable) && self.in_scope(context,false);
+        ret
+    }
+
+    pub fn partial(&self, variable:&Variable, context:&Context) -> bool {
+        self.same_name(variable) && self.in_scope(context, true)
     }
 }
 
