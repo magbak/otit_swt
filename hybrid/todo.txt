@@ -2,8 +2,6 @@ Pushups also via GPReturn?
 Qualify groupby expression structure.
 Groupby that is not pushed down test.
 
-Test coverage:
-- Coalesce
 
 Project all static variables should it also have the context set for expression typse?!?!??!
 

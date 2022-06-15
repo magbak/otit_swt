@@ -49,7 +49,7 @@ pub enum PathEntry {
     LessOrEqualLeft,
     LessOrEqualRight,
     InLeft,
-    InRight,
+    InRight(u16),
     MultiplyLeft,
     MultiplyRight,
     AddLeft,
@@ -62,8 +62,8 @@ pub enum PathEntry {
     UnaryMinus,
     Not,
     Exists,
-    Coalesce,
-    FunctionCall,
+    Coalesce(u16),
+    FunctionCall(u16),
     AggregationOperation,
     OrderingOperation
 }

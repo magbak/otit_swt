@@ -21,6 +21,7 @@ use spargebra::algebra::{
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
 use std::collections::HashSet;
+use std::intrinsics::rotate_right;
 use std::ops::Not;
 use crate::query_context::{Context, PathEntry};
 
@@ -147,18 +148,16 @@ impl Combiner {
 
                 if let Some(expr) = expression {
                     let expression_context = context.extension_with(PathEntry::LeftJoinExpression);
-                    let expression_context_column_name = expression_context.to_string();
                     right_lf = Combiner::lazy_expression(
                         expr,
                         right_lf,
                         columns,
-                        &expression_context_column_name,
                         time_series,
                         &expression_context
                     );
                     right_lf = right_lf
-                        .filter(col(&expression_context_column_name))
-                        .drop_columns([&expression_context_column_name]);
+                        .filter(col(&expression_context.to_string()))
+                        .drop_columns([&expression_context.to_string()]);
                 }
 
                 let right_df = right_lf.collect().expect("Collect right problem");
@@ -211,12 +210,11 @@ impl Combiner {
             GraphPattern::Filter { expr, inner } => {
                 let mut inner_lf = self.lazy_graph_pattern(columns, input_lf, inner, time_series, &context.extension_with(PathEntry::FilterInner));
                 let expression_context = context.extension_with(PathEntry::FilterExpression);
-                let expression_context_column_name = expression_context.to_string();
                 inner_lf =
-                    Combiner::lazy_expression(expr, inner_lf, columns, &expression_context_column_name, time_series, &expression_context);
+                    Combiner::lazy_expression(expr, inner_lf, columns, time_series, &expression_context);
                 inner_lf = inner_lf
-                    .filter(col(&expression_context_column_name))
-                    .drop_columns([&expression_context_column_name]);
+                    .filter(col(&expression_context.to_string()))
+                    .drop_columns([&expression_context.to_string()]);
                 inner_lf
             }
             GraphPattern::Union { left, right } => {
@@ -265,7 +263,6 @@ impl Combiner {
                     expression,
                     inner_lf,
                     columns,
-                    variable.as_str(),
                     time_series,
                     &context.extension_with(PathEntry::ExtendExpression)
                 );
@@ -533,45 +530,42 @@ impl Combiner {
         expr: &Expression,
         inner_lf: LazyFrame,
         columns: &HashSet<String>,
-        column_name: &str,
         time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
         context:&Context
     ) -> LazyFrame {
         match expr {
             Expression::NamedNode(nn) => {
                 let inner_lf = inner_lf.with_column(
-                    Expr::Literal(sparql_named_node_to_polars_literal_value(nn)).alias(column_name),
+                    Expr::Literal(sparql_named_node_to_polars_literal_value(nn)).alias(&context.to_string()),
                 );
                 inner_lf
             }
             Expression::Literal(lit) => {
                 let inner_lf = inner_lf.with_column(
-                    Expr::Literal(sparql_literal_to_polars_literal_value(lit)).alias(column_name),
+                    Expr::Literal(sparql_literal_to_polars_literal_value(lit)).alias(&context.to_string()),
                 );
                 inner_lf
             }
             Expression::Variable(v) => {
-                let inner_lf = inner_lf.with_column(col(v.as_str()).alias(column_name));
+                let inner_lf = inner_lf.with_column(col(v.as_str()).alias(&context.to_string()));
                 inner_lf
             }
             Expression::Or(left, right) => {
-                let left_column_name = column_name.to_string() + "_left";
+                let left_context = context.extension_with(PathEntry::OrLeft);
                 let mut inner_lf = Combiner::lazy_expression(
                     left,
                     inner_lf,
                     columns,
-                    &left_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::OrLeft)
+                    &left_context
                 );
-                let right_column_name = column_name.to_string() + "_right";
+                let right_context = context.extension_with(PathEntry::OrRight);
                 inner_lf = Combiner::lazy_expression(
                     right,
                     inner_lf,
                     columns,
-                    &right_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::OrRight)
+                    &right_context
                 );
                 inner_lf = inner_lf
                     .with_column(
@@ -582,25 +576,23 @@ impl Combiner {
                         })
                         .alias(column_name),
                     )
-                    .drop_columns([&left_column_name, &right_column_name]);
+                    .drop_columns([&left_context.to_string(), &right_context.to_string()]);
                 inner_lf
             }
             Expression::And(left, right) => {
-                let left_column_name = column_name.to_string() + "_left";
+                let left_context = context.extension_with(PathEntry::AndLeft);
                 let mut inner_lf = Combiner::lazy_expression(
                     left,
                     inner_lf,
                     columns,
-                    &left_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::AndLeft)
+                    &left_context
                 );
-                let right_column_name = column_name.to_string() + "_right";
+                let right_context = ccontext.extension_with(PathEntry::AndRight);
                 inner_lf = Combiner::lazy_expression(
                     right,
                     inner_lf,
                     columns,
-                    &right_column_name,
                     time_series,
                     &context.extension_with(PathEntry::AndRight)
                 );
@@ -613,27 +605,25 @@ impl Combiner {
                         })
                         .alias(column_name),
                     )
-                    .drop_columns([&left_column_name, &right_column_name]);
+                    .drop_columns([&left_context.to_string(), &right_context.to_string()]);
                 inner_lf
             }
             Expression::Equal(left, right) => {
-                let left_column_name = column_name.to_string() + "_left";
+                let left_context = context.extension_with(PathEntry::EqualLeft);
                 let mut inner_lf = Combiner::lazy_expression(
                     left,
                     inner_lf,
                     columns,
-                    &left_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::EqualLeft)
+                    &left_context
                 );
-                let right_column_name = column_name.to_string() + "_right";
+                let right_context = context.extension_with(PathEntry::EqualRight);
                 inner_lf = Combiner::lazy_expression(
                     right,
                     inner_lf,
                     columns,
-                    &right_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::EqualRight)
+                    &right_context
                 );
                 inner_lf = inner_lf
                     .with_column(
@@ -644,30 +634,28 @@ impl Combiner {
                         })
                         .alias(column_name),
                     )
-                    .drop_columns([&left_column_name, &right_column_name]);
+                    .drop_columns([&left_context.to_string(), &right_context.to_string()]);
                 inner_lf
             }
             Expression::SameTerm(_, _) => {
                 todo!("Not implemented")
             }
             Expression::Greater(left, right) => {
-                let left_column_name = column_name.to_string() + "_left";
+                let left_context = context.extension_with(PathEntry::GreaterLeft);
                 let mut inner_lf = Combiner::lazy_expression(
                     left,
                     inner_lf,
                     columns,
-                    &left_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::GreaterLeft)
+                    &left_context
                 );
-                let right_column_name = column_name.to_string() + "_right";
+                let right_context = context.extension_with(PathEntry::GreaterRight);
                 inner_lf = Combiner::lazy_expression(
                     right,
                     inner_lf,
                     columns,
-                    &right_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::GreaterRight)
+                    &right_context
                 );
                 inner_lf = inner_lf
                     .with_column(
@@ -682,23 +670,21 @@ impl Combiner {
                 inner_lf
             }
             Expression::GreaterOrEqual(left, right) => {
-                let left_column_name = column_name.to_string() + "_left";
+                let left_context = context.extension_with(PathEntry::GreaterOrEqualLeft);
                 let mut inner_lf = Combiner::lazy_expression(
                     left,
                     inner_lf,
                     columns,
-                    &left_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::GreaterOrEqualLeft)
+                    &left_context
                 );
-                let right_column_name = column_name.to_string() + "_right";
+                let right_context = context.extension_with(PathEntry::GreaterOrEqualRight);
                 inner_lf = Combiner::lazy_expression(
                     right,
                     inner_lf,
                     columns,
-                    &right_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::GreaterOrEqualRight)
+                    &right_context
                 );
 
                 inner_lf = inner_lf
@@ -714,23 +700,21 @@ impl Combiner {
                 inner_lf
             }
             Expression::Less(left, right) => {
-                let left_column_name = column_name.to_string() + "_left";
+                let left_context = context.extension_with(PathEntry::LessLeft);
                 let mut inner_lf = Combiner::lazy_expression(
                     left,
                     inner_lf,
                     columns,
-                    &left_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::LessLeft)
+                    &left_context
                 );
-                let right_column_name = column_name.to_string() + "_right";
+                let right_context = context.extension_with(PathEntry::LessRight);
                 inner_lf = Combiner::lazy_expression(
                     right,
                     inner_lf,
                     columns,
-                    &right_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::LessRight)
+                    &right_context
                 );
 
                 inner_lf = inner_lf
@@ -746,23 +730,21 @@ impl Combiner {
                 inner_lf
             }
             Expression::LessOrEqual(left, right) => {
-                let left_column_name = column_name.to_string() + "_left";
+                let left_context = context.extension_with(PathEntry::LessOrEqualLeft);
                 let mut inner_lf = Combiner::lazy_expression(
                     left,
                     inner_lf,
                     columns,
-                    &left_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::LessOrEqualLeft)
+                    &left_context
                 );
-                let right_column_name = column_name.to_string() + "_right";
+                let right_context = context.extension_with(PathEntry::LessOrEqualRight);
                 inner_lf = Combiner::lazy_expression(
                     right,
                     inner_lf,
                     columns,
-                    &right_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::LessOrEqualRight)
+                    &right_context
                 );
 
                 inner_lf = inner_lf
@@ -778,91 +760,86 @@ impl Combiner {
                 inner_lf
             }
             Expression::In(left, right) => {
-                let left_colname = column_name.to_string() + "_left";
-                let right_colnames: Vec<String> = (0..right.len())
-                    .map(|i| column_name.to_string() + "right_" + &i.to_string())
+                let left_context = context.extension_with(PathEntry::InLeft);
+                let right_contexts: Vec<Context> = (0..right.len())
+                    .map(|i| context.extension_with(PathEntry::InRight(i as u16)))
                     .collect();
                 let mut inner_lf =
-                    Combiner::lazy_expression(left, inner_lf, columns, &left_colname, time_series, &context.extension_with(PathEntry::InLeft));
+                    Combiner::lazy_expression(left, inner_lf, columns, time_series, &left_context);
                 for i in 0..right.len() {
                     let expr = right.get(i).unwrap();
                     inner_lf = Combiner::lazy_expression(
                         expr,
                         inner_lf,
                         columns,
-                        right_colnames.get(i).unwrap(),
                         time_series,
-                        &context.extension_with(PathEntry::InRight)
+                        right_contexts.get(i).unwrap()
                     );
                 }
                 let mut expr = Expr::Literal(LiteralValue::Boolean(false));
 
-                for right_colname in &right_colnames {
+                for right_context in &right_contexts {
                     expr = Expr::BinaryExpr {
                         left: Box::new(expr),
                         op: Operator::Or,
                         right: Box::new(Expr::BinaryExpr {
-                            left: Box::new(col(&left_colname)),
+                            left: Box::new(col(&left_context.to_string())),
                             op: Operator::Eq,
-                            right: Box::new(col(right_colname)),
+                            right: Box::new(col(&right_context.to_string())),
                         }),
                     }
                 }
                 inner_lf = inner_lf
-                    .with_column(expr.alias(column_name))
-                    .drop_columns([&left_colname])
-                    .drop_columns(right_colnames.iter().collect::<Vec<&String>>());
+                    .with_column(expr.alias(&context.to_string()))
+                    .drop_columns([&left_context.to_string()])
+                    .drop_columns(right_contexts.iter().map(|x|&x.to_string()).collect::<Vec<&String>>());
                 inner_lf
             }
             Expression::Add(left, right) => {
-                let left_column_name = column_name.to_string() + "_left";
+                let left_context = context.extension_with(PathEntry::AddLeft);
                 let mut inner_lf = Combiner::lazy_expression(
                     left,
                     inner_lf,
                     columns,
-                    &left_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::AddLeft)
+                    &left_context
                 );
-                let right_column_name = column_name.to_string() + "_right";
+                let right_context = context.extension_with(PathEntry::AddRight);
                 inner_lf = Combiner::lazy_expression(
                     right,
                     inner_lf,
                     columns,
-                    &right_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::AddRight)
+                    &right_context
                 );
                 inner_lf = inner_lf
                     .with_column(
                         (Expr::BinaryExpr {
-                            left: Box::new(col(&left_column_name)),
+                            left: Box::new(col(&left_context.to_string())),
                             op: Operator::Plus,
-                            right: Box::new(col(&right_column_name)),
+                            right: Box::new(col(&right_context.to_string())),
                         })
                         .alias(column_name),
                     )
-                    .drop_columns([&left_column_name, &right_column_name]);
+                    .drop_columns([&left_context.to_string(), &right_context.to_string()]);
                 inner_lf
             }
             Expression::Subtract(left, right) => {
-                let left_column_name = column_name.to_string() + "_left";
+                let left_context = context.extension_with(PathEntry::SubtractLeft);
                 let mut inner_lf = Combiner::lazy_expression(
                     left,
                     inner_lf,
                     columns,
-                    &left_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::SubtractLeft)
+                    &left_context
                 );
-                let right_column_name = column_name.to_string() + "_right";
+                let right_context = context.extension_with(PathEntry::SubtractRight);
                 inner_lf = Combiner::lazy_expression(
                     right,
                     inner_lf,
                     columns,
-                    &right_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::SubtractRight)
+                    &right_context
                 );
                 inner_lf = inner_lf
                     .with_column(
@@ -877,23 +854,21 @@ impl Combiner {
                 inner_lf
             }
             Expression::Multiply(left, right) => {
-                let left_column_name = column_name.to_string() + "_left";
+                let left_context = context.extension_with(PathEntry::MultiplyLeft);
                 let mut inner_lf = Combiner::lazy_expression(
                     left,
                     inner_lf,
                     columns,
-                    &left_column_name,
                     time_series,
                     &context.extension_with(PathEntry::MultiplyLeft)
                 );
-                let right_column_name = column_name.to_string() + "_right";
+                let right_context = context.extension_with(PathEntry::MultiplyRight);
                 inner_lf = Combiner::lazy_expression(
                     right,
                     inner_lf,
                     columns,
-                    &right_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::MultiplyRight)
+                    &right_context
                 );
 
                 inner_lf = inner_lf
@@ -909,23 +884,21 @@ impl Combiner {
                 inner_lf
             }
             Expression::Divide(left, right) => {
-                let left_column_name = column_name.to_string() + "_left";
+                let left_context = context.extension_with(PathEntry::DivideLeft);
                 let mut inner_lf = Combiner::lazy_expression(
                     left,
                     inner_lf,
                     columns,
-                    &left_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::DivideLeft)
+                    &left_context
                 );
-                let right_column_name = column_name.to_string() + "_right";
+                let right_context = context.extension_with(PathEntry::DivideRight);
                 inner_lf = Combiner::lazy_expression(
                     right,
                     inner_lf,
                     columns,
-                    &right_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::DivideRight)
+                    &right_context
                 );
 
                 inner_lf = inner_lf
@@ -941,14 +914,13 @@ impl Combiner {
                 inner_lf
             }
             Expression::UnaryPlus(inner) => {
-                let plus_column_name = column_name.to_string() + "_plus";
+                let plus_context = context.extension_with(PathEntry::UnaryPlus);
                 let mut inner_lf = Combiner::lazy_expression(
                     inner,
                     inner_lf,
                     columns,
-                    &plus_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::UnaryPlus)
+                    &plus_context
                 );
                 inner_lf = inner_lf
                     .with_column(
@@ -963,14 +935,13 @@ impl Combiner {
                 inner_lf
             }
             Expression::UnaryMinus(inner) => {
-                let minus_column_name = column_name.to_string() + "_minus";
+                let minus_context = context.extension_with(PathEntry::UnaryMinus);
                 let mut inner_lf = Combiner::lazy_expression(
                     inner,
                     inner_lf,
                     columns,
-                    &minus_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::UnaryMinus)
+                    &minus_context
                 );
                 inner_lf = inner_lf
                     .with_column(
@@ -985,22 +956,21 @@ impl Combiner {
                 inner_lf
             }
             Expression::Not(inner) => {
-                let not_column_name = column_name.to_string() + "_not";
+                let not_context = context.extension_with(PathEntry::Not);
                 let mut inner_lf = Combiner::lazy_expression(
                     inner,
                     inner_lf,
                     columns,
-                    &not_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::Not)
+                    &not_context
                 );
                 inner_lf = inner_lf
-                    .with_column(col(&not_column_name).not().alias(column_name))
+                    .with_column(col(&not_column_name).not().alias(&context.to_string()))
                     .drop_columns([&not_column_name]);
                 inner_lf
             }
             Expression::Exists(inner) => {
-                let exists_helper_column = column_name.to_string() + "_exists_helper";
+                let exists_context = context.extension_with(PathEntry::Exists);
                 let lf = inner_lf.with_column(
                     Expr::Literal(LiteralValue::Int64(1)).alias(&exists_helper_column),
                 );
@@ -1016,7 +986,7 @@ impl Combiner {
                         df.clone().lazy(),
                         &new_inner,
                         time_series,
-                        &context.extension_with(PathEntry::Exists)
+                        &exists_context
                     )
                     .select([col(&exists_helper_column)])
                     .unique(None, UniqueKeepStrategy::First)
@@ -1025,45 +995,42 @@ impl Combiner {
                 debug!("Exists dataframe: {}", exists_df);
                 debug!("Exists original dataframe: {}", df);
                 let mut ser = Series::from(
-                    df.column(&exists_helper_column)
+                    df.column(&exists_context.to_string())
                         .unwrap()
-                        .is_in(exists_df.column(&exists_helper_column).unwrap())
+                        .is_in(exists_df.column(&exists_context.to_string()).unwrap())
                         .unwrap(),
                 );
-                ser.rename(&column_name);
+                ser.rename(&context.to_string());
                 df.with_column(ser).unwrap();
-                df = df.drop(&exists_helper_column).unwrap();
+                df = df.drop(&exists_context.to_string()).unwrap();
                 debug!("Dataframe after {}", df);
                 df.lazy()
             }
             Expression::Bound(v) => {
-                inner_lf.with_column(col(v.as_str()).is_null().alias(column_name))
+                inner_lf.with_column(col(v.as_str()).is_null().alias(&context.to_string()))
             }
             Expression::If(left, middle, right) => {
-                let left_column_name = column_name.to_string() + "_left";
+                let left_context = context.extension_with(PathEntry::IfLeft);
                 let mut inner_lf = Combiner::lazy_expression(
                     left,
                     inner_lf,
                     columns,
-                    &left_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::IfLeft)
+                    &left_context
                 );
-                let middle_column_name = column_name.to_string() + "_middle";
+                let middle_context = context.extension_with(PathEntry::IfMiddle);
                 inner_lf = Combiner::lazy_expression(
                     middle,
                     inner_lf,
                     columns,
-                    &middle_column_name,
                     time_series,
-                    &context.extension_with(PathEntry::IfMiddle)
+                    &middle_context
                 );
-                let right_column_name = column_name.to_string() + "_right";
+                let right_context = context.extension_with(PathEntry::IfRight);
                 inner_lf = Combiner::lazy_expression(
                     right,
                     inner_lf,
                     columns,
-                    &right_column_name,
                     time_series,
                     &context.extension_with(PathEntry::IfRight)
                 );
@@ -1081,8 +1048,8 @@ impl Combiner {
                 inner_lf
             }
             Expression::Coalesce(inner) => {
-                let mut inner_columns: Vec<String> = (0..inner.len())
-                    .map(|i| column_name.to_string() + "_coalesce_arg_" + &i.to_string())
+                let mut inner_contexts: Vec<Context> = (0..inner.len())
+                    .map(|i| context.extension_with(PathEntry::Coalesce(i as u16)))
                     .collect();
                 let mut inner_lf = inner_lf;
                 for i in 0..inner.len() {
@@ -1090,9 +1057,8 @@ impl Combiner {
                         inner.get(i).unwrap(),
                         inner_lf,
                         columns,
-                        inner_columns.get(i).unwrap(),
                         time_series,
-                        &context.extension_with(PathEntry::Coalesce)
+                        inner_contexts.get(i).unwrap()
                     );
                 }
 
@@ -1105,13 +1071,13 @@ impl Combiner {
                     }
                 }
                 inner_lf = inner_lf
-                    .with_column(coalesced.alias(column_name))
-                    .drop_columns(inner_columns.iter().collect::<Vec<&String>>());
+                    .with_column(coalesced.alias(&context.to_string()))
+                    .drop_columns(inner_contexts.iter().map(|c|&c.to_string()).collect::<Vec<&String>>());
                 inner_lf
             }
             Expression::FunctionCall(func, args) => {
-                let args_cols: Vec<String> = (0..args.len())
-                    .map(|i| column_name.to_string() + "_function_arg_" + &i.to_string())
+                let args_contexts: Vec<Context> = (0..args.len())
+                    .map(|i| context.extension_with(PathEntry::FunctionCall(i as u16)))
                     .collect();
                 let mut inner_lf = inner_lf;
                 for i in 0..args.len() {
@@ -1119,90 +1085,89 @@ impl Combiner {
                         args.get(i).unwrap(),
                         inner_lf,
                         columns,
-                        args_cols.get(i).unwrap(),
                         time_series,
-                        &context.extension_with(PathEntry::FunctionCall)
+                        args_contexts.get(i).unwrap()
                     );
                 }
                 match func {
                     Function::Year => {
                         assert_eq!(args.len(), 1);
-                        let first_col = args_cols.get(0).unwrap();
+                        let first_context = args_contexts.get(0).unwrap();
                         inner_lf =
-                            inner_lf.with_column(col(first_col).dt().year().alias(column_name));
+                            inner_lf.with_column(col(&first_context.to_string()).dt().year().alias(&context.to_string()));
                     }
                     Function::Month => {
                         assert_eq!(args.len(), 1);
-                        let first_col = args_cols.get(0).unwrap();
+                        let first_context = args_contexts.get(0).unwrap();
                         inner_lf =
-                            inner_lf.with_column(col(first_col).dt().month().alias(column_name));
+                            inner_lf.with_column(col(&first_context.to_string()).dt().month().alias(&context.to_string()));
                     }
                     Function::Day => {
                         assert_eq!(args.len(), 1);
-                        let first_col = args_cols.get(0).unwrap();
+                        let first_context = args_contexts.get(0).unwrap();
                         inner_lf =
-                            inner_lf.with_column(col(first_col).dt().day().alias(column_name));
+                            inner_lf.with_column(col(&first_context.to_string()).dt().day().alias(&context.to_string()));
                     }
                     Function::Hours => {
                         assert_eq!(args.len(), 1);
-                        let first_col = args_cols.get(0).unwrap();
+                        let first_context = args_contexts.get(0).unwrap();
                         inner_lf =
-                            inner_lf.with_column(col(first_col).dt().hour().alias(column_name));
+                            inner_lf.with_column(col(&first_context.to_string()).dt().hour().alias(&context.to_string()));
                     }
                     Function::Minutes => {
                         assert_eq!(args.len(), 1);
-                        let first_col = args_cols.get(0).unwrap();
+                        let first_context = args_contexts.get(0).unwrap();
                         inner_lf =
-                            inner_lf.with_column(col(first_col).dt().minute().alias(column_name));
+                            inner_lf.with_column(col(&first_context.to_string()).dt().minute().alias(&context.to_string()));
                     }
                     Function::Seconds => {
                         assert_eq!(args.len(), 1);
-                        let first_col = args_cols.get(0).unwrap();
+                        let first_context = args_contexts.get(0).unwrap();
                         inner_lf =
-                            inner_lf.with_column(col(first_col).dt().second().alias(column_name));
+                            inner_lf.with_column(col(&first_context.to_string()).dt().second().alias(&context.to_string()));
                     }
                     Function::Abs => {
                         assert_eq!(args.len(), 1);
-                        let first_col = args_cols.get(0).unwrap();
-                        inner_lf = inner_lf.with_column(col(first_col).abs().alias(column_name));
+                        let first_context = args_contexts.get(0).unwrap();
+                        inner_lf = inner_lf.with_column(col(&first_context.to_string()).abs().alias(&context.to_string()));
                     }
                     Function::Ceil => {
                         assert_eq!(args.len(), 1);
-                        let first_col = args_cols.get(0).unwrap();
-                        inner_lf = inner_lf.with_column(col(first_col).ceil().alias(column_name));
+                        let first_context = args_contexts.get(0).unwrap();
+                        inner_lf = inner_lf.with_column(col(&first_context.to_string()).ceil().alias(&context.to_string()));
                     }
                     Function::Floor => {
                         assert_eq!(args.len(), 1);
-                        let first_col = args_cols.get(0).unwrap();
-                        inner_lf = inner_lf.with_column(col(first_col).floor().alias(column_name));
+                        let first_context = args_contexts.get(0).unwrap();
+                        inner_lf = inner_lf.with_column(col(&first_context.to_string()).floor().alias(&context.to_string()));
                     }
                     Function::Concat => {
                         assert!(args.len() > 1);
                         inner_lf = inner_lf.with_column(
                             concat_str(args_cols.iter().map(|c| col(c)).collect(), "")
-                                .alias(column_name),
+                                .alias(&context.to_string()),
                         );
                     }
                     Function::Round => {
                         assert_eq!(args.len(), 1);
-                        let first_col = args_cols.get(0).unwrap();
-                        inner_lf = inner_lf.with_column(col(first_col).round(0).alias(column_name));
+                        let first_context = args_contexts.get(0).unwrap();
+                        inner_lf = inner_lf.with_column(col(&first_context.to_string()).round(0).alias(&context.to_string()));
                     }
                     Function::Custom(nn) => {
                         let nn_ref = NamedNodeRef::from(nn);
                         match nn_ref {
                             xsd::INTEGER => {
                                 assert_eq!(args.len(), 1);
-                                let first_col = args_cols.get(0).unwrap();
+                                let first_context = args_contexts.get(0).unwrap();
                                 inner_lf = inner_lf.with_column(
-                                    col(first_col).cast(DataType::Int64).alias(column_name),
+                                    col(&first_context.to_string()).cast(DataType::Int64).alias(&context.to_string()),
                                 );
                             }
                             xsd::STRING => {
                                 assert_eq!(args.len(), 1);
-                                let first_col = args_cols.get(0).unwrap();
+                                let first_context = args_contexts.get(0).unwrap();
                                 inner_lf = inner_lf.with_column(
-                                    col(first_col).cast(DataType::Utf8).alias(column_name),
+                                    col(&first_context.to_string()).cast(DataType::Utf8).alias(&context.to_string()),
                                 );
                             }
                             _ => {
@@ -1214,7 +1179,7 @@ impl Combiner {
                         todo!("{:?}", func)
                     }
                 }
-                inner_lf.drop_columns(args_cols.iter().collect::<Vec<&String>>())
+                inner_lf.drop_columns(args_contexts.iter().map(|x|&x.to_string()).collect::<Vec<&String>>())
             }
         }
     }
@@ -1225,7 +1190,6 @@ pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
     aggregate_expression: &AggregateExpression,
     all_proper_column_names: &Vec<String>,
     columns: &HashSet<String>,
-    column_name: &str,
     lf: LazyFrame,
     time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
     context: &Context
@@ -1237,7 +1201,7 @@ pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
         AggregateExpression::Count { expr, distinct } => {
             if let Some(some_expr) = expr {
                 out_lf =
-                    Combiner::lazy_expression(some_expr, lf, columns, column_name, time_series, &context.extension_with(PathEntry::AggregationOperation));
+                    Combiner::lazy_expression(some_expr, lf, columns,  time_series, &context.extension_with(PathEntry::AggregationOperation));
                 created_col = true;
                 if *distinct {
                     out_expr = col(column_name).n_unique();
@@ -1257,7 +1221,7 @@ pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
             }
         }
         AggregateExpression::Sum { expr, distinct } => {
-            out_lf = Combiner::lazy_expression(expr, lf, columns, column_name, time_series, &context.extension_with(PathEntry::AggregationOperation));
+            out_lf = Combiner::lazy_expression(expr, lf, columns,  time_series, &context.extension_with(PathEntry::AggregationOperation));
             created_col = true;
 
             if *distinct {
@@ -1267,7 +1231,7 @@ pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
             }
         }
         AggregateExpression::Avg { expr, distinct } => {
-            out_lf = Combiner::lazy_expression(expr, lf, columns, column_name, time_series, &context.extension_with(PathEntry::AggregationOperation));
+            out_lf = Combiner::lazy_expression(expr, lf, columns, time_series, &context.extension_with(PathEntry::AggregationOperation));
             created_col = true;
 
             if *distinct {
@@ -1277,13 +1241,13 @@ pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
             }
         }
         AggregateExpression::Min { expr, distinct: _ } => {
-            out_lf = Combiner::lazy_expression(expr, lf, columns, column_name, time_series, &context.extension_with(PathEntry::AggregationOperation));
+            out_lf = Combiner::lazy_expression(expr, lf, columns, time_series, &context.extension_with(PathEntry::AggregationOperation));
             created_col = true;
 
             out_expr = col(column_name).min();
         }
         AggregateExpression::Max { expr, distinct: _ } => {
-            out_lf = Combiner::lazy_expression(expr, lf, columns, column_name, time_series, &context.extension_with(PathEntry::AggregationOperation));
+            out_lf = Combiner::lazy_expression(expr, lf, columns, time_series, &context.extension_with(PathEntry::AggregationOperation));
             created_col = true;
 
             out_expr = col(column_name).max();
@@ -1293,7 +1257,7 @@ pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
             distinct,
             separator,
         } => {
-            out_lf = Combiner::lazy_expression(expr, lf, columns, column_name, time_series, &context.extension_with(PathEntry::AggregationOperation));
+            out_lf = Combiner::lazy_expression(expr, lf, columns, time_series, &context.extension_with(PathEntry::AggregationOperation));
             created_col = true;
 
             let use_sep = if let Some(sep) = separator {
