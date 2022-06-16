@@ -1059,7 +1059,7 @@ impl Combiner {
                     );
                 }
 
-                let coalesced_context = &inner_contexts.get(0).unwrap();
+                let coalesced_context = inner_contexts.get(0).unwrap();
                 let mut coalesced = col(&coalesced_context.as_str());
                 for c in &inner_contexts[1..inner_contexts.len()] {
                     coalesced = Expr::Ternary {

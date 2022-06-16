@@ -1,9 +1,10 @@
 use std::cmp::{min};
+use std::fmt;
+use std::fmt::Formatter;
 use oxrdf::Variable;
 use spargebra::algebra::{AggregateExpression, Expression};
-use std::string::ToString;
 
-#[derive(Clone, Debug, PartialEq, Display)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PathEntry {
     BGP,
     UnionLeftSide,
@@ -68,6 +69,74 @@ pub enum PathEntry {
     OrderingOperation
 }
 
+impl fmt::Display for PathEntry {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            PathEntry::BGP => {write!(f,"{}","BGP")}
+            PathEntry::UnionLeftSide => {write!(f, "{}","UnionLeftSide")}
+            PathEntry::UnionRightSide => {write!(f, "{}","UnionRightSide")}
+            PathEntry::JoinLeftSide => {write!(f, "{}","JoinLeftSide")}
+            PathEntry::JoinRightSide => {write!(f, "{}","JoinRightSide")}
+            PathEntry::LeftJoinLeftSide => {write!(f, "{}","LeftJoinLeftSide")}
+            PathEntry::LeftJoinRightSide => {write!(f, "{}","LeftJoinRightSide")}
+            PathEntry::LeftJoinExpression => {write!(f, "{}","LeftJoinExpression")}
+            PathEntry::MinusLeftSide => {write!(f, "{}","MinusLeftSide")}
+            PathEntry::MinusRightSide => {write!(f, "{}","MinusRightSide")}
+            PathEntry::FilterInner => {write!(f, "{}","FilterInner")}
+            PathEntry::FilterExpression => {write!(f, "{}","FilterExpression")}
+            PathEntry::GraphInner => {write!(f, "{}","GraphInner")}
+            PathEntry::ExtendInner => {write!(f, "{}","ExtendInner")}
+            PathEntry::ExtendExpression => {write!(f, "{}","ExtendExpression")}
+            PathEntry::OrderByInner => {write!(f, "{}","OrderByInner")}
+            PathEntry::OrderByExpression(i) => {write!(f, "{}({})","OrderByExpression", i)}
+            PathEntry::ProjectInner => {write!(f, "{}","ProjectInner")}
+            PathEntry::DistinctInner => {write!(f, "{}","DistinctInner")}
+            PathEntry::ReducedInner => {write!(f, "{}","ReducedInner")}
+            PathEntry::SliceInner => {write!(f, "{}","SliceInner")}
+            PathEntry::ServiceInner => {write!(f, "{}","ServiceInner")}
+            PathEntry::GroupInner => {write!(f, "{}","GroupInner")}
+            PathEntry::GroupAggregation(i) => {write!(f, "{}({})","GroupAggregation", i)}
+            PathEntry::IfLeft => {write!(f, "{}","IfLeft")}
+            PathEntry::IfMiddle => {write!(f, "{}","IfMiddle")}
+            PathEntry::IfRight => {write!(f, "{}","IfRight")}
+            PathEntry::OrLeft => {write!(f, "{}","OrLeft")}
+            PathEntry::OrRight => {write!(f, "{}","OrRight")}
+            PathEntry::AndLeft => {write!(f, "{}","AndLeft")}
+            PathEntry::AndRight => {write!(f, "{}","AndLeft")}
+            PathEntry::EqualLeft => {write!(f, "{}","EqualLeft")}
+            PathEntry::EqualRight => {write!(f, "{}","EqualRight")}
+            PathEntry::SameTermLeft => {write!(f, "{}","SameTermLeft")}
+            PathEntry::SameTermRight => {write!(f, "{}","SameTermRight")}
+            PathEntry::GreaterLeft => {write!(f, "{}", "GreaterLeft")}
+            PathEntry::GreaterRight => {write!(f, "{}", "GreaterRight")}
+            PathEntry::GreaterOrEqualLeft => {write!(f, "{}", "GreaterOrEqualLeft")}
+            PathEntry::GreaterOrEqualRight => {write!(f, "{}", "GreaterOrEqualRight")}
+            PathEntry::LessLeft => {write!(f, "{}", "LessLeft")}
+            PathEntry::LessRight => {write!(f, "{}", "LessRight")}
+            PathEntry::LessOrEqualLeft => {write!(f, "{}", "LessOrEqualLeft")}
+            PathEntry::LessOrEqualRight => {write!(f, "{}", "LessOrEqualRight")}
+            PathEntry::InLeft => {write!(f, "{}", "InLeft")}
+            PathEntry::InRight(i) => {write!(f, "{}({})", "InRight", i)}
+            PathEntry::MultiplyLeft => {write!(f, "{}", "MultiplyLeft")}
+            PathEntry::MultiplyRight => {write!(f, "{}", "MultiplyRight")}
+            PathEntry::AddLeft => {write!(f, "{}", "AddLeft")}
+            PathEntry::AddRight => {write!(f, "{}", "AddRight")}
+            PathEntry::SubtractLeft => {write!(f, "{}", "SubtractLeft")}
+            PathEntry::SubtractRight => {write!(f, "{}", "SubtractRight")}
+            PathEntry::DivideLeft => {write!(f, "{}", "DivideLeft")}
+            PathEntry::DivideRight => {write!(f, "{}", "DivideRight")}
+            PathEntry::UnaryPlus => {write!(f, "{}", "UnaryPlus")}
+            PathEntry::UnaryMinus => {write!(f, "{}", "UnaryMinus")}
+            PathEntry::Not => {write!(f, "{}", "Not")}
+            PathEntry::Exists => {write!(f, "{}", "Exists")}
+            PathEntry::Coalesce(i) => {write!(f, "{}({})", "Coalesce", i)}
+            PathEntry::FunctionCall(i) => {write!(f, "{}({})","FunctionCall", i)}
+            PathEntry::AggregationOperation => {write!(f, "{}", "AggregationOperation")}
+            PathEntry::OrderingOperation => {write!(f, "{}", "OrderingOperation")}
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct Context {
     string_rep: String,
@@ -124,7 +193,7 @@ fn exposes_variables(path_entry: &PathEntry) -> bool {
         PathEntry::MinusRightSide => {false}
         PathEntry::FilterInner => {true}
         PathEntry::FilterExpression => {false}
-        PathEntry::GraphInner => {true} //TODO: Check
+        PathEntry::GraphInner => {true}
         PathEntry::ExtendInner => {true}
         PathEntry::ExtendExpression => {false}
         PathEntry::OrderByInner => {true}

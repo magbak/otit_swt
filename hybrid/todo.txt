@@ -1,8 +1,3 @@
 Pushups also via GPReturn?
 Qualify groupby expression structure.
 Groupby that is not pushed down test.
-
-
-Project all static variables should it also have the context set for expression typse?!?!??!
-
-Lazy expressions should only use context, not column name
