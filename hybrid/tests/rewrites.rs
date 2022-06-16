@@ -329,43 +329,43 @@ fn test_fix_dropped_triple() {
         identifier_variable: Some(Variable::new_unchecked("ts_external_id_0")),
         timeseries_variable: Some(VariableInContext::new(
             Variable::new_unchecked("ts"),
-            Context {
-                path: vec![
+            Context::from_path(
+                vec![
                     PathEntry::ProjectInner,
                     PathEntry::FilterInner,
                     PathEntry::BGP,
                 ],
-            },
+            ),
         )),
         data_point_variable: Some(VariableInContext::new(
             Variable::new_unchecked("dp"),
-            Context {
-                path: vec![
+            Context::from_path(
+                vec![
                     PathEntry::ProjectInner,
                     PathEntry::FilterInner,
                     PathEntry::BGP,
                 ],
-            },
+            ),
         )),
         value_variable: Some(VariableInContext::new(
             Variable::new_unchecked("v"),
-            Context {
-                path: vec![
+            Context::from_path(
+                vec![
                     PathEntry::ProjectInner,
                     PathEntry::FilterInner,
                     PathEntry::BGP,
                 ],
-            },
+            ),
         )),
         timestamp_variable: Some(VariableInContext::new(
             Variable::new_unchecked("t"),
-            Context {
-                path: vec![
+            Context::from_path(
+                vec![
                     PathEntry::ProjectInner,
                     PathEntry::FilterInner,
                     PathEntry::BGP,
                 ],
-            },
+            ),
         )),
         ids: None,
         grouping: None,
@@ -386,9 +386,9 @@ fn test_fix_dropped_triple() {
                     ))),
                 )),
             ),
-            Context {
-                path: vec![PathEntry::ProjectInner, PathEntry::FilterExpression],
-            },
+            Context::from_path(
+                vec![PathEntry::ProjectInner, PathEntry::FilterExpression],
+            ),
         )],
     }];
     assert_eq!(time_series_queries, expected_time_series_queries);
@@ -430,43 +430,43 @@ fn test_property_path_expression() {
             identifier_variable: Some(Variable::new_unchecked("ts_external_id_0")),
             timeseries_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("blank_replacement_0"),
-                Context {
-                    path: vec![
+                Context::from_path(
+                    vec![
                         PathEntry::ProjectInner,
                         PathEntry::ExtendInner,
                         PathEntry::BGP,
                     ],
-                },
+                ),
             )),
             data_point_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("dp1"),
-                Context {
-                    path: vec![
+                Context::from_path(
+                    vec![
                         PathEntry::ProjectInner,
                         PathEntry::ExtendInner,
                         PathEntry::BGP,
                     ],
-                },
+                ),
             )),
             value_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("val1"),
-                Context {
-                    path: vec![
+                Context::from_path(
+                    vec![
                         PathEntry::ProjectInner,
                         PathEntry::ExtendInner,
                         PathEntry::BGP,
                     ],
-                },
+    ),
             )),
             timestamp_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("t"),
-                Context {
-                    path: vec![
+                Context::from_path(
+                    vec![
                         PathEntry::ProjectInner,
                         PathEntry::ExtendInner,
                         PathEntry::BGP,
                     ],
-                },
+                ),
             )),
             ids: None,
             grouping: None,
@@ -476,43 +476,43 @@ fn test_property_path_expression() {
             identifier_variable: Some(Variable::new_unchecked("ts_external_id_1")),
             timeseries_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("blank_replacement_1"),
-                Context {
-                    path: vec![
+                Context::from_path(
+                    vec![
                         PathEntry::ProjectInner,
                         PathEntry::ExtendInner,
                         PathEntry::BGP,
                     ],
-                },
+),
             )),
             data_point_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("dp2"),
-                Context {
-                    path: vec![
+                Context::from_path(
+                    vec![
                         PathEntry::ProjectInner,
                         PathEntry::ExtendInner,
                         PathEntry::BGP,
                     ],
-                },
+                ),
             )),
             value_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("val2"),
-                Context {
-                    path: vec![
+                Context::from_path(
+                    vec![
                         PathEntry::ProjectInner,
                         PathEntry::ExtendInner,
                         PathEntry::BGP,
                     ],
-                },
+    ),
             )),
             timestamp_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("t"),
-                Context {
-                    path: vec![
+                Context::from_path(
+                    vec![
                         PathEntry::ProjectInner,
                         PathEntry::ExtendInner,
                         PathEntry::BGP,
                     ],
-                },
+),
             )),
             ids: None,
             grouping: None,

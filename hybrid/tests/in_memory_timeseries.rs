@@ -35,10 +35,9 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
                 lf = lf.with_column(lit(id.to_string()).alias(tsq.identifier_variable.as_ref().unwrap().as_str()));
 
                 if tsq.conditions.len() > 0 {
-                    let column_name = "tsq_condition_expression_column_name";
                     for expr in &tsq.conditions {
-                        lf = Combiner::lazy_expression(&expr.expression, lf, &columns, column_name, &mut vec![], &expr.context);
-                        lf = lf.filter(col(column_name)).drop_columns([column_name]);
+                        lf = Combiner::lazy_expression(&expr.expression, lf, &columns, &mut vec![], &expr.context);
+                        lf = lf.filter(col(expr.context.as_str())).drop_columns([expr.context.as_str()]);
                     }
                 }
 
@@ -51,26 +50,25 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
         if let Some(grouping) = &tsq.grouping {
             //Important to do iteration in reversed direction for nested functions
             for (v,expression) in grouping.timeseries_funcs.iter().rev() {
-                out_lf = Combiner::lazy_expression(&expression.expression, out_lf, &columns, v.as_str(),&mut vec![], &expression.context);
+                out_lf = Combiner::lazy_expression(&expression.expression, out_lf, &columns, &mut vec![], &expression.context).rename([expression.context.as_str()],[ v.as_str()]);
             }
             let mut aggregation_exprs = vec![];
             let timestamp_name = if let Some(ts_var) = &tsq.timestamp_variable {ts_var.variable.as_str().to_string()} else {"timestamp".to_string()};
             let timestamp_names = vec![timestamp_name];
-            let mut aggregate_helper_columns = vec![];
+            let mut aggregate_inner_contexts = vec![];
             for i in 0..grouping.aggregations.len() {
                 let (v, agg) = grouping.aggregations.get(i).unwrap();
-                let aggregation_helper_column_name = "aggregation_helper_column_".to_string() + &i.to_string();
-                let (lf, agg_expr, used_column) = sparql_aggregate_expression_as_lazy_column_and_expression(v, &agg.aggregate_expression, &timestamp_names, &columns, &aggregation_helper_column_name, out_lf, &mut vec![], &agg.context);
+                let (lf, agg_expr, used_context) = sparql_aggregate_expression_as_lazy_column_and_expression(v, &agg.aggregate_expression, &timestamp_names, &columns, out_lf, &mut vec![], &agg.context);
                 out_lf = lf;
                 println!("{:?}", agg_expr);
                 aggregation_exprs.push(agg_expr);
-                if used_column {
-                    aggregate_helper_columns.push(aggregation_helper_column_name);
+                if let Some(inner_context) = used_context {
+                    aggregate_inner_contexts.push(inner_context);
                 }
             }
             let by:Vec<Expr> = grouping.by.iter().map(|c|col(c.as_str())).collect();
             let grouped_lf = out_lf.groupby(by);
-            out_lf = grouped_lf.agg(aggregation_exprs.as_slice()).drop_columns(aggregate_helper_columns.iter().collect::<Vec<&String>>());
+            out_lf = grouped_lf.agg(aggregation_exprs.as_slice()).drop_columns(aggregate_inner_contexts.iter().map(|c|c.as_str()).collect::<Vec<&str>>());
         }
 
 

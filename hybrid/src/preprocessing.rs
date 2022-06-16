@@ -156,7 +156,7 @@ impl Preprocessor {
                 let inner = self.preprocess_graph_pattern(inner, &context.extension_with(PathEntry::OrderByInner));
                 GraphPattern::OrderBy {
                     inner: Box::new(inner),
-                    expression: expression.iter().map(|oe| self.preprocess_order_expression(oe, &context.extension_with(PathEntry::OrderByExpression))).collect()
+                    expression: expression.iter().enumerate().map(|(i,oe)| self.preprocess_order_expression(oe, &context.extension_with(PathEntry::OrderByExpression(i as u16)))).collect()
                 }
             }
             GraphPattern::Project { inner, variables } => {
@@ -212,9 +212,9 @@ impl Preprocessor {
                     }
                 }
                 let mut preprocessed_aggregates = vec![];
-                for (var, agg) in aggregates {
+                for (i, (var, agg)) in aggregates.iter().enumerate() {
                     preprocessed_aggregates
-                        .push((var.clone(), self.preprocess_aggregate_expression(agg, &context.extension_with(PathEntry::GroupAggregation))))
+                        .push((var.clone(), self.preprocess_aggregate_expression(agg, &context.extension_with(PathEntry::GroupAggregation(i as u16)))))
                 }
                 GraphPattern::Group {
                     inner: Box::new(inner),

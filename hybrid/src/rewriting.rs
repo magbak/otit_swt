@@ -872,14 +872,14 @@ impl StaticQueryRewriter {
                     .collect();
 
                 let mut aes_rewritten: Vec<(Option<Variable>, AEReturn)> = aggregates
-                    .iter()
-                    .map(|(v, a)| {
+                    .iter().enumerate()
+                    .map(|(i, (v, a))| {
                         (
                             self.rewrite_variable(v, context),
                             self.rewrite_aggregate_expression(
                                 a,
                                 &gpr_inner.variables_in_scope,
-                                &context.extension_with(PathEntry::GroupAggregation),
+                                &context.extension_with(PathEntry::GroupAggregation(i as u16)),
                             ),
                         )
                     })
@@ -1169,12 +1169,12 @@ impl StaticQueryRewriter {
             self.rewrite_graph_pattern(inner, required_change_direction, &context.extension_with(PathEntry::OrderByInner))
         {
             let mut order_expressions_rewrite = order_expressions
-                .iter()
-                .map(|e| {
+                .iter().enumerate()
+                .map(|(i,e)| {
                     self.rewrite_order_expression(
                         e,
                         &gpr_inner.variables_in_scope,
-                        &context.extension_with(PathEntry::OrderByExpression),
+                        &context.extension_with(PathEntry::OrderByExpression(i as u16)),
                     )
                 })
                 .collect::<Vec<OEReturn>>();
@@ -1885,8 +1885,8 @@ impl StaticQueryRewriter {
                 let mut left_rewrite =
                     self.rewrite_expression(left, &ChangeType::NoChange, variables_in_scope,  &context.extension_with(PathEntry::InLeft));
                 let mut expressions_rewritten = expressions
-                    .iter()
-                    .map(|e| self.rewrite_expression(e, &ChangeType::NoChange, variables_in_scope,  &context.extension_with(PathEntry::InRight)))
+                    .iter().enumerate()
+                    .map(|(i,e)| self.rewrite_expression(e, &ChangeType::NoChange, variables_in_scope,  &context.extension_with(PathEntry::InRight(i as u16))))
                     .collect::<Vec<ExReturn>>();
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut left_rewrite);
@@ -2200,8 +2200,8 @@ impl StaticQueryRewriter {
             }
             Expression::Coalesce(wrapped) => {
                 let mut rewritten = wrapped
-                    .iter()
-                    .map(|e| self.rewrite_expression(e, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::Coalesce)))
+                    .iter().enumerate()
+                    .map(|(i,e)| self.rewrite_expression(e, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::Coalesce(i as u16))))
                     .collect::<Vec<ExReturn>>();
                 let mut exr = ExReturn::new();
                 for e in rewritten.iter_mut() {
@@ -2227,8 +2227,8 @@ impl StaticQueryRewriter {
             }
             Expression::FunctionCall(fun, args) => {
                 let mut args_rewritten = args
-                    .iter()
-                    .map(|e| self.rewrite_expression(e, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::FunctionCall)))
+                    .iter().enumerate()
+                    .map(|(i,e)| self.rewrite_expression(e, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::FunctionCall(i as u16))))
                     .collect::<Vec<ExReturn>>();
                 let mut exr = ExReturn::new();
                 for arg in args_rewritten.iter_mut() {
@@ -2400,8 +2400,8 @@ impl StaticQueryRewriter {
             }
             Expression::In(expr, expressions) => {
                 self.project_all_static_variables_in_expression(expr, &context.extension_with(PathEntry::InLeft));
-                for e in expressions {
-                    self.project_all_static_variables_in_expression(e, &context.extension_with(PathEntry::InRight));
+                for (i,e) in expressions.iter().enumerate() {
+                    self.project_all_static_variables_in_expression(e, &context.extension_with(PathEntry::InRight(i as u16)));
                 }
             }
             Expression::Add(left, right) => {
@@ -2438,16 +2438,16 @@ impl StaticQueryRewriter {
             Expression::If(left, middle, right) => {
                 self.project_all_static_variables_in_expression(left, &context.extension_with(PathEntry::IfLeft));
                 self.project_all_static_variables_in_expression(middle, &context.extension_with(PathEntry::IfMiddle));
-                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::InRight));
+                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::IfRight));
             }
             Expression::Coalesce(expressions) => {
-                for e in expressions {
-                    self.project_all_static_variables_in_expression(e, &context.extension_with(PathEntry::Coalesce));
+                for (i,e) in expressions.iter().enumerate() {
+                    self.project_all_static_variables_in_expression(e, &context.extension_with(PathEntry::Coalesce(i as u16)));
                 }
             }
             Expression::FunctionCall(_, expressions) => {
-                for e in expressions {
-                    self.project_all_static_variables_in_expression(e, &context.extension_with(PathEntry::FunctionCall));
+                for (i,e) in expressions.iter().enumerate() {
+                    self.project_all_static_variables_in_expression(e, &context.extension_with(PathEntry::FunctionCall(i as u16)));
                 }
             }
             _ => {}

@@ -586,12 +586,12 @@ impl TimeSeriesQuery {
                 );
                 if let Some((left_rewrite, ChangeType::NoChange)) = left_rewrite_opt {
                     let right_rewrites_opt = right
-                        .iter()
-                        .map(|e| {
+                        .iter().enumerate()
+                        .map(|(i,e)| {
                             self.try_recursive_rewrite_expression(
                                 e,
                                 required_change_direction,
-                                &context.extension_with(PathEntry::InRight),
+                                &context.extension_with(PathEntry::InRight(i as u16)),
                             )
                         })
                         .collect::<Vec<Option<(Expression, ChangeType)>>>();
@@ -826,12 +826,12 @@ impl TimeSeriesQuery {
             }
             Expression::Coalesce(inner) => {
                 let inner_rewrites_opt = inner
-                    .iter()
-                    .map(|e| {
+                    .iter().enumerate()
+                    .map(|(i,e)| {
                         self.try_recursive_rewrite_expression(
                             e,
                             required_change_direction,
-                            &context.extension_with(PathEntry::Coalesce),
+                            &context.extension_with(PathEntry::Coalesce(i as u16)),
                         )
                     })
                     .collect::<Vec<Option<(Expression, ChangeType)>>>();
@@ -856,12 +856,12 @@ impl TimeSeriesQuery {
             }
             Expression::FunctionCall(left, right) => {
                 let right_rewrites_opt = right
-                    .iter()
-                    .map(|e| {
+                    .iter().enumerate()
+                    .map(|(i,e)| {
                         self.try_recursive_rewrite_expression(
                             e,
                             required_change_direction,
-                            &context.extension_with(PathEntry::FunctionCall),
+                            &context.extension_with(PathEntry::FunctionCall(i as u16)),
                         )
                     })
                     .collect::<Vec<Option<(Expression, ChangeType)>>>();

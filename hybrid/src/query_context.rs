@@ -21,14 +21,14 @@ pub enum PathEntry {
     ExtendInner,
     ExtendExpression,
     OrderByInner,
-    OrderByExpression,
+    OrderByExpression(u16),
     ProjectInner,
     DistinctInner,
     ReducedInner,
     SliceInner,
     ServiceInner,
     GroupInner,
-    GroupAggregation,
+    GroupAggregation(u16),
     IfLeft,
     IfMiddle,
     IfRight,
@@ -70,6 +70,7 @@ pub enum PathEntry {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Context {
+    string_rep: String,
     pub path: Vec<PathEntry>
 }
 
@@ -127,14 +128,14 @@ fn exposes_variables(path_entry: &PathEntry) -> bool {
         PathEntry::ExtendInner => {true}
         PathEntry::ExtendExpression => {false}
         PathEntry::OrderByInner => {true}
-        PathEntry::OrderByExpression => {false}
+        PathEntry::OrderByExpression(_) => {false}
         PathEntry::ProjectInner => {true} //TODO: Depends on projection! Extend later..
         PathEntry::DistinctInner => {true}
         PathEntry::ReducedInner => {true}
         PathEntry::SliceInner => {true}
         PathEntry::ServiceInner => {true}
         PathEntry::GroupInner => {true}
-        PathEntry::GroupAggregation => {false}
+        PathEntry::GroupAggregation(_) => {false}
         PathEntry::IfLeft => {false}
         PathEntry::IfMiddle => {false}
         PathEntry::IfRight => {false}
@@ -155,7 +156,7 @@ fn exposes_variables(path_entry: &PathEntry) -> bool {
         PathEntry::LessOrEqualLeft => {false}
         PathEntry::LessOrEqualRight => {false}
         PathEntry::InLeft => {false}
-        PathEntry::InRight => {false}
+        PathEntry::InRight(_) => {false}
         PathEntry::MultiplyLeft => {false}
         PathEntry::MultiplyRight => {false}
         PathEntry::AddLeft => {false}
@@ -168,8 +169,8 @@ fn exposes_variables(path_entry: &PathEntry) -> bool {
         PathEntry::UnaryMinus => {false}
         PathEntry::Not => {false}
         PathEntry::Exists => {false}
-        PathEntry::Coalesce => {false}
-        PathEntry::FunctionCall => {false}
+        PathEntry::Coalesce(_) => {false}
+        PathEntry::FunctionCall(_) => {false}
         PathEntry::AggregationOperation => {false}
         PathEntry::OrderingOperation => {false}
     }
@@ -193,14 +194,14 @@ fn maintains_full_downward_scope(path_entry: &PathEntry) -> bool {
         PathEntry::ExtendInner => {false}
         PathEntry::ExtendExpression => {true}
         PathEntry::OrderByInner => {false}
-        PathEntry::OrderByExpression => {true}
+        PathEntry::OrderByExpression(_) => {true}
         PathEntry::ProjectInner => {false}
         PathEntry::DistinctInner => {false}
         PathEntry::ReducedInner => {false}
         PathEntry::SliceInner => {false}
         PathEntry::ServiceInner => {false}
         PathEntry::GroupInner => {false}
-        PathEntry::GroupAggregation => {true}
+        PathEntry::GroupAggregation(_) => {true}
         PathEntry::IfLeft => {true}
         PathEntry::IfMiddle => {true}
         PathEntry::IfRight => {true}
@@ -221,7 +222,7 @@ fn maintains_full_downward_scope(path_entry: &PathEntry) -> bool {
         PathEntry::LessOrEqualLeft => {true}
         PathEntry::LessOrEqualRight => {true}
         PathEntry::InLeft => {true}
-        PathEntry::InRight => {true}
+        PathEntry::InRight(_) => {true}
         PathEntry::MultiplyLeft => {true}
         PathEntry::MultiplyRight => {true}
         PathEntry::AddLeft => {true}
@@ -234,8 +235,8 @@ fn maintains_full_downward_scope(path_entry: &PathEntry) -> bool {
         PathEntry::UnaryMinus => {true}
         PathEntry::Not => {true}
         PathEntry::Exists => {true}
-        PathEntry::Coalesce => {true}
-        PathEntry::FunctionCall => {true}
+        PathEntry::Coalesce(_) => {true}
+        PathEntry::FunctionCall(_) => {true}
         PathEntry::AggregationOperation => {true}
         PathEntry::OrderingOperation => {true}
     }
@@ -244,20 +245,35 @@ fn maintains_full_downward_scope(path_entry: &PathEntry) -> bool {
 impl Context {
     pub fn new() -> Context {
         Context {
+            string_rep: "".to_string(),
             path: vec![]
         }
     }
 
-    pub fn to_string(&self) -> String {
-        let strings: Vec<String> = self.path.iter().map(|x|x.to_string()).collect();
-        strings.join("-")
+    pub fn from_path(path: Vec<PathEntry>) -> Context {
+        let mut ctx = Context::new();
+        for p in path {
+            ctx = ctx.extension_with(p);
+        }
+        ctx
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.string_rep
     }
 
     pub fn extension_with(&self, p:PathEntry) -> Context {
         let mut path = self.path.clone();
+        let mut string_rep = self.string_rep.clone();
+        if path.len() > 1 {
+            string_rep += "-";
+        }
+        let entry_rep = p.to_string();
+        string_rep += entry_rep.as_str();
         path.push(p);
         Context {
-           path
+           path,
+            string_rep
         }
     }
 }
