@@ -102,7 +102,7 @@ impl fmt::Display for PathEntry {
             PathEntry::OrLeft => {write!(f, "{}","OrLeft")}
             PathEntry::OrRight => {write!(f, "{}","OrRight")}
             PathEntry::AndLeft => {write!(f, "{}","AndLeft")}
-            PathEntry::AndRight => {write!(f, "{}","AndLeft")}
+            PathEntry::AndRight => {write!(f, "{}","AndRight")}
             PathEntry::EqualLeft => {write!(f, "{}","EqualLeft")}
             PathEntry::EqualRight => {write!(f, "{}","EqualRight")}
             PathEntry::SameTermLeft => {write!(f, "{}","SameTermLeft")}
@@ -334,7 +334,7 @@ impl Context {
     pub fn extension_with(&self, p:PathEntry) -> Context {
         let mut path = self.path.clone();
         let mut string_rep = self.string_rep.clone();
-        if path.len() > 1 {
+        if path.len() > 0 {
             string_rep += "-";
         }
         let entry_rep = p.to_string();

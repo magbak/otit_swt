@@ -119,7 +119,6 @@ fn test_complex_expression_filter_projection() {
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
-    println!("{}", static_rewrite);
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 ?pv WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -324,7 +323,6 @@ fn test_fix_dropped_triple() {
     let expected_query = Query::parse(expected_str, None).unwrap();
     assert_eq!(static_rewrite, expected_query);
 
-    println!("{:?}", time_series_queries);
     let expected_time_series_queries = vec![TimeSeriesQuery {
         identifier_variable: Some(Variable::new_unchecked("ts_external_id_0")),
         timeseries_variable: Some(VariableInContext::new(
@@ -582,7 +580,6 @@ fn test_exists_query() {
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
-    println!("{}", static_rewrite);
     let expected_str = r#"
     SELECT ?w ?s ?ts ?ts_external_id_0 WHERE {
     ?w <http://example.org/types#hasSensor> ?s .

@@ -60,7 +60,6 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
                 let (v, agg) = grouping.aggregations.get(i).unwrap();
                 let (lf, agg_expr, used_context) = sparql_aggregate_expression_as_lazy_column_and_expression(v, &agg.aggregate_expression, &timestamp_names, &columns, out_lf, &mut vec![], &agg.context);
                 out_lf = lf;
-                println!("{:?}", agg_expr);
                 aggregation_exprs.push(agg_expr);
                 if let Some(inner_context) = used_context {
                     aggregate_inner_contexts.push(inner_context);
