@@ -1,7 +1,10 @@
+use std::fmt;
+use std::fmt::Formatter;
 use chrono::{DateTime, Utc};
 use std::time::Duration;
+use serde::{Serialize, Deserialize};
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Hash, Eq, Serialize, Deserialize)]
 pub enum ConnectiveType {
     Period,
     Semicolon,
@@ -23,12 +26,28 @@ impl ConnectiveType {
             }
         }
     }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            ConnectiveType::Period => {"."}
+            ConnectiveType::Semicolon => {";"}
+            ConnectiveType::Dash => {"-"}
+            ConnectiveType::Slash => {"/"}
+            ConnectiveType::Backslash => {"\\"}
+        }
+    }
 }
 
 #[derive(PartialEq, Debug)]
 pub struct Connective {
     pub(crate) connective_type: ConnectiveType,
     pub(crate) number_of: usize,
+}
+
+impl fmt::Display for Connective {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.connective_type.as_str().repeat(self.number_of))
+    }
 }
 
 impl Connective {
@@ -60,7 +79,7 @@ impl PathElement {
 
 #[derive(PartialEq, Debug)]
 pub struct Path {
-    path: Vec<PathElementOrConnective>,
+    pub(crate) path: Vec<PathElementOrConnective>,
     pub optional: bool
 }
 
@@ -122,9 +141,9 @@ pub enum PathOrLiteral {
 
 #[derive(PartialEq, Debug)]
 pub struct ConditionedPath {
-    lhs_path: Path,
-    boolean_operator: Option<BooleanOperator>,
-    rhs_path_or_literal: Option<PathOrLiteral>,
+    pub(crate) lhs_path: Path,
+    pub(crate) boolean_operator: Option<BooleanOperator>,
+    pub(crate) rhs_path_or_literal: Option<PathOrLiteral>,
 }
 
 impl ConditionedPath {
@@ -149,9 +168,9 @@ impl ConditionedPath {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Eq, Hash)]
 pub struct Glue {
-    id: String,
+    pub(crate) id: String,
 }
 
 impl Glue {
@@ -169,7 +188,7 @@ pub enum ElementConstraint {
 
 #[derive(PartialEq, Debug)]
 pub struct GraphPattern {
-    conditioned_paths: Vec<ConditionedPath>,
+    pub(crate) conditioned_paths: Vec<ConditionedPath>,
 }
 
 impl GraphPattern {
@@ -180,8 +199,8 @@ impl GraphPattern {
 
 #[derive(PartialEq, Debug)]
 pub struct Aggregation {
-    function_name: String,
-    duration: Duration,
+    pub(crate) function_name: String,
+    pub(crate) duration: Duration,
 }
 
 impl Aggregation {
@@ -195,20 +214,20 @@ impl Aggregation {
 
 #[derive(PartialEq, Debug)]
 pub struct TsQuery {
-    graph_pattern: GraphPattern,
-    group: Group,
-    from_datetime: DateTime<Utc>,
-    to_datetime: DateTime<Utc>,
-    aggregation: Aggregation,
+    pub(crate) graph_pattern: GraphPattern,
+    pub(crate) group: Option<Group>,
+    pub(crate) from_datetime: Option<DateTime<Utc>>,
+    pub(crate) to_datetime: Option<DateTime<Utc>>,
+    pub(crate) aggregation: Option<Aggregation>,
 }
 
 impl TsQuery {
     pub fn new(
         graph_pattern: GraphPattern,
-        group: Group,
-        from_datetime: DateTime<Utc>,
-        to_datetime: DateTime<Utc>,
-        aggregation: Aggregation,
+        group: Option<Group>,
+        from_datetime: Option<DateTime<Utc>>,
+        to_datetime: Option<DateTime<Utc>>,
+        aggregation: Option<Aggregation>,
     ) -> TsQuery {
         TsQuery {
             graph_pattern,
@@ -298,8 +317,8 @@ impl InputOutput {
 
 #[derive(PartialEq, Debug)]
 pub struct TsApi {
-    inputs_outputs: Vec<InputOutput>,
-    group: Group,
+    pub(crate) inputs_outputs: Vec<InputOutput>,
+    pub(crate) group: Group,
 }
 
 impl TsApi {
@@ -313,7 +332,7 @@ impl TsApi {
 
 #[derive(PartialEq, Debug)]
 pub struct Group {
-    var_names: Vec<String>,
+    pub(crate) var_names: Vec<String>,
 }
 
 impl Group {

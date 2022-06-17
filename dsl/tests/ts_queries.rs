@@ -60,10 +60,10 @@ fn test_basic_multiline_query() {
                 ]),
             ),
         ]),
-        Group::new(vec!["valve"]),
-        DateTime::from_str("2021-11-30T23:00:01Z").expect("ParseOk"),
-        DateTime::from_str("2021-12-01T23:00:01Z").expect("ParseOk"),
-        Aggregation::new("mean", Duration::from_secs(600)),
+        Some(Group::new(vec!["valve"])),
+        Some(DateTime::from_str("2021-11-30T23:00:01Z").expect("ParseOk")),
+        Some(DateTime::from_str("2021-12-01T23:00:01Z").expect("ParseOk")),
+        Some(Aggregation::new("mean", Duration::from_secs(600))),
     );
     assert_eq!(expected, actual);
 }
@@ -127,10 +127,10 @@ fn test_conditioned_multiline_query() {
                 PathOrLiteral::Literal(Literal::Real(0.7)),
             ),
         ]),
-        Group::new(vec!["valve"]),
-        DateTime::from_str("2021-11-30T23:00:01Z").expect("ParseOk"),
-        DateTime::from_str("2021-12-01T23:00:01Z").expect("ParseOk"),
-        Aggregation::new("mean", Duration::from_secs(600)),
+        Some(Group::new(vec!["valve"])),
+        Some(DateTime::from_str("2021-11-30T23:00:01Z").expect("ParseOk")),
+        Some(DateTime::from_str("2021-12-01T23:00:01Z").expect("ParseOk")),
+        Some(Aggregation::new("mean", Duration::from_secs(600))),
     );
     assert_eq!(expected, actual);
 }
