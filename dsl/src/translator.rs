@@ -32,6 +32,11 @@ impl Translator<'_> {
         connective_mapping: &ConnectiveMapping,
     ) -> Query {
         let gp_res = self.translate_graph_pattern(&ts_query.graph_pattern, connective_mapping);
+        Query::Select {
+            dataset: None,
+            pattern: Default::default(),
+            base_iri: None
+        }
     }
     fn translate_graph_pattern(
         &mut self,
@@ -155,6 +160,7 @@ impl Translator<'_> {
                 )
             }
         } else if path_element.element.is_some() && path_element.glue.is_some() {
+
         }
     }
 
@@ -188,18 +194,26 @@ impl Translator<'_> {
     ) {
         match ec {
             ElementConstraint::Name(n) => {
-                let triple = self.name_func(n, variable);
-                self.add_triple_pattern(triple, optional_index);
+                let name_triples = self.name_func(n, variable);
+                for name_triple in name_triples {
+                    self.add_triple_pattern(name_triple, optional_index);
+                }
             }
             ElementConstraint::TypeName(tn) => {
-                let type_name_triple = self.type_name_func(tn, variable);
-                self.add_triple_pattern(type_name_triple, optional_index);
+                let type_name_triples = self.type_name_func(tn, variable);
+                for type_name_triple in type_name_triples {
+                    self.add_triple_pattern(type_name_triple, optional_index);
+                }
             }
             ElementConstraint::TypeNameAndName(tn, n) => {
-                let triple = self.name_func(n, variable);
-                self.add_triple_pattern(triple, optional_index);
-                let type_name_triple = self.type_name_func(tn, variable);
-                self.add_triple_pattern(type_name_triple, optional_index);
+                let name_triples = self.name_func(n, variable);
+                for name_triple in name_triples {
+                    self.add_triple_pattern(name_triple, optional_index);
+                }
+                let type_name_triples = self.type_name_func(tn, variable);
+                for type_name_triple in type_name_triples {
+                    self.add_triple_pattern(type_name_triple, optional_index);
+                }
             }
         }
     }
@@ -253,19 +267,34 @@ impl Translator<'_> {
         }
     }
     fn name_func(&mut self, name: &String, variable: &Variable) -> Vec<TriplePattern> {
+        self.fill_triples_template(&self.name_template, name, variable)
+    }
+
+    fn type_name_func(&mut self, type_name: &String, variable: &Variable) -> Vec<TriplePattern> {
+        self.fill_triples_template(&self.type_name_template, type_name, variable)
+    }
+
+    fn fill_triples_template(
+        &mut self,
+        name_template: &Vec<TriplePattern>,
+        replace_str: &str,
+        replace_variable: &Variable,
+    ) -> Vec<TriplePattern> {
         let mut map = HashMap::new();
         let mut triples = vec![];
-        for t in &self.name_template {
+        for t in name_template {
             let subject_term_pattern;
             if let TermPattern::Variable(subject_variable) = &t.subject {
-                if !map.contains(subject_variable) {
+                if !map.contains_key(subject_variable) {
                     let use_subject_variable;
-                    if "variable" == subject_variable.as_str() {
-                        use_subject_variable = variable.clone();
+                    if "replace_variable" == subject_variable.as_str() {
+                        use_subject_variable = replace_variable.clone();
                     } else {
-                        use_subject_variable = Variable::new_unchecked(
-                            subject_variable.as_str().to_string() + "_" + self.counter.as_str(),
-                        );
+                        use_subject_variable = Variable::new_unchecked(format!(
+                            "{}_{}",
+                            subject_variable.as_str().to_string(),
+                            self.counter
+                        ));
                         self.counter += 1;
                     }
                     subject_term_pattern = TermPattern::Variable(use_subject_variable);
@@ -273,17 +302,21 @@ impl Translator<'_> {
                 } else {
                     subject_term_pattern = map.get(subject_variable).unwrap().clone();
                 }
+            } else {
+                subject_term_pattern = t.subject.clone();
             }
             let object_term_pattern;
             if let TermPattern::Variable(object_variable) = &t.object {
-                if !map.contains(object_variable) {
+                if !map.contains_key(object_variable) {
                     let use_object_variable;
-                    if "variable" == object_variable.as_str() {
-                        use_object_variable = variable.clone();
+                    if "replace_variable" == object_variable.as_str() {
+                        use_object_variable = replace_variable.clone();
                     } else {
-                        use_object_variable = Variable::new_unchecked(
-                            object_variable.as_str().to_string() + "_" + self.counter.as_str(),
-                        );
+                        use_object_variable = Variable::new_unchecked(format!(
+                            "{}_{}",
+                            object_variable.as_str().to_string(),
+                            self.counter
+                        ));
                         self.counter += 1;
                     }
                     object_term_pattern = TermPattern::Variable(use_object_variable);
@@ -293,20 +326,23 @@ impl Translator<'_> {
                 }
             } else if let TermPattern::Literal(lit) = &t.object {
                 let use_object_literal;
-                if lit.datatype() == xsd::STRING && lit.value() == "name" {
-                   use_object_literal = SpargebraLiteral::new_typed_literal(name, xsd::STRING);
+                if lit.datatype() == xsd::STRING && lit.value() == "replace_str" {
+                    use_object_literal =
+                        SpargebraLiteral::new_typed_literal(replace_str, xsd::STRING);
                 } else {
                     use_object_literal = lit.clone();
                 }
                 object_term_pattern = TermPattern::Literal(use_object_literal);
+            } else {
+                object_term_pattern = t.object.clone();
             }
-
+            triples.push(TriplePattern {
+                subject: subject_term_pattern,
+                predicate: t.predicate.clone(),
+                object: object_term_pattern,
+            })
         }
         triples
-    }
-
-    fn type_name_func(&self, type_name: &String, variable: &Variable) -> _ {
-        todo!()
     }
 }
 
