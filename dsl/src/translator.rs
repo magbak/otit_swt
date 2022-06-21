@@ -3,7 +3,9 @@ use crate::ast::{
     PathElementOrConnective, PathOrLiteral, TsQuery,
 };
 use crate::connective_mapping::ConnectiveMapping;
-use crate::costants::LIKE_FUNCTION;
+use crate::costants::{
+    HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, LIKE_FUNCTION, TIMESTAMP_VARIABLE_NAME,
+};
 use oxrdf::vocab::xsd;
 use oxrdf::{NamedNode, Variable};
 use spargebra::algebra::GraphPattern::LeftJoin;
@@ -11,19 +13,24 @@ use spargebra::algebra::{Expression, Function, GraphPattern as SpargebraGraphPat
 use spargebra::term::Literal as SpargebraLiteral;
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::iter::zip;
 
 pub struct Translator<'a> {
     variables: Vec<Variable>,
     triples: Vec<TriplePattern>,
     conditions: Vec<Expression>,
+    path_name_expressions: Vec<(Variable, Variable, Expression)>,
     optional_triples: Vec<Vec<TriplePattern>>,
     optional_conditions: Vec<Option<Expression>>,
+    optional_path_name_expressions: Vec<Option<(Variable, Variable, Expression)>>,
     glue_to_nodes: HashMap<Glue, &'a Variable>,
     counter: u16,
     name_template: Vec<TriplePattern>,
     type_name_template: Vec<TriplePattern>,
-    projections: Vec<Variable>,
+    time_series_value_and_timestamp_template: Vec<TriplePattern>,
+    has_incoming: HashSet<Variable>,
+    is_lhs_terminal: HashSet<Variable>,
 }
 
 enum VariableOrLiteral {
@@ -46,22 +53,45 @@ impl Translator<'_> {
         let mut inner_gp = SpargebraGraphPattern::Bgp {
             patterns: self.triples.drain(0..self.triples.len()).collect(),
         };
-        for (optional_pattern, expressions_opt) in self
-            .optional_triples
-            .drain(0..self.optional_triples.len())
-            .zip(
-                self.optional_conditions
-                    .drain(0..self.optional_conditions.len()),
-            )
-        {
+        let optional_triples_drain = self.optional_triples.drain(0..self.optional_triples.len());
+        let optional_path_name_expressions_drain = self
+            .optional_path_name_expressions
+            .drain(0..self.optional_path_name_expressions.len());
+        let optional_conditions_drain = self
+            .optional_conditions
+            .drain(0..self.optional_conditions.len());
+
+        let mut project_values = vec![];
+        let mut project_paths = vec![];
+        for (optional_pattern, (path_name_expression_opt, conditions_opt)) in zip(
+            optional_triples_drain,
+            zip(
+                optional_path_name_expressions_drain,
+                optional_conditions_drain,
+            ),
+        ) {
             let mut optional_gp = SpargebraGraphPattern::Bgp {
                 patterns: optional_pattern,
             };
 
-            if let Some(expression) = expressions_opt {
+            if let Some(condition) = conditions_opt {
                 optional_gp = SpargebraGraphPattern::Filter {
-                    expr: expression,
+                    expr: condition,
                     inner: Box::new(optional_gp),
+                }
+            }
+
+            if let Some((lhs_path_variable, path_name_variable, path_name_expression)) =
+                path_name_expression_opt
+            {
+                if !self.has_incoming.contains(&lhs_path_variable) {
+                    optional_gp = SpargebraGraphPattern::Extend {
+                        inner: Box::new(optional_gp),
+                        variable: path_name_variable.clone(),
+                        expression: path_name_expression,
+                    };
+                    project_paths.push(path_name_variable);
+                    project_values.push(lhs_path_variable);
                 }
             }
 
@@ -76,12 +106,16 @@ impl Translator<'_> {
             for c in self.conditions.drain(0..self.conditions.len()) {
                 conjuction = Expression::And(Box::new(conjuction), Box::new(c));
             }
-            inner_gp = SpargebraGraphPattern::Filter { expr: conjuction, inner: Box::new(inner_gp) };
+            inner_gp = SpargebraGraphPattern::Filter {
+                expr: conjuction,
+                inner: Box::new(inner_gp),
+            };
         }
-
+        let mut all_projections = project_paths;
+        all_projections.append(&mut project_values);
         let project = SpargebraGraphPattern::Project {
             inner: Box::new(inner_gp),
-            variables: self.projections.drain(0..self.projections.len()).collect(),
+            variables: all_projections,
         };
 
         Query::Select {
@@ -101,16 +135,35 @@ impl Translator<'_> {
             if cp.lhs_path.optional {
                 optional_index = Some(optional_counter);
             }
-            let translated_lhs_variable = self
-                .translate_path(
-                    &mut vec![],
-                    None,
-                    optional_index,
-                    cp.lhs_path.path.iter().collect(),
-                    connective_mapping,
-                )
-                .clone();
-            self.projections.push(translated_lhs_variable.clone());
+            let mut translated_lhs_variable_path = vec![];
+            self.translate_path(
+                &mut vec![],
+                &mut translated_lhs_variable_path,
+                optional_index,
+                cp.lhs_path.path.iter().collect(),
+                connective_mapping,
+            );
+            let translated_lhs_value_variable =
+                self.add_value_and_timeseries_variable(optional_index, translated_lhs_variable_path.last().unwrap());
+
+            self.is_lhs_terminal.insert(translated_lhs_value_variable.clone());
+            let connectives_path = cp
+                .lhs_path
+                .path
+                .iter()
+                .map(|p| match p {
+                    PathElementOrConnective::PathElement(pe) => None,
+                    PathElementOrConnective::Connective(c) => Some(c.to_string()),
+                })
+                .filter(|x| x.is_some())
+                .map(|x| x.unwrap())
+                .collect();
+            self.create_name_path_variable(
+                optional_index,
+                translated_lhs_variable_path,
+                connectives_path,
+                translated_lhs_value_variable.clone(),
+            );
             if let Some(op) = &cp.boolean_operator {
                 if let Some(rhs_path_or_literal) = &cp.rhs_path_or_literal {
                     let translated_rhs_variable_or_literal = self.translate_path_or_literal(
@@ -119,11 +172,18 @@ impl Translator<'_> {
                         rhs_path_or_literal,
                         connective_mapping,
                     );
+                    let translated_rhs_value_variable_or_literal =
+                        match translated_rhs_variable_or_literal {
+                            VariableOrLiteral::Variable(rhs_end) => VariableOrLiteral::Variable(
+                                self.add_value_and_timeseries_variable(optional_index, &rhs_end),
+                            ),
+                            VariableOrLiteral::Literal(l) => VariableOrLiteral::Literal(l),
+                        };
                     self.add_condition(
                         optional_index,
-                        &translated_lhs_variable,
+                        &translated_lhs_value_variable,
                         op,
-                        translated_rhs_variable_or_literal,
+                        translated_rhs_value_variable_or_literal,
                     );
                 }
             }
@@ -136,17 +196,18 @@ impl Translator<'_> {
     fn translate_path(
         &mut self,
         path_identifier: &mut Vec<String>,
-        input_first_variable: Option<Variable>,
+        variable_path_so_far: &mut Vec<Variable>,
         optional_index: Option<usize>,
         path_elements: Vec<&PathElementOrConnective>,
         connective_mapping: &ConnectiveMapping,
-    ) -> Variable {
+    ) {
         let start_index;
         let first_variable;
-        if let Some(first) = input_first_variable {
+        if !variable_path_so_far.is_empty() {
+            let first = variable_path_so_far.last().unwrap();
             assert!(path_elements.len() >= 2);
             start_index = 0;
-            first_variable = first;
+            first_variable = first.clone();
         } else {
             assert!(path_elements.len() >= 3);
             if let PathElementOrConnective::PathElement(pe) = path_elements.get(0).unwrap() {
@@ -167,23 +228,25 @@ impl Translator<'_> {
                 let last_variable = self
                     .add_path_element(path_identifier, optional_index, pe)
                     .clone();
+                variable_path_so_far.push(last_variable.clone());
+                self.has_incoming.insert(last_variable.clone());
                 let triple_pattern = TriplePattern {
                     subject: TermPattern::Variable(first_variable.clone()),
                     predicate: NamedNodePattern::NamedNode(connective_named_node),
-                    object: TermPattern::Variable(last_variable.clone()),
+                    object: TermPattern::Variable(last_variable),
                 };
                 self.add_triple_pattern(triple_pattern, optional_index);
                 path_identifier.push(c.to_string());
                 if path_elements.len() > start_index + 2 {
                     self.translate_path(
                         path_identifier,
-                        Some(last_variable.clone()),
+                        variable_path_so_far,
                         optional_index,
                         path_elements[start_index + 2..path_elements.len()].to_vec(),
                         connective_mapping,
                     )
                 } else {
-                    last_variable
+                    //Finished
                 }
             } else {
                 panic!("Bad path sequence")
@@ -209,26 +272,21 @@ impl Translator<'_> {
                 Box::new(lhs_expression),
                 Box::new(rhs_expression),
             ))),
-            BooleanOperator::EQ => Expression::Equal(
-                Box::new(lhs_expression),
-                Box::new(rhs_expression),
-            ),
-            BooleanOperator::LTEQ => Expression::LessOrEqual(
-                Box::new(lhs_expression),
-                Box::new(rhs_expression),
-            ),
-            BooleanOperator::GTEQ =>Expression::GreaterOrEqual(
-                Box::new(lhs_expression),
-                Box::new(rhs_expression),
-            ),
-            BooleanOperator::LT =>Expression::Less(
-                Box::new(lhs_expression),
-                Box::new(rhs_expression),
-            ),
-            BooleanOperator::GT =>Expression::Greater(
-                Box::new(lhs_expression),
-                Box::new(rhs_expression),
-            ),
+            BooleanOperator::EQ => {
+                Expression::Equal(Box::new(lhs_expression), Box::new(rhs_expression))
+            }
+            BooleanOperator::LTEQ => {
+                Expression::LessOrEqual(Box::new(lhs_expression), Box::new(rhs_expression))
+            }
+            BooleanOperator::GTEQ => {
+                Expression::GreaterOrEqual(Box::new(lhs_expression), Box::new(rhs_expression))
+            }
+            BooleanOperator::LT => {
+                Expression::Less(Box::new(lhs_expression), Box::new(rhs_expression))
+            }
+            BooleanOperator::GT => {
+                Expression::Greater(Box::new(lhs_expression), Box::new(rhs_expression))
+            }
             BooleanOperator::LIKE => Expression::FunctionCall(
                 Function::Custom(NamedNode::new_unchecked(LIKE_FUNCTION)),
                 vec![rhs_expression],
@@ -302,26 +360,34 @@ impl Translator<'_> {
         match ec {
             ElementConstraint::Name(n) => {
                 let name_triples =
-                    self.fill_triples_template(TemplateType::NameTemplate, n, variable);
+                    self.fill_triples_template(TemplateType::NameTemplate, Some(n), None, variable);
                 for name_triple in name_triples {
                     self.add_triple_pattern(name_triple, optional_index);
                 }
             }
             ElementConstraint::TypeName(tn) => {
-                let type_name_triples =
-                    self.fill_triples_template(TemplateType::TypeTemplate, tn, variable);
+                let type_name_triples = self.fill_triples_template(
+                    TemplateType::TypeTemplate,
+                    Some(tn),
+                    None,
+                    variable,
+                );
                 for type_name_triple in type_name_triples {
                     self.add_triple_pattern(type_name_triple, optional_index);
                 }
             }
             ElementConstraint::TypeNameAndName(tn, n) => {
                 let name_triples =
-                    self.fill_triples_template(TemplateType::NameTemplate, n, variable);
+                    self.fill_triples_template(TemplateType::NameTemplate, Some(n), None, variable);
                 for name_triple in name_triples {
                     self.add_triple_pattern(name_triple, optional_index);
                 }
-                let type_name_triples =
-                    self.fill_triples_template(TemplateType::TypeTemplate, tn, variable);
+                let type_name_triples = self.fill_triples_template(
+                    TemplateType::TypeTemplate,
+                    Some(tn),
+                    None,
+                    variable,
+                );
                 for type_name_triple in type_name_triples {
                     self.add_triple_pattern(type_name_triple, optional_index);
                 }
@@ -351,14 +417,15 @@ impl Translator<'_> {
             PathOrLiteral::Path(p) => {
                 assert!(!p.optional);
                 //optional from lhs of condition always dominates, we do not expect p.optional to be set.
-                let variable = self.translate_path(
+                let mut translated_path = vec![];
+                self.translate_path(
                     path_identifier,
-                    None,
+                    &mut translated_path,
                     optional_index,
                     p.path.iter().collect(),
                     &connective_mapping,
                 );
-                VariableOrLiteral::Variable(variable.clone())
+                VariableOrLiteral::Variable(translated_path.last().unwrap().clone())
             }
             PathOrLiteral::Literal(l) => {
                 let literal = match l {
@@ -383,7 +450,8 @@ impl Translator<'_> {
     fn fill_triples_template(
         &mut self,
         template_type: TemplateType,
-        replace_str: &str,
+        replace_str: Option<&str>,
+        replace_str_variable: Option<&Variable>,
         replace_variable: &Variable,
     ) -> Vec<TriplePattern> {
         let template = match template_type {
@@ -435,14 +503,19 @@ impl Translator<'_> {
                     object_term_pattern = map.get(object_variable).unwrap().clone();
                 }
             } else if let TermPattern::Literal(lit) = &t.object {
-                let use_object_literal;
                 if lit.datatype() == xsd::STRING && lit.value() == "replace_str" {
-                    use_object_literal =
-                        SpargebraLiteral::new_typed_literal(replace_str, xsd::STRING);
+                    if let Some(replace_str) = replace_str {
+                        object_term_pattern = TermPattern::Literal(
+                            SpargebraLiteral::new_typed_literal(replace_str, xsd::STRING),
+                        );
+                    } else if let Some(replace_str_variable) = replace_str_variable {
+                        object_term_pattern = TermPattern::Variable(replace_str_variable.clone())
+                    } else {
+                        panic!("Should never happen");
+                    }
                 } else {
-                    use_object_literal = lit.clone();
+                    object_term_pattern = TermPattern::Literal(lit.clone());
                 }
-                object_term_pattern = TermPattern::Literal(use_object_literal);
             } else {
                 object_term_pattern = t.object.clone();
             }
@@ -453,6 +526,92 @@ impl Translator<'_> {
             })
         }
         triples
+    }
+    fn create_name_path_variable(
+        &mut self,
+        optional_index: Option<usize>,
+        variables_path: Vec<Variable>,
+        mut connectives_path: Vec<String>,
+        value_variable: Variable,
+    ) {
+        let mut variable_names_path = vec![];
+        for v in variables_path.iter() {
+            let vname = Variable::new_unchecked(format!("{}_name_on_path", v.as_str()));
+            variable_names_path.push(vname.clone());
+            let triples =
+                self.fill_triples_template(TemplateType::NameTemplate, None, Some(&vname), v);
+            for t in triples {
+                self.add_triple_pattern(t, optional_index);
+            }
+        }
+        let mut args_vec = vec![];
+        connectives_path.push("".to_string());
+        for (vp, cc) in variables_path.iter().zip(connectives_path) {
+            args_vec.push(Expression::Variable(vp.clone()));
+            args_vec.push(Expression::Literal(SpargebraLiteral::new_typed_literal(
+                cc,
+                xsd::STRING,
+            )));
+        }
+        let path_string = Expression::FunctionCall(Function::Concat, args_vec);
+        let last_variable = variables_path.last().unwrap().clone();
+        let path_variable =
+            Variable::new_unchecked(format!("{}_path_name", last_variable.as_str()));
+        let expr = (value_variable, path_variable.clone(), path_string);
+        if let Some(_) = optional_index {
+            self.optional_path_name_expressions.push(Some(expr));
+        } else {
+            self.path_name_expressions.push(expr);
+            self.optional_path_name_expressions.push(None);
+        }
+    }
+
+    fn add_value_and_timeseries_variable(
+        &mut self,
+        optional_index: Option<usize>,
+        end_variable: &Variable,
+    ) -> Variable {
+        let timeseries_variable =
+            Variable::new_unchecked(format!("{}_timeseries", end_variable.as_str()));
+        let has_timeseries_triple = TriplePattern {
+            subject: TermPattern::Variable(end_variable.clone()),
+            predicate: NamedNodePattern::NamedNode(NamedNode::new_unchecked(HAS_TIMESERIES)),
+            object: TermPattern::Variable(timeseries_variable.clone()),
+        };
+        let datapoint_variable =
+            Variable::new_unchecked(format!("{}_datapoint", timeseries_variable.as_str()));
+        let has_datapoint_triple = TriplePattern {
+            subject: TermPattern::Variable(timeseries_variable.clone()),
+            predicate: NamedNodePattern::NamedNode(NamedNode::new_unchecked(HAS_TIMESERIES)),
+            object: TermPattern::Variable(datapoint_variable.clone()),
+        };
+
+        let value_variable =
+            Variable::new_unchecked(format!("{}_value", datapoint_variable.as_str()));
+        let has_value_triple = TriplePattern {
+            subject: TermPattern::Variable(datapoint_variable.clone()),
+            predicate: NamedNodePattern::NamedNode(NamedNode::new_unchecked(HAS_VALUE)),
+            object: TermPattern::Variable(value_variable.clone()),
+        };
+        let timestamp_variable = Variable::new_unchecked(TIMESTAMP_VARIABLE_NAME);
+        let has_timestamp_triple = TriplePattern {
+            subject: TermPattern::Variable(timeseries_variable.clone()),
+            predicate: NamedNodePattern::NamedNode(NamedNode::new_unchecked(HAS_TIMESTAMP)),
+            object: TermPattern::Variable(timestamp_variable),
+        };
+        if let Some(i) = optional_index {
+            let opt_triples = self.optional_triples.get_mut(i).unwrap();
+            opt_triples.push(has_timeseries_triple);
+            opt_triples.push(has_datapoint_triple);
+            opt_triples.push(has_value_triple);
+            opt_triples.push(has_timestamp_triple);
+        } else {
+            self.triples.push(has_timeseries_triple);
+            self.triples.push(has_datapoint_triple);
+            self.triples.push(has_value_triple);
+            self.triples.push(has_timestamp_triple);
+        }
+        value_variable
     }
 }
 
