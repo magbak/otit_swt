@@ -3,9 +3,7 @@ use crate::ast::{
     PathElementOrConnective, PathOrLiteral, TsQuery,
 };
 use crate::connective_mapping::ConnectiveMapping;
-use crate::costants::{
-    HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, LIKE_FUNCTION, TIMESTAMP_VARIABLE_NAME,
-};
+use crate::costants::{HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, LIKE_FUNCTION, REPLACE_STR_LITERAL, REPLACE_VARIABLE_NAME, TIMESTAMP_VARIABLE_NAME};
 use oxrdf::vocab::xsd;
 use oxrdf::{NamedNode, Variable};
 use spargebra::algebra::GraphPattern::LeftJoin;
@@ -31,6 +29,7 @@ pub struct Translator<'a> {
     time_series_value_and_timestamp_template: Vec<TriplePattern>,
     has_incoming: HashSet<Variable>,
     is_lhs_terminal: HashSet<Variable>,
+    connective_mapping: ConnectiveMapping,
 }
 
 enum VariableOrLiteral {
@@ -44,12 +43,31 @@ enum TemplateType {
 }
 
 impl Translator<'_> {
+    pub fn new(name_template:Vec<TriplePattern>, type_name_template:Vec<TriplePattern>, connective_mapping: ConnectiveMapping) -> Translator<'static> {
+        Translator {
+            variables: vec![],
+            triples: vec![],
+            conditions: vec![],
+            path_name_expressions: vec![],
+            optional_triples: vec![],
+            optional_conditions: vec![],
+            optional_path_name_expressions: vec![],
+            glue_to_nodes: Default::default(),
+            counter: 0,
+            name_template,
+            type_name_template,
+            time_series_value_and_timestamp_template: vec![],
+            has_incoming: Default::default(),
+            is_lhs_terminal: Default::default(),
+            connective_mapping
+        }
+    }
+    
     pub fn translate(
         &mut self,
         ts_query: &TsQuery,
-        connective_mapping: &ConnectiveMapping,
     ) -> Query {
-        self.translate_graph_pattern(&ts_query.graph_pattern, connective_mapping);
+        self.translate_graph_pattern(&ts_query.graph_pattern);
         let mut inner_gp = SpargebraGraphPattern::Bgp {
             patterns: self.triples.drain(0..self.triples.len()).collect(),
         };
@@ -81,17 +99,17 @@ impl Translator<'_> {
                 }
             }
 
-            if let Some((lhs_path_variable, path_name_variable, path_name_expression)) =
+            if let Some((path_name_variable, value_variable, path_name_expression)) =
                 path_name_expression_opt
             {
-                if !self.has_incoming.contains(&lhs_path_variable) {
+                if !self.has_incoming.contains(&path_name_variable) {
                     optional_gp = SpargebraGraphPattern::Extend {
                         inner: Box::new(optional_gp),
                         variable: path_name_variable.clone(),
                         expression: path_name_expression,
                     };
                     project_paths.push(path_name_variable);
-                    project_values.push(lhs_path_variable);
+                    project_values.push(value_variable);
                 }
             }
 
@@ -101,6 +119,7 @@ impl Translator<'_> {
                 expression: None,
             };
         }
+
         if !self.conditions.is_empty() {
             let mut conjuction = self.conditions.remove(0);
             for c in self.conditions.drain(0..self.conditions.len()) {
@@ -111,6 +130,18 @@ impl Translator<'_> {
                 inner: Box::new(inner_gp),
             };
         }
+        for (path_name_variable,value_variable,expression) in self.path_name_expressions.drain(0..self.path_name_expressions.len()) {
+            if !self.has_incoming.contains(&path_name_variable) {
+                inner_gp = SpargebraGraphPattern::Extend {
+                    inner: Box::new(inner_gp),
+                    variable: path_name_variable.clone(),
+                    expression: expression,
+                };
+                project_paths.push(path_name_variable);
+                project_values.push(value_variable);
+            }
+        }
+
         let mut all_projections = project_paths;
         all_projections.append(&mut project_values);
         let project = SpargebraGraphPattern::Project {
@@ -127,7 +158,6 @@ impl Translator<'_> {
     fn translate_graph_pattern(
         &mut self,
         gp: &GraphPattern,
-        connective_mapping: &ConnectiveMapping,
     ) {
         let mut optional_counter = 0;
         for cp in &gp.conditioned_paths {
@@ -141,7 +171,6 @@ impl Translator<'_> {
                 &mut translated_lhs_variable_path,
                 optional_index,
                 cp.lhs_path.path.iter().collect(),
-                connective_mapping,
             );
             let translated_lhs_value_variable =
                 self.add_value_and_timeseries_variable(optional_index, translated_lhs_variable_path.last().unwrap());
@@ -152,7 +181,7 @@ impl Translator<'_> {
                 .path
                 .iter()
                 .map(|p| match p {
-                    PathElementOrConnective::PathElement(pe) => None,
+                    PathElementOrConnective::PathElement(_) => None,
                     PathElementOrConnective::Connective(c) => Some(c.to_string()),
                 })
                 .filter(|x| x.is_some())
@@ -170,7 +199,6 @@ impl Translator<'_> {
                         &mut vec![],
                         optional_index,
                         rhs_path_or_literal,
-                        connective_mapping,
                     );
                     let translated_rhs_value_variable_or_literal =
                         match translated_rhs_variable_or_literal {
@@ -199,7 +227,6 @@ impl Translator<'_> {
         variable_path_so_far: &mut Vec<Variable>,
         optional_index: Option<usize>,
         path_elements: Vec<&PathElementOrConnective>,
-        connective_mapping: &ConnectiveMapping,
     ) {
         let start_index;
         let first_variable;
@@ -224,7 +251,7 @@ impl Translator<'_> {
         let second_elem = *path_elements.get(start_index + 1).unwrap();
         if let PathElementOrConnective::Connective(c) = first_elem {
             if let PathElementOrConnective::PathElement(pe) = second_elem {
-                let connective_named_node = translate_connective_named_node(c, connective_mapping);
+                let connective_named_node = self.translate_connective_named_node(c);
                 let last_variable = self
                     .add_path_element(path_identifier, optional_index, pe)
                     .clone();
@@ -236,14 +263,13 @@ impl Translator<'_> {
                     object: TermPattern::Variable(last_variable),
                 };
                 self.add_triple_pattern(triple_pattern, optional_index);
-                path_identifier.push(c.to_string());
+                path_identifier.push(format!("__{}__", c.to_variable_name_part()));
                 if path_elements.len() > start_index + 2 {
                     self.translate_path(
                         path_identifier,
                         variable_path_so_far,
                         optional_index,
                         path_elements[start_index + 2..path_elements.len()].to_vec(),
-                        connective_mapping,
                     )
                 } else {
                     //Finished
@@ -320,14 +346,14 @@ impl Translator<'_> {
         } else if let Some(element) = &path_element.element {
             match element {
                 ElementConstraint::Name(n) => {
-                    path_identifier.push(format!("\"{}\"", n));
+                    path_identifier.push(format!("_{}_", n));
                 }
                 ElementConstraint::TypeName(tn) => {
                     path_identifier.push(tn.to_string());
                 }
                 ElementConstraint::TypeNameAndName(tn, n) => {
                     path_identifier.push(tn.to_string());
-                    path_identifier.push(format!("\"{}\"", n));
+                    path_identifier.push(format!("_{}_", n));
                 }
             }
             variable = self.create_and_add_variable(&path_identifier.join(""));
@@ -342,7 +368,7 @@ impl Translator<'_> {
     }
 
     fn create_and_add_variable(&mut self, variable_name: &str) -> Variable {
-        let variable = Variable::new(variable_name).expect("Invalid variable name");
+        let variable = Variable::new(variable_name).expect(&format!("Invalid variable name: {}",variable_name));
 
         self.variables.push(variable);
         self.variables
@@ -411,7 +437,6 @@ impl Translator<'_> {
         path_identifier: &mut Vec<String>,
         optional_index: Option<usize>,
         path_or_literal: &PathOrLiteral,
-        connective_mapping: &ConnectiveMapping,
     ) -> VariableOrLiteral {
         match path_or_literal {
             PathOrLiteral::Path(p) => {
@@ -423,7 +448,6 @@ impl Translator<'_> {
                     &mut translated_path,
                     optional_index,
                     p.path.iter().collect(),
-                    &connective_mapping,
                 );
                 VariableOrLiteral::Variable(translated_path.last().unwrap().clone())
             }
@@ -465,7 +489,7 @@ impl Translator<'_> {
             if let TermPattern::Variable(subject_variable) = &t.subject {
                 if !map.contains_key(subject_variable) {
                     let use_subject_variable;
-                    if "replace_variable" == subject_variable.as_str() {
+                    if REPLACE_VARIABLE_NAME == subject_variable.as_str() {
                         use_subject_variable = replace_variable.clone();
                     } else {
                         use_subject_variable = Variable::new_unchecked(format!(
@@ -487,7 +511,7 @@ impl Translator<'_> {
             if let TermPattern::Variable(object_variable) = &t.object {
                 if !map.contains_key(object_variable) {
                     let use_object_variable;
-                    if "replace_variable" == object_variable.as_str() {
+                    if REPLACE_VARIABLE_NAME == object_variable.as_str() {
                         use_object_variable = replace_variable.clone();
                     } else {
                         use_object_variable = Variable::new_unchecked(format!(
@@ -503,7 +527,7 @@ impl Translator<'_> {
                     object_term_pattern = map.get(object_variable).unwrap().clone();
                 }
             } else if let TermPattern::Literal(lit) = &t.object {
-                if lit.datatype() == xsd::STRING && lit.value() == "replace_str" {
+                if lit.datatype() == xsd::STRING && lit.value() == REPLACE_STR_LITERAL {
                     if let Some(replace_str) = replace_str {
                         object_term_pattern = TermPattern::Literal(
                             SpargebraLiteral::new_typed_literal(replace_str, xsd::STRING),
@@ -613,16 +637,16 @@ impl Translator<'_> {
         }
         value_variable
     }
-}
-
-fn translate_connective_named_node(
+    fn translate_connective_named_node(&self,
     connective: &Connective,
-    connective_mapping: &ConnectiveMapping,
 ) -> NamedNode {
     let connective_string = connective.to_string();
-    let iri = connective_mapping
+    let iri = self.connective_mapping
         .map
         .get(&connective_string)
         .expect(&format!("Connective {} not defined", &connective_string));
     NamedNode::new(iri).expect("Invalid iri")
 }
+}
+
+

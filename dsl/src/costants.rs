@@ -5,3 +5,5 @@ pub const HAS_DATA_POINT:&str = "https://github.com/magbak/quarry-rs#hasDataPoin
 pub const HAS_VALUE:&str= "https://github.com/magbak/quarry-rs#hasValue";
 pub const HAS_EXTERNAL_ID:&str="https://github.com/magbak/quarry-rs#hasExternalId";
 pub const TIMESTAMP_VARIABLE_NAME:&str="timestamp";
+pub const REPLACE_VARIABLE_NAME:&str="replace_variable";
+pub const REPLACE_STR_LITERAL:&str="replace_str";

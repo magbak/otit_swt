@@ -4,5 +4,5 @@ use serde::{Serialize, Deserialize};
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConnectiveMapping {
     #[serde(flatten)]
-    pub(crate) map:HashMap<String, String>
+    pub map:HashMap<String, String>
 }

@@ -57,6 +57,17 @@ impl Connective {
             number_of,
         }
     }
+
+    pub fn to_variable_name_part(&self) -> String {
+        let ctype_part = match self.connective_type {
+            ConnectiveType::Period => {"Period"}
+            ConnectiveType::Semicolon => {"Semicolon"}
+            ConnectiveType::Dash => {"Dash"}
+            ConnectiveType::Slash => {"Slash"}
+            ConnectiveType::Backslash => {"Backslash"}
+        };
+        ctype_part.repeat(self.number_of)
+    }
 }
 
 #[derive(PartialEq, Debug)]
