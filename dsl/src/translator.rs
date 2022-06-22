@@ -3,7 +3,7 @@ use crate::ast::{
     PathElementOrConnective, PathOrLiteral, TsQuery,
 };
 use crate::connective_mapping::ConnectiveMapping;
-use crate::costants::{HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, LIKE_FUNCTION, REPLACE_STR_LITERAL, REPLACE_VARIABLE_NAME, TIMESTAMP_VARIABLE_NAME};
+use crate::costants::{HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, LIKE_FUNCTION, REPLACE_STR_LITERAL, REPLACE_VARIABLE_NAME, TIMESTAMP_VARIABLE_NAME, XSD_DATETIME_FORMAT};
 use oxrdf::vocab::xsd;
 use oxrdf::{NamedNode, Variable};
 use spargebra::algebra::GraphPattern::LeftJoin;
@@ -26,7 +26,6 @@ pub struct Translator<'a> {
     counter: u16,
     name_template: Vec<TriplePattern>,
     type_name_template: Vec<TriplePattern>,
-    time_series_value_and_timestamp_template: Vec<TriplePattern>,
     has_incoming: HashSet<Variable>,
     is_lhs_terminal: HashSet<Variable>,
     connective_mapping: ConnectiveMapping,
@@ -56,7 +55,6 @@ impl Translator<'_> {
             counter: 0,
             name_template,
             type_name_template,
-            time_series_value_and_timestamp_template: vec![],
             has_incoming: Default::default(),
             is_lhs_terminal: Default::default(),
             connective_mapping
@@ -120,6 +118,20 @@ impl Translator<'_> {
             };
         }
 
+        let mut timestamp_conditions = vec![];
+        if let Some(from_ts) = ts_query.from_datetime {
+            let gteq = Expression::GreaterOrEqual(Box::new(Expression::Literal(SpargebraLiteral::new_typed_literal(format!("{}", from_ts.format(XSD_DATETIME_FORMAT)), xsd::DATE_TIME))),
+                Box::new(Expression::Variable(Variable::new_unchecked(TIMESTAMP_VARIABLE_NAME))) );
+            timestamp_conditions.push(gteq);
+        }
+
+        if let Some(to_ts) = ts_query.to_datetime {
+            let gteq = Expression::LessOrEqual(Box::new(Expression::Literal(SpargebraLiteral::new_typed_literal(format!("{}", to_ts.format(XSD_DATETIME_FORMAT)), xsd::DATE_TIME))),
+                Box::new(Expression::Variable(Variable::new_unchecked(TIMESTAMP_VARIABLE_NAME))) );
+            timestamp_conditions.push(gteq);
+        }
+        self.conditions.append(&mut timestamp_conditions);
+
         if !self.conditions.is_empty() {
             let mut conjuction = self.conditions.remove(0);
             for c in self.conditions.drain(0..self.conditions.len()) {
@@ -130,6 +142,8 @@ impl Translator<'_> {
                 inner: Box::new(inner_gp),
             };
         }
+
+
         for (path_name_variable,value_variable,expression) in self.path_name_expressions.drain(0..self.path_name_expressions.len()) {
             if !self.has_incoming.contains(&path_name_variable) {
                 inner_gp = SpargebraGraphPattern::Extend {
@@ -570,7 +584,7 @@ impl Translator<'_> {
         }
         let mut args_vec = vec![];
         connectives_path.push("".to_string());
-        for (vp, cc) in variables_path.iter().zip(connectives_path) {
+        for (vp, cc) in variable_names_path.iter().zip(connectives_path) {
             args_vec.push(Expression::Variable(vp.clone()));
             args_vec.push(Expression::Literal(SpargebraLiteral::new_typed_literal(
                 cc,
@@ -581,7 +595,7 @@ impl Translator<'_> {
         let last_variable = variables_path.last().unwrap().clone();
         let path_variable =
             Variable::new_unchecked(format!("{}_path_name", last_variable.as_str()));
-        let expr = (value_variable, path_variable.clone(), path_string);
+        let expr = (path_variable.clone(), value_variable, path_string);
         if let Some(_) = optional_index {
             self.optional_path_name_expressions.push(Some(expr));
         } else {

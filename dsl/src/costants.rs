@@ -7,3 +7,4 @@ pub const HAS_EXTERNAL_ID:&str="https://github.com/magbak/quarry-rs#hasExternalI
 pub const TIMESTAMP_VARIABLE_NAME:&str="timestamp";
 pub const REPLACE_VARIABLE_NAME:&str="replace_variable";
 pub const REPLACE_STR_LITERAL:&str="replace_str";
+pub const XSD_DATETIME_FORMAT:&str="%Y-%m-%dT%H:%M:%S%:z";
