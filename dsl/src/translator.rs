@@ -1,9 +1,12 @@
 use crate::ast::{
-    BooleanOperator, Connective, ElementConstraint, Glue, GraphPattern, Literal, PathElement,
+    BooleanOperator, Connective, ElementConstraint, GraphPattern, Literal, PathElement,
     PathElementOrConnective, PathOrLiteral, TsQuery,
 };
 use crate::connective_mapping::ConnectiveMapping;
-use crate::costants::{HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, LIKE_FUNCTION, REPLACE_STR_LITERAL, REPLACE_VARIABLE_NAME, TIMESTAMP_VARIABLE_NAME, XSD_DATETIME_FORMAT};
+use crate::costants::{
+    HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, LIKE_FUNCTION, REPLACE_STR_LITERAL,
+    REPLACE_VARIABLE_NAME, TIMESTAMP_VARIABLE_NAME, XSD_DATETIME_FORMAT,
+};
 use oxrdf::vocab::xsd;
 use oxrdf::{NamedNode, Variable};
 use spargebra::algebra::GraphPattern::LeftJoin;
@@ -14,21 +17,32 @@ use spargebra::Query;
 use std::collections::{HashMap, HashSet};
 use std::iter::zip;
 
-pub struct Translator<'a> {
+#[derive(Debug)]
+pub struct VariablePathExpression {
+    pub(crate) variable: Variable,
+    pub(crate) path_variable: Variable,
+    pub(crate) path_to_variable_expression: Expression,
+}
+
+pub struct Translator {
     variables: Vec<Variable>,
     triples: Vec<TriplePattern>,
     conditions: Vec<Expression>,
-    path_name_expressions: Vec<(Variable, Variable, Expression)>,
+    path_name_expressions: Vec<VariablePathExpression>,
+    group_path_name_expressions: Vec<VariablePathExpression>,
     optional_triples: Vec<Vec<TriplePattern>>,
     optional_conditions: Vec<Option<Expression>>,
-    optional_path_name_expressions: Vec<Option<(Variable, Variable, Expression)>>,
-    glue_to_nodes: HashMap<Glue, &'a Variable>,
+    optional_path_name_expressions: Vec<Option<VariablePathExpression>>,
+    variable_has_path_name: HashMap<Variable, Variable>,
+    variable_has_value: HashMap<Variable, Variable>,
     counter: u16,
     name_template: Vec<TriplePattern>,
     type_name_template: Vec<TriplePattern>,
-    has_incoming: HashSet<Variable>,
+    has_outgoing: HashSet<Variable>,
     is_lhs_terminal: HashSet<Variable>,
     connective_mapping: ConnectiveMapping,
+    group_by: Vec<String>,
+    glue_variables: Vec<Variable>,
 }
 
 enum VariableOrLiteral {
@@ -41,30 +55,38 @@ enum TemplateType {
     NameTemplate,
 }
 
-impl Translator<'_> {
-    pub fn new(name_template:Vec<TriplePattern>, type_name_template:Vec<TriplePattern>, connective_mapping: ConnectiveMapping) -> Translator<'static> {
+impl Translator {
+    pub fn new(
+        name_template: Vec<TriplePattern>,
+        type_name_template: Vec<TriplePattern>,
+        connective_mapping: ConnectiveMapping,
+    ) -> Translator {
         Translator {
             variables: vec![],
             triples: vec![],
             conditions: vec![],
             path_name_expressions: vec![],
+            group_path_name_expressions: vec![],
             optional_triples: vec![],
             optional_conditions: vec![],
             optional_path_name_expressions: vec![],
-            glue_to_nodes: Default::default(),
+            variable_has_path_name: Default::default(),
+            variable_has_value: Default::default(),
             counter: 0,
             name_template,
             type_name_template,
-            has_incoming: Default::default(),
+            has_outgoing: Default::default(),
             is_lhs_terminal: Default::default(),
-            connective_mapping
+            connective_mapping,
+            group_by:vec![],
+            glue_variables: vec![]
         }
     }
-    
-    pub fn translate(
-        &mut self,
-        ts_query: &TsQuery,
-    ) -> Query {
+
+    pub fn translate(&mut self, ts_query: &TsQuery) -> Query {
+        if let Some(group) = &ts_query.group {
+            self.group_by.extend(group.var_names.iter().cloned());
+        }
         self.translate_graph_pattern(&ts_query.graph_pattern);
         let mut inner_gp = SpargebraGraphPattern::Bgp {
             patterns: self.triples.drain(0..self.triples.len()).collect(),
@@ -97,17 +119,18 @@ impl Translator<'_> {
                 }
             }
 
-            if let Some((path_name_variable, value_variable, path_name_expression)) =
+            if let Some(variable_path_expression) =
                 path_name_expression_opt
             {
-                if !self.has_incoming.contains(&path_name_variable) {
+                if !self.has_outgoing.contains(&variable_path_expression.variable) {
                     optional_gp = SpargebraGraphPattern::Extend {
                         inner: Box::new(optional_gp),
-                        variable: path_name_variable.clone(),
-                        expression: path_name_expression,
+                        variable: variable_path_expression.path_variable.clone(),
+                        expression: variable_path_expression.path_to_variable_expression.clone(),
                     };
-                    project_paths.push(path_name_variable);
-                    project_values.push(value_variable);
+                    project_paths.push(variable_path_expression.path_variable.clone());
+                    let value_var = self.variable_has_value.get(&variable_path_expression.variable).expect("Optional variable path has value");
+                    project_values.push(value_var.clone());
                 }
             }
 
@@ -120,14 +143,28 @@ impl Translator<'_> {
 
         let mut timestamp_conditions = vec![];
         if let Some(from_ts) = ts_query.from_datetime {
-            let gteq = Expression::GreaterOrEqual(Box::new(Expression::Literal(SpargebraLiteral::new_typed_literal(format!("{}", from_ts.format(XSD_DATETIME_FORMAT)), xsd::DATE_TIME))),
-                Box::new(Expression::Variable(Variable::new_unchecked(TIMESTAMP_VARIABLE_NAME))) );
+            let gteq = Expression::GreaterOrEqual(
+                Box::new(Expression::Literal(SpargebraLiteral::new_typed_literal(
+                    format!("{}", from_ts.format(XSD_DATETIME_FORMAT)),
+                    xsd::DATE_TIME,
+                ))),
+                Box::new(Expression::Variable(Variable::new_unchecked(
+                    TIMESTAMP_VARIABLE_NAME,
+                ))),
+            );
             timestamp_conditions.push(gteq);
         }
 
         if let Some(to_ts) = ts_query.to_datetime {
-            let gteq = Expression::LessOrEqual(Box::new(Expression::Literal(SpargebraLiteral::new_typed_literal(format!("{}", to_ts.format(XSD_DATETIME_FORMAT)), xsd::DATE_TIME))),
-                Box::new(Expression::Variable(Variable::new_unchecked(TIMESTAMP_VARIABLE_NAME))) );
+            let gteq = Expression::LessOrEqual(
+                Box::new(Expression::Literal(SpargebraLiteral::new_typed_literal(
+                    format!("{}", to_ts.format(XSD_DATETIME_FORMAT)),
+                    xsd::DATE_TIME,
+                ))),
+                Box::new(Expression::Variable(Variable::new_unchecked(
+                    TIMESTAMP_VARIABLE_NAME,
+                ))),
+            );
             timestamp_conditions.push(gteq);
         }
         self.conditions.append(&mut timestamp_conditions);
@@ -143,19 +180,32 @@ impl Translator<'_> {
             };
         }
 
-
-        for (path_name_variable,value_variable,expression) in self.path_name_expressions.drain(0..self.path_name_expressions.len()) {
-            if !self.has_incoming.contains(&path_name_variable) {
+        for variable_path_expression in self
+            .path_name_expressions
+            .drain(0..self.path_name_expressions.len())
+        {
+            println!("{:?}", variable_path_expression);
+            if !self.has_outgoing.contains(&variable_path_expression.variable) {
                 inner_gp = SpargebraGraphPattern::Extend {
                     inner: Box::new(inner_gp),
-                    variable: path_name_variable.clone(),
-                    expression: expression,
+                    variable: variable_path_expression.path_variable.clone(),
+                    expression: variable_path_expression.path_to_variable_expression.clone(),
                 };
-                project_paths.push(path_name_variable);
-                project_values.push(value_variable);
+                project_paths.push(variable_path_expression.path_variable.clone());
+                let value_variable = self.variable_has_value.get(&variable_path_expression.variable).expect("Value variable associated with path");
+                project_values.push(value_variable.clone());
             }
         }
 
+        if let Some(group) = &ts_query.group {
+            //let mut by = vec![];
+            for var_name in &group.var_names {
+                let var = self.glue_variables.iter().find(|var|var.as_str() == var_name).unwrap();
+
+            }
+        }
+        println!("Project paths: {:?}", project_paths);
+        println!("Project values: {:?}", project_values);
         let mut all_projections = project_paths;
         all_projections.append(&mut project_values);
         let project = SpargebraGraphPattern::Project {
@@ -169,12 +219,10 @@ impl Translator<'_> {
             base_iri: None,
         }
     }
-    fn translate_graph_pattern(
-        &mut self,
-        gp: &GraphPattern,
-    ) {
+    fn translate_graph_pattern(&mut self, gp: &GraphPattern) {
         let mut optional_counter = 0;
         for cp in &gp.conditioned_paths {
+            println!("cp: {:?}", cp);
             let mut optional_index = None;
             if cp.lhs_path.optional {
                 optional_index = Some(optional_counter);
@@ -186,10 +234,13 @@ impl Translator<'_> {
                 optional_index,
                 cp.lhs_path.path.iter().collect(),
             );
-            let translated_lhs_value_variable =
-                self.add_value_and_timeseries_variable(optional_index, translated_lhs_variable_path.last().unwrap());
+            let translated_lhs_value_variable = self.add_value_and_timeseries_variable(
+                optional_index,
+                translated_lhs_variable_path.last().unwrap(),
+            );
 
-            self.is_lhs_terminal.insert(translated_lhs_value_variable.clone());
+            self.is_lhs_terminal
+                .insert(translated_lhs_value_variable.clone());
             let connectives_path = cp
                 .lhs_path
                 .path
@@ -205,7 +256,6 @@ impl Translator<'_> {
                 optional_index,
                 translated_lhs_variable_path,
                 connectives_path,
-                translated_lhs_value_variable.clone(),
             );
             if let Some(op) = &cp.boolean_operator {
                 if let Some(rhs_path_or_literal) = &cp.rhs_path_or_literal {
@@ -256,6 +306,7 @@ impl Translator<'_> {
                     .add_path_element(path_identifier, optional_index, pe)
                     .clone();
                 start_index = 1;
+                variable_path_so_far.push(first_variable.clone());
             } else {
                 panic!("Found unexpected connective");
             }
@@ -270,7 +321,7 @@ impl Translator<'_> {
                     .add_path_element(path_identifier, optional_index, pe)
                     .clone();
                 variable_path_so_far.push(last_variable.clone());
-                self.has_incoming.insert(last_variable.clone());
+                self.has_outgoing.insert(first_variable.clone());
                 let triple_pattern = TriplePattern {
                     subject: TermPattern::Variable(first_variable.clone()),
                     predicate: NamedNodePattern::NamedNode(connective_named_node),
@@ -352,10 +403,11 @@ impl Translator<'_> {
             path_identifier.clear();
             path_identifier.push(path_element.glue.as_ref().unwrap().id.clone());
 
-            if self.glue_to_nodes.contains_key(glue) {
-                variable = (*self.glue_to_nodes.get(glue).unwrap()).clone();
+            if let Some(glue_var) = self.glue_variables.iter().find(|x|x.as_str() == &glue.id) {
+                variable = glue_var.clone();
             } else {
                 variable = self.create_and_add_variable(&path_identifier.join(""));
+                self.glue_variables.push(variable.clone())
             }
         } else if let Some(element) = &path_element.element {
             match element {
@@ -382,7 +434,8 @@ impl Translator<'_> {
     }
 
     fn create_and_add_variable(&mut self, variable_name: &str) -> Variable {
-        let variable = Variable::new(variable_name).expect(&format!("Invalid variable name: {}",variable_name));
+        let variable = Variable::new(variable_name)
+            .expect(&format!("Invalid variable name: {}", variable_name));
 
         self.variables.push(variable);
         self.variables
@@ -570,10 +623,10 @@ impl Translator<'_> {
         optional_index: Option<usize>,
         variables_path: Vec<Variable>,
         mut connectives_path: Vec<String>,
-        value_variable: Variable,
     ) {
         let mut variable_names_path = vec![];
-        for v in variables_path.iter() {
+        let mut glue_names_path = vec![];
+        for (i, v) in variables_path.iter().enumerate() {
             let vname = Variable::new_unchecked(format!("{}_name_on_path", v.as_str()));
             variable_names_path.push(vname.clone());
             let triples =
@@ -581,26 +634,70 @@ impl Translator<'_> {
             for t in triples {
                 self.add_triple_pattern(t, optional_index);
             }
+            if !self.variable_has_path_name.contains_key(v)
+                && self.group_by.contains(&v.as_str().to_string())
+                && i < variables_path.len() - 1
+            {
+                glue_names_path.push((v.clone(), variables_path.clone()));
+            }
         }
-        let mut args_vec = vec![];
-        connectives_path.push("".to_string());
-        for (vp, cc) in variable_names_path.iter().zip(connectives_path) {
-            args_vec.push(Expression::Variable(vp.clone()));
-            args_vec.push(Expression::Literal(SpargebraLiteral::new_typed_literal(
-                cc,
-                xsd::STRING,
-            )));
+        fn build_concat_path_expression(
+            variable_names_path: Vec<Variable>,
+            connectives_path: Vec<&String>,
+        ) -> Expression {
+            println!("{:?}_{:?}", variable_names_path, connectives_path);
+            assert_eq!(variable_names_path.len(), connectives_path.len() + 1);
+            let mut args_vec = vec![];
+            for (vp, cc) in variable_names_path.iter().zip(connectives_path) {
+                args_vec.push(Expression::Variable(vp.clone()));
+                args_vec.push(Expression::Literal(SpargebraLiteral::new_typed_literal(
+                    cc.clone(),
+                    xsd::STRING,
+                )));
+            }
+            //We must push the final variable since the connectives path has one less element.
+            args_vec.push(Expression::Variable(
+                variable_names_path.last().unwrap().clone(),
+            ));
+
+            Expression::FunctionCall(Function::Concat, args_vec)
         }
-        let path_string = Expression::FunctionCall(Function::Concat, args_vec);
+
+        let path_string_expression =
+            build_concat_path_expression(variable_names_path, connectives_path.iter().collect());
+
         let last_variable = variables_path.last().unwrap().clone();
         let path_variable =
             Variable::new_unchecked(format!("{}_path_name", last_variable.as_str()));
-        let expr = (path_variable.clone(), value_variable, path_string);
+        self.variable_has_path_name
+            .insert(last_variable.clone(), path_variable.clone());
+        let expr = VariablePathExpression {
+            variable: last_variable.clone(),
+            path_variable: path_variable.clone(),
+            path_to_variable_expression: path_string_expression,
+        };
         if let Some(_) = optional_index {
             self.optional_path_name_expressions.push(Some(expr));
         } else {
             self.path_name_expressions.push(expr);
             self.optional_path_name_expressions.push(None);
+        }
+
+        for (g, path) in glue_names_path {
+            let path_len = path.len();
+            let path_string_expression = build_concat_path_expression(
+                path,
+                connectives_path[0..(path_len - 1)].iter().collect(),
+            );
+            let path_variable = Variable::new_unchecked(format!("{}_path_name", g.as_str()));
+            let expr = VariablePathExpression {
+                variable: g.clone(),
+                path_variable: path_variable.clone(),
+                path_to_variable_expression: path_string_expression,
+            };
+            self.variable_has_path_name
+                .insert(g.clone(), path_variable.clone());
+            self.group_path_name_expressions.push(expr);
         }
     }
 
@@ -649,18 +746,17 @@ impl Translator<'_> {
             self.triples.push(has_value_triple);
             self.triples.push(has_timestamp_triple);
         }
+        self.variable_has_value
+            .insert(end_variable.clone(), value_variable.clone());
         value_variable
     }
-    fn translate_connective_named_node(&self,
-    connective: &Connective,
-) -> NamedNode {
-    let connective_string = connective.to_string();
-    let iri = self.connective_mapping
-        .map
-        .get(&connective_string)
-        .expect(&format!("Connective {} not defined", &connective_string));
-    NamedNode::new(iri).expect("Invalid iri")
+    fn translate_connective_named_node(&self, connective: &Connective) -> NamedNode {
+        let connective_string = connective.to_string();
+        let iri = self
+            .connective_mapping
+            .map
+            .get(&connective_string)
+            .expect(&format!("Connective {} not defined", &connective_string));
+        NamedNode::new(iri).expect("Invalid iri")
+    }
 }
-}
-
-

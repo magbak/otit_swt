@@ -77,7 +77,7 @@ fn translator(
     name_template: Vec<TriplePattern>,
     type_name_template: Vec<TriplePattern>,
     connective_mapping: ConnectiveMapping,
-) -> Translator<'static> {
+) -> Translator {
     Translator::new(name_template, type_name_template, connective_mapping)
 }
 
@@ -92,6 +92,8 @@ fn test_easy_translation(mut translator: Translator) {
     let (_, tsq) = ts_query(q).expect("No problemo");
     let mut actual = translator.translate(&tsq);
     actual = Query::parse(&actual.to_string(), None).expect("Parse myself");
+    println!("{}", actual);
+        println!("{:?}", actual);
 
     let expected_query_str = r#"
   PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -109,6 +111,7 @@ fn test_easy_translation(mut translator: Translator) {
   ?valve__Dash___Mvm___Period___stVal__timeseries <https://github.com/magbak/quarry-rs#hasTimeseries> ?valve__Dash___Mvm___Period___stVal__timeseries_datapoint.
   ?valve__Dash___Mvm___Period___stVal__timeseries_datapoint <https://github.com/magbak/quarry-rs#hasValue> ?valve__Dash___Mvm___Period___stVal__timeseries_datapoint_value.
   ?valve__Dash___Mvm___Period___stVal__timeseries <https://github.com/magbak/quarry-rs#hasTimestamp> ?timestamp.
+  ?ABC <http://example.org/types#hasName> ?ABC_name_on_path.
   ?valve <http://example.org/types#hasName> ?valve_name_on_path.
   ?valve__Dash___Mvm_ <http://example.org/types#hasName> ?valve__Dash___Mvm__name_on_path.
   ?valve__Dash___Mvm___Period___stVal_ <http://example.org/types#hasName> ?valve__Dash___Mvm___Period___stVal__name_on_path.
@@ -120,11 +123,12 @@ fn test_easy_translation(mut translator: Translator) {
   ?valve_PosPct___Period___mag__timeseries <https://github.com/magbak/quarry-rs#hasTimeseries> ?valve_PosPct___Period___mag__timeseries_datapoint.
   ?valve_PosPct___Period___mag__timeseries_datapoint <https://github.com/magbak/quarry-rs#hasValue> ?valve_PosPct___Period___mag__timeseries_datapoint_value.
   ?valve_PosPct___Period___mag__timeseries <https://github.com/magbak/quarry-rs#hasTimestamp> ?timestamp.
+  ?valve <http://example.org/types#hasName> ?valve_name_on_path.
   ?valve_PosPct_ <http://example.org/types#hasName> ?valve_PosPct__name_on_path.
   ?valve_PosPct___Period___mag_ <http://example.org/types#hasName> ?valve_PosPct___Period___mag__name_on_path.
+  BIND(CONCAT(?ABC_name_on_path, "-", ?valve_name_on_path, ".", ?valve__Dash___Mvm__name_on_path, ".", ?valve__Dash___Mvm___Period___stVal__name_on_path) AS ?valve__Dash___Mvm___Period___stVal__path_name)
+  BIND(CONCAT(?valve_name_on_path, ".", ?valve_PosPct__name_on_path, ".", ?valve_PosPct___Period___mag__name_on_path) AS ?valve_PosPct___Period___mag__path_name)
   FILTER(("2021-11-30T23:00:01+00:00"^^xsd:dateTime >= ?timestamp) && ("2021-12-01T23:00:01+00:00"^^xsd:dateTime <= ?timestamp))
-  BIND(CONCAT(?valve_name_on_path, "-", ?valve__Dash___Mvm__name_on_path, ".", ?valve__Dash___Mvm___Period___stVal__name_on_path, ".") AS ?valve__Dash___Mvm___Period___stVal__path_name)
-  BIND(CONCAT(?valve_PosPct__name_on_path, ".", ?valve_PosPct___Period___mag__name_on_path, ".") AS ?valve_PosPct___Period___mag__path_name)
 }"#;
     let expected_query = Query::parse(expected_query_str, None).expect("Parse expected error");
     assert_eq!(expected_query, actual);
