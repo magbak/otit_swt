@@ -256,8 +256,8 @@ fn aggregation(a: &str) -> IResult<&str, Aggregation> {
 }
 
 pub fn ts_query(t: &str) -> IResult<&str, TsQuery> {
-    let (t, (_, graph_pattern, group, from_datetime, to_datetime, aggregation)) =
-        tuple((many0(newline), graph_pattern, opt(group), opt(from), opt(to), opt(aggregation)))(t)?;
+    let (t, (_, graph_pattern,  from_datetime, to_datetime,group, aggregation)) =
+        tuple((many0(newline), graph_pattern, opt(from), opt(to), opt(group), opt(aggregation)))(t)?;
     Ok((
         t,
         TsQuery::new(
