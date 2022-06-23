@@ -3,10 +3,7 @@ use crate::ast::{
     PathElement, PathElementOrConnective, PathOrLiteralData, TsQuery,
 };
 use crate::connective_mapping::ConnectiveMapping;
-use crate::costants::{
-    DATETIME_AS_NANOS, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, LIKE_FUNCTION,
-    REPLACE_STR_LITERAL, REPLACE_VARIABLE_NAME, TIMESTAMP_VARIABLE_NAME, XSD_DATETIME_FORMAT,
-};
+use crate::costants::{DATETIME_AS_NANOS, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, LIKE_FUNCTION, NEST, REPLACE_STR_LITERAL, REPLACE_VARIABLE_NAME, TIMESTAMP_VARIABLE_NAME, XSD_DATETIME_FORMAT};
 use oxrdf::vocab::xsd;
 use oxrdf::{NamedNode, Variable};
 use spargebra::algebra::{
@@ -92,6 +89,35 @@ impl Translator {
         let mut inner_gp = GraphPattern::Bgp {
             patterns: self.triples.drain(0..self.triples.len()).collect(),
         };
+        let mut project_paths = vec![];
+        let mut project_values = vec![];
+        inner_gp = self.add_optional_parts(inner_gp, &mut project_paths, &mut project_values);
+        self.add_timestamp_conditions(ts_query);
+        inner_gp = self.add_conditions(inner_gp);
+        inner_gp = self.add_paths_and_values(inner_gp, &mut project_paths, &mut project_values);
+        inner_gp = self.add_aggregation(inner_gp, ts_query, &mut project_paths, &mut project_values);
+        inner_gp = self.add_group(inner_gp, ts_query, &mut project_paths, &project_values);
+
+        let mut all_projections = project_paths;
+        let has_value = !project_values.is_empty();
+        all_projections.append(&mut project_values);
+        if has_value {
+            all_projections.push(Variable::new_unchecked(TIMESTAMP_VARIABLE_NAME));
+        }
+
+        let project = GraphPattern::Project {
+            inner: Box::new(inner_gp),
+            variables: all_projections,
+        };
+
+        Query::Select {
+            dataset: None,
+            pattern: project,
+            base_iri: None,
+        }
+    }
+
+    fn add_optional_parts(&mut self, mut inner_gp: GraphPattern, project_paths: &mut Vec<Variable>, project_values: &mut Vec<Variable>) -> GraphPattern {
         let optional_triples_drain = self.optional_triples.drain(0..self.optional_triples.len());
         let optional_path_name_expressions_drain = self
             .optional_path_name_expressions
@@ -100,8 +126,6 @@ impl Translator {
             .optional_conditions
             .drain(0..self.optional_conditions.len());
 
-        let mut project_values = vec![];
-        let mut project_paths = vec![];
         for (optional_pattern, (path_name_expression_opt, conditions_opt)) in zip(
             optional_triples_drain,
             zip(
@@ -145,7 +169,10 @@ impl Translator {
                 expression: None,
             };
         }
+        inner_gp
+    }
 
+    fn add_timestamp_conditions(&mut self, ts_query: &TsQuery) {
         let mut timestamp_conditions = vec![];
         if let Some(from_ts) = ts_query.from_datetime {
             let gteq = Expression::GreaterOrEqual(
@@ -173,7 +200,9 @@ impl Translator {
             timestamp_conditions.push(gteq);
         }
         self.conditions.append(&mut timestamp_conditions);
+    }
 
+    fn add_conditions(&mut self, mut inner_gp: GraphPattern) -> GraphPattern {
         if !self.conditions.is_empty() {
             let mut conjuction = self.conditions.remove(0);
             for c in self.conditions.drain(0..self.conditions.len()) {
@@ -184,7 +213,10 @@ impl Translator {
                 inner: Box::new(inner_gp),
             };
         }
+        inner_gp
+    }
 
+    fn add_paths_and_values(&mut self, mut inner_gp: GraphPattern, project_paths: &mut Vec<Variable>, project_values: &mut Vec<Variable>) -> GraphPattern {
         for variable_path_expression in self
             .path_name_expressions
             .drain(0..self.path_name_expressions.len())
@@ -207,7 +239,10 @@ impl Translator {
                 project_values.push(value_variable.clone());
             }
         }
+        inner_gp
+    }
 
+    fn add_aggregation(&mut self, mut inner_gp: GraphPattern, ts_query:&TsQuery, project_paths: &mut Vec<Variable>, project_values: &mut Vec<Variable>) -> GraphPattern {
         if let Some(aggregation) = &ts_query.aggregation {
             let timestamp_variable_expression =
                 Expression::Variable(Variable::new_unchecked(TIMESTAMP_VARIABLE_NAME));
@@ -239,7 +274,7 @@ impl Translator {
             grouping_cols.push(timestamp_grouping_variable.clone());
 
             let mut aggregates = vec![];
-            for val_col in &project_values {
+            for val_col in project_values.iter() {
                 let agg_expr = match aggregation.function_name.as_str() {
                     "mean" | "avg" => AggregateExpression::Avg {
                         expr: Box::new(Expression::Variable(val_col.clone())),
@@ -282,12 +317,18 @@ impl Translator {
             }
 
         }
+        inner_gp
+    }
 
-        let mut all_projections = project_paths;
-        let has_value = !project_values.is_empty();
-        all_projections.append(&mut project_values);
-        if has_value {
-            all_projections.push(Variable::new_unchecked(TIMESTAMP_VARIABLE_NAME));
+    fn add_group(&self, mut inner_gp: GraphPattern, ts_query: &TsQuery, project_paths:&mut Vec<Variable>, project_values:&Vec<Variable>) -> GraphPattern {
+        let mut group_by = vec![];
+
+        fn nest_column_aggregation(variable:Variable) -> AggregateExpression{
+            AggregateExpression::Custom {
+                    name: NamedNode::new_unchecked(NEST),
+                    expr: Box::new(Expression::Variable(variable)),
+                    distinct: false
+                }
         }
 
         if let Some(group) = &ts_query.group {
@@ -304,27 +345,30 @@ impl Translator {
                             variable: vp.path_variable.clone(),
                             expression: vp.path_to_variable_expression.clone(),
                         };
+                        group_by.push(vp.path_variable.clone());
                     }
                 }
             }
+            if project_values.len() > 0 {
+                group_by.push(Variable::new_unchecked(TIMESTAMP_VARIABLE_NAME));
+            }
+            let mut aggregates = vec![];
+            for pp in project_paths.iter() {
+                aggregates.push((pp.clone(), nest_column_aggregation(pp.clone())))
+            }
+            for pv in project_values.iter() {
+                aggregates.push((pv.clone(), nest_column_aggregation(pv.clone())))
+            }
+
             inner_gp = GraphPattern::Group {
                 inner: Box::new(Default::default()),
-                variables: vec![],
-                aggregates: vec![],
+                variables: group_by,
+                aggregates,
             };
         }
-
-        let project = GraphPattern::Project {
-            inner: Box::new(inner_gp),
-            variables: all_projections,
-        };
-
-        Query::Select {
-            dataset: None,
-            pattern: project,
-            base_iri: None,
-        }
+        inner_gp
     }
+
     fn translate_graph_pattern(&mut self, gp: &GraphPathPattern) {
         let mut optional_counter = 0;
         for cp in &gp.conditioned_paths {
@@ -728,7 +772,7 @@ impl Translator {
         &mut self,
         optional_index: Option<usize>,
         variables_path: Vec<Variable>,
-        mut connectives_path: Vec<String>,
+        connectives_path: Vec<String>,
     ) {
         let mut variable_names_path = vec![];
         let mut glue_names_path = vec![];

@@ -9,3 +9,5 @@ pub const REPLACE_VARIABLE_NAME:&str="replace_variable";
 pub const REPLACE_STR_LITERAL:&str="replace_str";
 pub const XSD_DATETIME_FORMAT:&str="%Y-%m-%dT%H:%M:%S%:z";
 pub const DATETIME_AS_NANOS:&str="https://github.com/magbak/quarry-rs#DateTimeAsNanos";
+pub const NEST:&str="https://github.com/magbak/quarry-rs#nestAggregation";
+
