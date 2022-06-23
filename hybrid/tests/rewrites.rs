@@ -25,7 +25,7 @@ fn test_simple_query() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
+    let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
 
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
@@ -55,7 +55,7 @@ fn test_filtered_query() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
+    let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
      ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -86,7 +86,7 @@ fn test_complex_expression_filter() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
+    let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -118,7 +118,7 @@ fn test_complex_expression_filter_projection() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
+    let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 ?pv WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -150,7 +150,7 @@ fn test_complex_nested_expression_filter() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
+    let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 ?pv WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -184,7 +184,7 @@ fn test_option_expression_filter_projection() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
+    let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?pv ?ts_external_id_0 WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -230,7 +230,7 @@ fn test_union_expression() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
+    let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?pv ?ts_external_id_0 ?ts_external_id_1 WHERE {
         ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -277,7 +277,7 @@ fn test_bind_expression() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
+    let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_external_id_0 ?ts_external_id_1 WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
@@ -547,7 +547,7 @@ fn test_having_query() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
+    let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?w ?ts_external_id_0 WHERE {
     ?w <http://example.org/types#hasSensor> ?s .
@@ -579,7 +579,7 @@ fn test_exists_query() {
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
-    let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
+    let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?w ?s ?ts ?ts_external_id_0 WHERE {
     ?w <http://example.org/types#hasSensor> ?s .

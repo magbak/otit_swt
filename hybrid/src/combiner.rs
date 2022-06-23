@@ -1,4 +1,4 @@
-use crate::constants::{DATETIME_AS_NANOS, HAS_VALUE};
+use crate::constants::{DATETIME_AS_NANOS, HAS_VALUE, NEST};
 use crate::exists_helper::rewrite_exists_graph_pattern;
 use crate::query_context::{Context, PathEntry};
 use crate::rewriting::hash_graph_pattern;
@@ -8,8 +8,7 @@ use crate::sparql_result_to_polars::{
 use crate::timeseries_query::TimeSeriesQuery;
 use log::debug;
 use oxrdf::vocab::xsd;
-use oxrdf::Term::NamedNode;
-use oxrdf::{NamedNode, NamedNodeRef, Variable};
+use oxrdf::{Variable};
 use polars::datatypes::DataType;
 use polars::frame::DataFrame;
 use polars::prelude::DataType::Utf8;
@@ -1289,45 +1288,37 @@ impl Combiner {
                         );
                     }
                     Function::Custom(nn) => {
-                        let nn_ref = NamedNodeRef::from(nn);
-                        let dt_as_nanos = NamedNodeRef::new_unchecked(DATETIME_AS_NANOS);
-                        match nn_ref {
-                            xsd::INTEGER => {
-                                assert_eq!(args.len(), 1);
-                                let first_context = args_contexts.get(0).unwrap();
-                                inner_lf = inner_lf.with_column(
-                                    col(&first_context.as_str())
-                                        .cast(DataType::Int64)
-                                        .alias(context.as_str()),
-                                );
-                            }
-                            xsd::STRING => {
-                                assert_eq!(args.len(), 1);
-                                let first_context = args_contexts.get(0).unwrap();
-                                inner_lf = inner_lf.with_column(
-                                    col(&first_context.as_str())
-                                        .cast(DataType::Utf8)
-                                        .alias(context.as_str()),
-                                );
-                            }
-                            dt_as_nanos => {
-                                assert_eq!(args.len(), 1);
-                                let first_context = args_contexts.get(0).unwrap();
-                                inner_lf = inner_lf.with_column(
-                                    col(&first_context.as_str())
-                                        .dt()
-                                        .nanosecond()
-                                        .alias(context.as_str()),
-                                );
-                            }
-                            _ => {
-                                todo!("{:?}", nn)
-                            }
+                        let iri = nn.as_str();
+                        if iri == xsd::INTEGER.as_str() {
+                            assert_eq!(args.len(), 1);
+                            let first_context = args_contexts.get(0).unwrap();
+                            inner_lf = inner_lf.with_column(
+                                col(&first_context.as_str())
+                                    .cast(DataType::Int64)
+                                    .alias(context.as_str()),
+                            );
+                        } else if iri == xsd::STRING.as_str() {
+                            assert_eq!(args.len(), 1);
+                            let first_context = args_contexts.get(0).unwrap();
+                            inner_lf = inner_lf.with_column(
+                                col(&first_context.as_str())
+                                    .cast(DataType::Utf8)
+                                    .alias(context.as_str()),
+                            );
+                        } else if iri == DATETIME_AS_NANOS {
+                            assert_eq!(args.len(), 1);
+                            let first_context = args_contexts.get(0).unwrap();
+                            inner_lf = inner_lf.with_column(
+                                col(&first_context.as_str())
+                                    .dt()
+                                    .nanosecond()
+                                    .alias(context.as_str()),
+                            );
+                        } else {
+                            todo!("{:?}", nn)
                         }
                     }
-                    _ => {
-                        todo!("{:?}", func)
-                    }
+                    _ => {todo!()}
                 }
                 inner_lf.drop_columns(
                     args_contexts
@@ -1504,11 +1495,10 @@ pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
         AggregateExpression::Custom {
             name,
             expr,
-            distinct,
+            distinct: _,
         } => {
             let iri = name.as_str();
-            match iri {
-                NEST => {
+            if iri == NEST {
                     column_context = Some(context.extension_with(PathEntry::AggregationOperation));
 
                     out_lf = Combiner::lazy_expression(
@@ -1520,10 +1510,9 @@ pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
                     );
                     out_expr = col(column_context.as_ref().unwrap().as_str()).list();
                 }
-                _ => {
+            else {
                     panic!("Custom aggregation not supported")
                 }
-            }
         }
     }
     out_expr = out_expr.alias(variable.as_str());
