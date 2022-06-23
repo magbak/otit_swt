@@ -96,7 +96,7 @@ impl Translator {
         inner_gp = self.add_conditions(inner_gp);
         inner_gp = self.add_paths_and_values(inner_gp, &mut project_paths, &mut project_values);
         inner_gp = self.add_aggregation(inner_gp, ts_query, &mut project_paths, &mut project_values);
-        inner_gp = self.add_group(inner_gp, ts_query, &mut project_paths, &project_values);
+        inner_gp = self.add_group(inner_gp, ts_query, &mut project_paths, &mut project_values);
 
         let mut all_projections = project_paths;
         let has_value = !project_values.is_empty();
@@ -119,9 +119,8 @@ impl Translator {
 
     fn add_optional_parts(&mut self, mut inner_gp: GraphPattern, project_paths: &mut Vec<Variable>, project_values: &mut Vec<Variable>) -> GraphPattern {
         let optional_triples_drain = self.optional_triples.drain(0..self.optional_triples.len());
-        let optional_path_name_expressions_drain = self
-            .optional_path_name_expressions
-            .drain(0..self.optional_path_name_expressions.len());
+        let optional_path_name_expressions_drain = &self
+            .optional_path_name_expressions;
         let optional_conditions_drain = self
             .optional_conditions
             .drain(0..self.optional_conditions.len());
@@ -217,9 +216,8 @@ impl Translator {
     }
 
     fn add_paths_and_values(&mut self, mut inner_gp: GraphPattern, project_paths: &mut Vec<Variable>, project_values: &mut Vec<Variable>) -> GraphPattern {
-        for variable_path_expression in self
+        for variable_path_expression in &self
             .path_name_expressions
-            .drain(0..self.path_name_expressions.len())
         {
             if !self
                 .has_outgoing
@@ -319,7 +317,7 @@ impl Translator {
         inner_gp
     }
 
-    fn add_group(&self, mut inner_gp: GraphPattern, ts_query: &TsQuery, project_paths:&mut Vec<Variable>, project_values:&Vec<Variable>) -> GraphPattern {
+    fn add_group(&self, mut inner_gp: GraphPattern, ts_query: &TsQuery, project_paths:&mut Vec<Variable>, project_values:&mut Vec<Variable>) -> GraphPattern {
         fn nest_column_aggregation(variable:Variable) -> AggregateExpression{
             AggregateExpression::Custom {
                     name: NamedNode::new_unchecked(NEST),
@@ -328,15 +326,24 @@ impl Translator {
                 }
         }
 
+        fn sample_column_aggregation(variable:Variable) -> AggregateExpression {
+            AggregateExpression::Sample { expr: Box::new(Expression::Variable(variable)), distinct: false }
+        }
         if let Some(group) = &ts_query.group {
+            assert!(!group.var_names.is_empty());
+            let mut group_by = vec![];
             let mut new_projections = vec![];
+            let mut grouping_values = HashSet::new();
+            let mut grouping_paths = HashSet::new();
+
             for var_name in &group.var_names {
                 let var = self
                     .glue_variables
                     .iter()
                     .find(|var| var.as_str() == var_name)
                     .unwrap();
-                //TODO: Add logic for identifying if a path or value is being grouped on..
+
+                let mut found = false;
                 for vp in &self.group_path_name_expressions {
                     if &vp.variable == var {
                         inner_gp = GraphPattern::Extend {
@@ -344,20 +351,48 @@ impl Translator {
                             variable: vp.path_variable.clone(),
                             expression: vp.path_to_variable_expression.clone(),
                         };
+                        found = true;
                         new_projections.push(vp.path_variable.clone());
+                        group_by.push(vp.path_variable.clone());
+                    }
+                }
+                if !found {
+                    group_by.push(self.variable_has_path_name.get(var).unwrap().clone());
+                }
+
+                //Assuming that only one object may have a timeseries
+                for vp in self.path_name_expressions.iter().chain(self.optional_path_name_expressions.iter().filter(|x|x.is_some()).map(|x|x.as_ref().unwrap())) {
+                    println!("{:?}", vp);
+                    if &vp.variable == var {
+                        grouping_paths.insert(&vp.path_variable);
+                        project_paths.retain(|v|v!=&vp.path_variable);
+                        project_paths.insert(grouping_paths.len()-1, vp.path_variable.clone());
+
+                        if let Some(value) = self.variable_has_value.get(var) {
+                            grouping_values.insert(value);
+                            project_values.retain(|v|v!=value);
+                            project_values.insert(grouping_values.len()-1, value.clone());
+                        }
                     }
                 }
             }
 
             let mut aggregates = vec![];
             for pp in project_paths.iter() {
-                aggregates.push((pp.clone(), nest_column_aggregation(pp.clone())))
+                if !grouping_paths.contains(pp) {
+                    aggregates.push((pp.clone(), nest_column_aggregation(pp.clone())));
+                } else {
+                    aggregates.push((pp.clone(), sample_column_aggregation(pp.clone())));
+                }
             }
             for pv in project_values.iter() {
-                aggregates.push((pv.clone(), nest_column_aggregation(pv.clone())))
+                if !grouping_values.contains(pv) {
+                    aggregates.push((pv.clone(), nest_column_aggregation(pv.clone())));
+                } else {
+                    aggregates.push((pv.clone(), sample_column_aggregation(pv.clone())));
+                }
             }
 
-            let mut group_by = new_projections.clone();
             if project_values.len() > 0 {
                 group_by.push(Variable::new_unchecked(TIMESTAMP_VARIABLE_NAME));
             }
@@ -835,6 +870,7 @@ impl Translator {
             self.optional_path_name_expressions.push(None);
         }
 
+        //This logic is only for grouping on nonterminals
         for (g, path) in glue_names_path {
             let path_len = path.len();
             let path_string_expression = build_concat_path_expression(
