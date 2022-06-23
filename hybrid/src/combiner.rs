@@ -1,4 +1,6 @@
-use crate::constants::{DATETIME_AS_NANOS, HAS_VALUE, NEST};
+use crate::constants::{
+    DATETIME_AS_NANOS, DATETIME_AS_SECONDS, HAS_VALUE, NANOS_AS_DATETIME, NEST, SECONDS_AS_DATETIME,
+};
 use crate::exists_helper::rewrite_exists_graph_pattern;
 use crate::query_context::{Context, PathEntry};
 use crate::rewriting::hash_graph_pattern;
@@ -8,13 +10,13 @@ use crate::sparql_result_to_polars::{
 use crate::timeseries_query::TimeSeriesQuery;
 use log::debug;
 use oxrdf::vocab::xsd;
-use oxrdf::{Variable};
+use oxrdf::Variable;
 use polars::datatypes::DataType;
 use polars::frame::DataFrame;
 use polars::prelude::DataType::Utf8;
 use polars::prelude::{
     col, concat, concat_str, Expr, GetOutput, IntoLazy, IntoSeries, JoinType, LazyFrame,
-    LiteralValue, Operator, Series, UniqueKeepStrategy,
+    LiteralValue, Operator, Series, TimeUnit, UniqueKeepStrategy,
 };
 use spargebra::algebra::{
     AggregateExpression, Expression, Function, GraphPattern, OrderExpression,
@@ -22,7 +24,7 @@ use spargebra::algebra::{
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
 use std::collections::HashSet;
-use std::ops::Not;
+use std::ops::{Mul, Not};
 
 pub struct Combiner {
     counter: u16,
@@ -1314,11 +1316,39 @@ impl Combiner {
                                     .nanosecond()
                                     .alias(context.as_str()),
                             );
+                        } else if iri == DATETIME_AS_SECONDS {
+                            assert_eq!(args.len(), 1);
+                            let first_context = args_contexts.get(0).unwrap();
+                            inner_lf = inner_lf.with_column(
+                                col(&first_context.as_str())
+                                    .dt()
+                                    .second()
+                                    .alias(context.as_str()),
+                            );
+                        } else if iri == NANOS_AS_DATETIME {
+                            assert_eq!(args.len(), 1);
+                            let first_context = args_contexts.get(0).unwrap();
+                            inner_lf = inner_lf.with_column(
+                                col(&first_context.as_str())
+                                    .cast(DataType::Datetime(TimeUnit::Nanoseconds, None))
+                                    .alias(context.as_str()),
+                            );
+                        } else if iri == SECONDS_AS_DATETIME {
+                            assert_eq!(args.len(), 1);
+                            let first_context = args_contexts.get(0).unwrap();
+                            inner_lf = inner_lf.with_column(
+                                col(&first_context.as_str())
+                                    .mul(Expr::Literal(LiteralValue::UInt64(1000)))
+                                    .cast(DataType::Datetime(TimeUnit::Milliseconds, None))
+                                    .alias(context.as_str()),
+                            );
                         } else {
                             todo!("{:?}", nn)
                         }
                     }
-                    _ => {todo!()}
+                    _ => {
+                        todo!()
+                    }
                 }
                 inner_lf.drop_columns(
                     args_contexts
@@ -1499,20 +1529,19 @@ pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
         } => {
             let iri = name.as_str();
             if iri == NEST {
-                    column_context = Some(context.extension_with(PathEntry::AggregationOperation));
+                column_context = Some(context.extension_with(PathEntry::AggregationOperation));
 
-                    out_lf = Combiner::lazy_expression(
-                        expr,
-                        lf,
-                        columns,
-                        time_series,
-                        column_context.as_ref().unwrap(),
-                    );
-                    out_expr = col(column_context.as_ref().unwrap().as_str()).list();
-                }
-            else {
-                    panic!("Custom aggregation not supported")
-                }
+                out_lf = Combiner::lazy_expression(
+                    expr,
+                    lf,
+                    columns,
+                    time_series,
+                    column_context.as_ref().unwrap(),
+                );
+                out_expr = col(column_context.as_ref().unwrap().as_str()).list();
+            } else {
+                panic!("Custom aggregation not supported")
+            }
         }
     }
     out_expr = out_expr.alias(variable.as_str());
