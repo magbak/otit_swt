@@ -1,4 +1,4 @@
-use crate::constants::HAS_VALUE;
+use crate::constants::{DATETIME_AS_NANOS, HAS_VALUE};
 use crate::exists_helper::rewrite_exists_graph_pattern;
 use crate::query_context::{Context, PathEntry};
 use crate::rewriting::hash_graph_pattern;
@@ -1289,6 +1289,7 @@ impl Combiner {
                     }
                     Function::Custom(nn) => {
                         let nn_ref = NamedNodeRef::from(nn);
+                        let dt_as_nanos = NamedNodeRef::new_unchecked(DATETIME_AS_NANOS);
                         match nn_ref {
                             xsd::INTEGER => {
                                 assert_eq!(args.len(), 1);
@@ -1306,6 +1307,13 @@ impl Combiner {
                                     col(&first_context.as_str())
                                         .cast(DataType::Utf8)
                                         .alias(context.as_str()),
+                                );
+                            }
+                            dt_as_nanos => {
+                                assert_eq!(args.len(), 1);
+                                let first_context = args_contexts.get(0).unwrap();
+                                inner_lf = inner_lf.with_column(
+                                    col(&first_context.as_str()).dt().nanosecond().alias(context.as_str())
                                 );
                             }
                             _ => {

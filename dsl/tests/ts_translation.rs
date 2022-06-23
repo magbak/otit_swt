@@ -98,7 +98,7 @@ fn test_easy_translation(mut translator: Translator) {
     let expected_query_str = r#"
   PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
   PREFIX rdf:<http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-  SELECT ?valve__Dash___Mvm___Period___stVal__path_name ?valve_PosPct___Period___mag__path_name ?valve__Dash___Mvm___Period___stVal__timeseries_datapoint_value ?valve_PosPct___Period___mag__timeseries_datapoint_value WHERE {
+  SELECT ?valve__Dash___Mvm___Period___stVal__path_name ?valve_PosPct___Period___mag__path_name ?valve__Dash___Mvm___Period___stVal__timeseries_datapoint_value ?valve_PosPct___Period___mag__timeseries_datapoint_value ?timestamp WHERE {
   ?ABC rdf:type ?type_var_0.
   ?type_var_0 <http://example.org/types#hasName> "ABC".
   ?valve <http://example.org/types#hasName> "HLV".
@@ -132,4 +132,21 @@ fn test_easy_translation(mut translator: Translator) {
 }"#;
     let expected_query = Query::parse(expected_query_str, None).expect("Parse expected error");
     assert_eq!(expected_query, actual);
+}
+
+#[rstest]
+fn test_aggregation_translation(mut translator: Translator) {
+    let q = r#"
+    ABC-[valve]"HLV"."Mvm"."stVal"
+    [valve]."PosPct"."mag"
+    from 2021-12-01T00:00:01+01:00
+    to 2021-12-02T00:00:01+01:00
+    aggregate mean 10min
+"#;
+    let (_, tsq) = ts_query(q).expect("No problemo");
+    let actual = translator.translate(&tsq);
+    let actual_str = actual.to_string();
+    //TODO: Workaround for generated variable names in query.. perhaps rename them..
+    let expected_query_str = r#"SELECT ?valve__Dash___Mvm___Period___stVal__path_name ?valve_PosPct___Period___mag__path_name ?valve__Dash___Mvm___Period___stVal__timeseries_datapoint_value ?valve_PosPct___Period___mag__timeseries_datapoint_value ?timestamp WHERE { {SELECT (AVG(?valve__Dash___Mvm___Period___stVal__timeseries_datapoint_value) AS ?valve__Dash___Mvm___Period___stVal__timeseries_datapoint_value) (AVG(?valve_PosPct___Period___mag__timeseries_datapoint_value) AS ?valve_PosPct___Period___mag__timeseries_datapoint_value) ?valve__Dash___Mvm___Period___stVal__path_name ?valve_PosPct___Period___mag__path_name ?timestamp_grouping WHERE { ?ABC <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type_var_0 .?type_var_0 <http://example.org/types#hasName> "ABC" .?valve <http://example.org/types#hasName> "HLV" .?ABC <http://example.org/types#hasOneDashRelation> ?valve .?valve__Dash___Mvm_ <http://example.org/types#hasName> "Mvm" .?valve <http://example.org/types#hasOnePeriodRelation> ?valve__Dash___Mvm_ .?valve__Dash___Mvm___Period___stVal_ <http://example.org/types#hasName> "stVal" .?valve__Dash___Mvm_ <http://example.org/types#hasOnePeriodRelation> ?valve__Dash___Mvm___Period___stVal_ .?valve__Dash___Mvm___Period___stVal_ <https://github.com/magbak/quarry-rs#hasTimeseries> ?valve__Dash___Mvm___Period___stVal__timeseries .?valve__Dash___Mvm___Period___stVal__timeseries <https://github.com/magbak/quarry-rs#hasTimeseries> ?valve__Dash___Mvm___Period___stVal__timeseries_datapoint .?valve__Dash___Mvm___Period___stVal__timeseries_datapoint <https://github.com/magbak/quarry-rs#hasValue> ?valve__Dash___Mvm___Period___stVal__timeseries_datapoint_value .?valve__Dash___Mvm___Period___stVal__timeseries <https://github.com/magbak/quarry-rs#hasTimestamp> ?timestamp .?ABC <http://example.org/types#hasName> ?ABC_name_on_path .?valve <http://example.org/types#hasName> ?valve_name_on_path .?valve__Dash___Mvm_ <http://example.org/types#hasName> ?valve__Dash___Mvm__name_on_path .?valve__Dash___Mvm___Period___stVal_ <http://example.org/types#hasName> ?valve__Dash___Mvm___Period___stVal__name_on_path .?valve_PosPct_ <http://example.org/types#hasName> "PosPct" .?valve <http://example.org/types#hasOnePeriodRelation> ?valve_PosPct_ .?valve_PosPct___Period___mag_ <http://example.org/types#hasName> "mag" .?valve_PosPct_ <http://example.org/types#hasOnePeriodRelation> ?valve_PosPct___Period___mag_ .?valve_PosPct___Period___mag_ <https://github.com/magbak/quarry-rs#hasTimeseries> ?valve_PosPct___Period___mag__timeseries .?valve_PosPct___Period___mag__timeseries <https://github.com/magbak/quarry-rs#hasTimeseries> ?valve_PosPct___Period___mag__timeseries_datapoint .?valve_PosPct___Period___mag__timeseries_datapoint <https://github.com/magbak/quarry-rs#hasValue> ?valve_PosPct___Period___mag__timeseries_datapoint_value .?valve_PosPct___Period___mag__timeseries <https://github.com/magbak/quarry-rs#hasTimestamp> ?timestamp .?valve <http://example.org/types#hasName> ?valve_name_on_path .?valve_PosPct_ <http://example.org/types#hasName> ?valve_PosPct__name_on_path .?valve_PosPct___Period___mag_ <http://example.org/types#hasName> ?valve_PosPct___Period___mag__name_on_path . FILTER((("2021-11-30T23:00:01+00:00"^^<http://www.w3.org/2001/XMLSchema#dateTime> >= ?timestamp) && ("2021-12-01T23:00:01+00:00"^^<http://www.w3.org/2001/XMLSchema#dateTime> <= ?timestamp))) BIND(CONCAT(?ABC_name_on_path, "-", ?valve_name_on_path, ".", ?valve__Dash___Mvm__name_on_path, ".", ?valve__Dash___Mvm___Period___stVal__name_on_path) AS ?valve__Dash___Mvm___Period___stVal__path_name) BIND(CONCAT(?valve_name_on_path, ".", ?valve_PosPct__name_on_path, ".", ?valve_PosPct___Period___mag__name_on_path) AS ?valve_PosPct___Period___mag__path_name) BIND(FLOOR(<https://github.com/magbak/quarry-rs#DateTimeAsNanos>(?timestamp) / "600000000000"^^<http://www.w3.org/2001/XMLSchema#unsignedLong>) AS ?timestamp_grouping) } GROUP BY ?valve__Dash___Mvm___Period___stVal__path_name ?valve_PosPct___Period___mag__path_name ?timestamp_grouping} BIND(<http://www.w3.org/2001/XMLSchema#dateTime>(?timestamp_grouping) AS ?timestamp) }"#.to_string();
+    assert_eq!(expected_query_str, actual_str);
 }

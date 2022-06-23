@@ -137,7 +137,7 @@ impl BooleanOperator {
 }
 
 #[derive(PartialEq, Debug)]
-pub enum Literal {
+pub enum LiteralData {
     Real(f64),
     Integer(i32),
     String(String),
@@ -145,23 +145,23 @@ pub enum Literal {
 }
 
 #[derive(PartialEq, Debug)]
-pub enum PathOrLiteral {
+pub enum PathOrLiteralData {
     Path(Path),
-    Literal(Literal),
+    Literal(LiteralData),
 }
 
 #[derive(PartialEq, Debug)]
 pub struct ConditionedPath {
     pub(crate) lhs_path: Path,
     pub(crate) boolean_operator: Option<BooleanOperator>,
-    pub(crate) rhs_path_or_literal: Option<PathOrLiteral>,
+    pub(crate) rhs_path_or_literal: Option<PathOrLiteralData>,
 }
 
 impl ConditionedPath {
     pub fn new(
         lhs_path: Path,
         boolean_operator: BooleanOperator,
-        rhs_path_or_literal: PathOrLiteral,
+        rhs_path_or_literal: PathOrLiteralData,
     ) -> ConditionedPath {
         ConditionedPath {
             lhs_path,
@@ -198,13 +198,13 @@ pub enum ElementConstraint {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct GraphPattern {
+pub struct GraphPathPattern {
     pub(crate) conditioned_paths: Vec<ConditionedPath>,
 }
 
-impl GraphPattern {
-    pub fn new(conditioned_paths: Vec<ConditionedPath>) -> GraphPattern {
-        GraphPattern { conditioned_paths }
+impl GraphPathPattern {
+    pub fn new(conditioned_paths: Vec<ConditionedPath>) -> GraphPathPattern {
+        GraphPathPattern { conditioned_paths }
     }
 }
 
@@ -225,7 +225,7 @@ impl Aggregation {
 
 #[derive(PartialEq, Debug)]
 pub struct TsQuery {
-    pub(crate) graph_pattern: GraphPattern,
+    pub(crate) graph_pattern: GraphPathPattern,
     pub(crate) group: Option<Group>,
     pub(crate) from_datetime: Option<DateTime<Utc>>,
     pub(crate) to_datetime: Option<DateTime<Utc>>,
@@ -234,7 +234,7 @@ pub struct TsQuery {
 
 impl TsQuery {
     pub fn new(
-        graph_pattern: GraphPattern,
+        graph_pattern: GraphPathPattern,
         group: Option<Group>,
         from_datetime: Option<DateTime<Utc>>,
         to_datetime: Option<DateTime<Utc>>,

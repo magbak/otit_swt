@@ -1,6 +1,6 @@
 use chrono::{DateTime};
 use dsl::ast::ElementConstraint::{Name};
-use dsl::ast::{Aggregation, BooleanOperator, ConditionedPath, Connective, ConnectiveType, ElementConstraint, Glue, GraphPattern, Group, Literal, Path, PathElement, PathElementOrConnective, PathOrLiteral, TsQuery};
+use dsl::ast::{Aggregation, BooleanOperator, ConditionedPath, Connective, ConnectiveType, ElementConstraint, Glue, GraphPathPattern, Group, LiteralData, Path, PathElement, PathElementOrConnective, PathOrLiteralData, TsQuery};
 use dsl::parser::ts_query;
 use std::str::FromStr;
 use std::time::Duration;
@@ -17,7 +17,7 @@ fn test_basic_multiline_query() {
 "#;
     let (_, actual) = ts_query(q).expect("No problemo");
     let expected = TsQuery::new(
-        GraphPattern::new(vec![
+        GraphPathPattern::new(vec![
             ConditionedPath::from_path(
                 Path::from_vec(vec![
                     PathElementOrConnective::PathElement(PathElement::new(
@@ -80,7 +80,7 @@ fn test_conditioned_multiline_query() {
 "#;
     let (_, actual) = ts_query(q).expect("No problemo");
     let expected = TsQuery::new(
-        GraphPattern::new(vec![
+        GraphPathPattern::new(vec![
             ConditionedPath::new(
                 Path::from_vec(vec![
                     PathElementOrConnective::PathElement(PathElement::new(
@@ -104,7 +104,7 @@ fn test_conditioned_multiline_query() {
                     )),
                 ]),
                 BooleanOperator::EQ,
-                PathOrLiteral::Literal(Literal::Boolean(true)),
+                PathOrLiteralData::Literal(LiteralData::Boolean(true)),
             ),
             ConditionedPath::new(
                 Path::from_vec(vec![
@@ -124,7 +124,7 @@ fn test_conditioned_multiline_query() {
                     )),
                 ]),
                 BooleanOperator::GT,
-                PathOrLiteral::Literal(Literal::Real(0.7)),
+                PathOrLiteralData::Literal(LiteralData::Real(0.7)),
             ),
         ]),
         Some(Group::new(vec!["valve"])),

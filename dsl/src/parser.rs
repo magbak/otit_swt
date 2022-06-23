@@ -1,6 +1,6 @@
 extern crate nom;
 
-use crate::ast::{Aggregation, ArrowType, BooleanOperator, ConditionedPath, Connective, ConnectiveType, DataType, ElementConstraint, Glue, GraphPattern, Group, InputOutput, Literal, Path, PathElement, PathElementOrConnective, PathOrLiteral, TsApi, TsQuery, TypedLabel};
+use crate::ast::{Aggregation, ArrowType, BooleanOperator, ConditionedPath, Connective, ConnectiveType, DataType, ElementConstraint, Glue, GraphPathPattern, Group, InputOutput, LiteralData, Path, PathElement, PathElementOrConnective, PathOrLiteralData, TsApi, TsQuery, TypedLabel};
 use chrono::{DateTime, Utc};
 use dateparser::DateTimeUtc;
 use nom::branch::alt;
@@ -105,40 +105,40 @@ fn questionable_path(p: &str) -> IResult<&str, Path> {
     Ok((p,pa))
 }
 
-fn numeric_literal(l: &str) -> IResult<&str, Literal> {
+fn numeric_literal(l: &str) -> IResult<&str, LiteralData> {
     let (l, (num1, opt_num2)) = pair(digit1, opt(pair(tag("."), digit1)))(l)?;
     match opt_num2 {
         Some((dot, num2)) => Ok((
             l,
-            Literal::Real(
+            LiteralData::Real(
                 f64::from_str(&(num1.to_owned() + dot + num2)).expect("Failed to parse float64"),
             ),
         )),
         None => Ok((
             l,
-            Literal::Integer(i32::from_str(num1).expect("Failed to parse int32")),
+            LiteralData::Integer(i32::from_str(num1).expect("Failed to parse int32")),
         )),
     }
 }
 
-fn string_literal(s: &str) -> IResult<&str, Literal> {
+fn string_literal(s: &str) -> IResult<&str, LiteralData> {
     let (s, lit) = delimited(tag("\""), not_line_ending, tag("\""))(s)?;
-    Ok((s, Literal::String(lit.to_string())))
+    Ok((s, LiteralData::String(lit.to_string())))
 }
 
-fn boolean_literal(b: &str) -> IResult<&str, Literal> {
+fn boolean_literal(b: &str) -> IResult<&str, LiteralData> {
     let (b, lit) = alt((tag("true"), tag("false")))(b)?;
     let boolean = if lit == "true" { true } else { false };
-    Ok((b, Literal::Boolean(boolean)))
+    Ok((b, LiteralData::Boolean(boolean)))
 }
 
-fn literal(l: &str) -> IResult<&str, Literal> {
+fn literal(l: &str) -> IResult<&str, LiteralData> {
     alt((numeric_literal, string_literal, boolean_literal))(l)
 }
 
-fn literal_as_path_or_literal(l: &str) -> IResult<&str, PathOrLiteral> {
+fn literal_as_path_or_literal(l: &str) -> IResult<&str, PathOrLiteralData> {
     let (l, lit) = literal(l)?;
-    Ok((l, PathOrLiteral::Literal(lit)))
+    Ok((l, PathOrLiteralData::Literal(lit)))
 }
 
 fn boolean_operator(o: &str) -> IResult<&str, BooleanOperator> {
@@ -154,12 +154,12 @@ fn boolean_operator(o: &str) -> IResult<&str, BooleanOperator> {
     Ok((o, BooleanOperator::new(opstr)))
 }
 
-fn path_as_path_or_literal(p: &str) -> IResult<&str, PathOrLiteral> {
+fn path_as_path_or_literal(p: &str) -> IResult<&str, PathOrLiteralData> {
     let (p, path) = path(p)?;
-    Ok((p, PathOrLiteral::Path(path)))
+    Ok((p, PathOrLiteralData::Path(path)))
 }
 
-fn path_or_literal(pl: &str) -> IResult<&str, PathOrLiteral> {
+fn path_or_literal(pl: &str) -> IResult<&str, PathOrLiteralData> {
     alt((path_as_path_or_literal, literal_as_path_or_literal))(pl)
 }
 
@@ -174,7 +174,7 @@ fn path_as_conditioned(p: &str) -> IResult<&str, ConditionedPath> {
     Ok((p, ConditionedPath::from_path(pa)))
 }
 
-fn graph_pattern(g: &str) -> IResult<&str, GraphPattern> {
+fn graph_pattern(g: &str) -> IResult<&str, GraphPathPattern> {
     let (g, cp) = many1(tuple((
         many0(newline),
         space0,
@@ -183,7 +183,7 @@ fn graph_pattern(g: &str) -> IResult<&str, GraphPattern> {
     )))(g)?;
     Ok((
         g,
-        GraphPattern::new(cp.into_iter().map(|(_, _, c, _)| c).collect()),
+        GraphPathPattern::new(cp.into_iter().map(|(_, _, c, _)| c).collect()),
     ))
 }
 
@@ -346,7 +346,7 @@ fn test_parse_conditioned_path_literal() {
             ConditionedPath::new(
                 lhs,
                 BooleanOperator::GT,
-                PathOrLiteral::Literal(Literal::Integer(25))
+                PathOrLiteralData::Literal(LiteralData::Integer(25))
             )
         ))
     );
@@ -386,7 +386,7 @@ fn test_parse_conditioned_path_other_path() {
         conditioned_path("Abc.cda > acadadad-bca"),
         Ok((
             "",
-            ConditionedPath::new(lhs, BooleanOperator::GT, PathOrLiteral::Path(rhs))
+            ConditionedPath::new(lhs, BooleanOperator::GT, PathOrLiteralData::Path(rhs))
         ))
     );
 }

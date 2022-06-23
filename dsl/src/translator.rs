@@ -1,17 +1,18 @@
 use crate::ast::{
-    BooleanOperator, Connective, ElementConstraint, GraphPattern, Literal, PathElement,
-    PathElementOrConnective, PathOrLiteral, TsQuery,
+    BooleanOperator, Connective, ElementConstraint, GraphPathPattern, LiteralData,
+    PathElement, PathElementOrConnective, PathOrLiteralData, TsQuery,
 };
 use crate::connective_mapping::ConnectiveMapping;
 use crate::costants::{
-    HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, LIKE_FUNCTION, REPLACE_STR_LITERAL,
-    REPLACE_VARIABLE_NAME, TIMESTAMP_VARIABLE_NAME, XSD_DATETIME_FORMAT,
+    DATETIME_AS_NANOS, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, LIKE_FUNCTION,
+    REPLACE_STR_LITERAL, REPLACE_VARIABLE_NAME, TIMESTAMP_VARIABLE_NAME, XSD_DATETIME_FORMAT,
 };
 use oxrdf::vocab::xsd;
 use oxrdf::{NamedNode, Variable};
-use spargebra::algebra::GraphPattern::LeftJoin;
-use spargebra::algebra::{Expression, Function, GraphPattern as SpargebraGraphPattern};
-use spargebra::term::Literal as SpargebraLiteral;
+use spargebra::algebra::{
+    AggregateExpression, Expression, Function, GraphPattern
+};
+use spargebra::term::Literal;
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
 use std::collections::{HashMap, HashSet};
@@ -47,7 +48,7 @@ pub struct Translator {
 
 enum VariableOrLiteral {
     Variable(Variable),
-    Literal(SpargebraLiteral),
+    Literal(Literal),
 }
 
 enum TemplateType {
@@ -78,8 +79,8 @@ impl Translator {
             has_outgoing: Default::default(),
             is_lhs_terminal: Default::default(),
             connective_mapping,
-            group_by:vec![],
-            glue_variables: vec![]
+            group_by: vec![],
+            glue_variables: vec![],
         }
     }
 
@@ -88,7 +89,7 @@ impl Translator {
             self.group_by.extend(group.var_names.iter().cloned());
         }
         self.translate_graph_pattern(&ts_query.graph_pattern);
-        let mut inner_gp = SpargebraGraphPattern::Bgp {
+        let mut inner_gp = GraphPattern::Bgp {
             patterns: self.triples.drain(0..self.triples.len()).collect(),
         };
         let optional_triples_drain = self.optional_triples.drain(0..self.optional_triples.len());
@@ -108,33 +109,37 @@ impl Translator {
                 optional_conditions_drain,
             ),
         ) {
-            let mut optional_gp = SpargebraGraphPattern::Bgp {
+            let mut optional_gp = GraphPattern::Bgp {
                 patterns: optional_pattern,
             };
 
             if let Some(condition) = conditions_opt {
-                optional_gp = SpargebraGraphPattern::Filter {
+                optional_gp = GraphPattern::Filter {
                     expr: condition,
                     inner: Box::new(optional_gp),
                 }
             }
 
-            if let Some(variable_path_expression) =
-                path_name_expression_opt
-            {
-                if !self.has_outgoing.contains(&variable_path_expression.variable) {
-                    optional_gp = SpargebraGraphPattern::Extend {
+            if let Some(variable_path_expression) = path_name_expression_opt {
+                if !self
+                    .has_outgoing
+                    .contains(&variable_path_expression.variable)
+                {
+                    optional_gp = GraphPattern::Extend {
                         inner: Box::new(optional_gp),
                         variable: variable_path_expression.path_variable.clone(),
                         expression: variable_path_expression.path_to_variable_expression.clone(),
                     };
                     project_paths.push(variable_path_expression.path_variable.clone());
-                    let value_var = self.variable_has_value.get(&variable_path_expression.variable).expect("Optional variable path has value");
+                    let value_var = self
+                        .variable_has_value
+                        .get(&variable_path_expression.variable)
+                        .expect("Optional variable path has value");
                     project_values.push(value_var.clone());
                 }
             }
 
-            inner_gp = LeftJoin {
+            inner_gp = GraphPattern::LeftJoin {
                 left: Box::new(inner_gp),
                 right: Box::new(optional_gp),
                 expression: None,
@@ -144,7 +149,7 @@ impl Translator {
         let mut timestamp_conditions = vec![];
         if let Some(from_ts) = ts_query.from_datetime {
             let gteq = Expression::GreaterOrEqual(
-                Box::new(Expression::Literal(SpargebraLiteral::new_typed_literal(
+                Box::new(Expression::Literal(Literal::new_typed_literal(
                     format!("{}", from_ts.format(XSD_DATETIME_FORMAT)),
                     xsd::DATE_TIME,
                 ))),
@@ -157,7 +162,7 @@ impl Translator {
 
         if let Some(to_ts) = ts_query.to_datetime {
             let gteq = Expression::LessOrEqual(
-                Box::new(Expression::Literal(SpargebraLiteral::new_typed_literal(
+                Box::new(Expression::Literal(Literal::new_typed_literal(
                     format!("{}", to_ts.format(XSD_DATETIME_FORMAT)),
                     xsd::DATE_TIME,
                 ))),
@@ -174,7 +179,7 @@ impl Translator {
             for c in self.conditions.drain(0..self.conditions.len()) {
                 conjuction = Expression::And(Box::new(conjuction), Box::new(c));
             }
-            inner_gp = SpargebraGraphPattern::Filter {
+            inner_gp = GraphPattern::Filter {
                 expr: conjuction,
                 inner: Box::new(inner_gp),
             };
@@ -185,30 +190,131 @@ impl Translator {
             .drain(0..self.path_name_expressions.len())
         {
             println!("{:?}", variable_path_expression);
-            if !self.has_outgoing.contains(&variable_path_expression.variable) {
-                inner_gp = SpargebraGraphPattern::Extend {
+            if !self
+                .has_outgoing
+                .contains(&variable_path_expression.variable)
+            {
+                inner_gp = GraphPattern::Extend {
                     inner: Box::new(inner_gp),
                     variable: variable_path_expression.path_variable.clone(),
                     expression: variable_path_expression.path_to_variable_expression.clone(),
                 };
                 project_paths.push(variable_path_expression.path_variable.clone());
-                let value_variable = self.variable_has_value.get(&variable_path_expression.variable).expect("Value variable associated with path");
+                let value_variable = self
+                    .variable_has_value
+                    .get(&variable_path_expression.variable)
+                    .expect("Value variable associated with path");
                 project_values.push(value_variable.clone());
             }
         }
 
-        if let Some(group) = &ts_query.group {
-            //let mut by = vec![];
-            for var_name in &group.var_names {
-                let var = self.glue_variables.iter().find(|var|var.as_str() == var_name).unwrap();
+        if let Some(aggregation) = &ts_query.aggregation {
+            let timestamp_variable_expression =
+                Expression::Variable(Variable::new_unchecked(TIMESTAMP_VARIABLE_NAME));
+            //TODO: Is this safe?
+            let duration_nanoseconds = aggregation.duration.as_nanos() as u64;
 
+            let grouping_col_expression = Expression::FunctionCall(
+                Function::Floor,
+                vec![Expression::Divide(
+                    Box::new(Expression::FunctionCall(
+                        Function::Custom(NamedNode::new_unchecked(DATETIME_AS_NANOS)),
+                        vec![timestamp_variable_expression.clone()],
+                    )),
+                    Box::new(Expression::Literal(Literal::new_typed_literal(
+                        duration_nanoseconds.to_string(),
+                        xsd::UNSIGNED_LONG,
+                    ))),
+                )],
+            );
+            //TODO: Performance - use less precision when grouping is coarse grained
+            let timestamp_grouping_variable =
+                Variable::new_unchecked(format!("{}_grouping", TIMESTAMP_VARIABLE_NAME));
+            inner_gp = GraphPattern::Extend {
+                inner: Box::new(inner_gp),
+                variable: timestamp_grouping_variable.clone(),
+                expression: grouping_col_expression,
+            };
+            let mut grouping_cols = project_paths.clone();
+            grouping_cols.push(timestamp_grouping_variable.clone());
+
+            let mut aggregates = vec![];
+            for val_col in &project_values {
+                let agg_expr = match aggregation.function_name.as_str() {
+                    "mean" | "avg" => AggregateExpression::Avg {
+                        expr: Box::new(Expression::Variable(val_col.clone())),
+                        distinct: false,
+                    },
+                    "max" | "maximum" => AggregateExpression::Max {
+                        expr: Box::new(Expression::Variable(val_col.clone())),
+                        distinct: false,
+                    },
+                    "min" | "minimum" => AggregateExpression::Min {
+                        expr: Box::new(Expression::Variable(val_col.clone())),
+                        distinct: false,
+                    },
+                    "sum" => AggregateExpression::Sum {
+                        expr: Box::new(Expression::Variable(val_col.clone())),
+                        distinct: false,
+                    },
+                    "sample" => AggregateExpression::Sample {
+                        expr: Box::new(Expression::Variable(val_col.clone())),
+                        distinct: false,
+                    },
+                    "count" => AggregateExpression::Count {
+                        expr: Some(Box::new(Expression::Variable(val_col.clone()))),
+                        distinct: false,
+                    },
+                    _ => {panic!("Not found!!!")}
+                };
+                aggregates.push((val_col.clone(), agg_expr));
             }
+
+            inner_gp = GraphPattern::Group {
+                inner: Box::new(inner_gp),
+                variables: grouping_cols,
+                aggregates,
+            };
+            inner_gp = GraphPattern::Extend {
+                inner: Box::new(inner_gp),
+                variable: Variable::new_unchecked(TIMESTAMP_VARIABLE_NAME),
+                expression: Expression::FunctionCall(Function::Custom(NamedNode::from(xsd::DATE_TIME)), vec![Expression::Variable(timestamp_grouping_variable)])
+            }
+
         }
-        println!("Project paths: {:?}", project_paths);
-        println!("Project values: {:?}", project_values);
+
         let mut all_projections = project_paths;
+        let has_value = !project_values.is_empty();
         all_projections.append(&mut project_values);
-        let project = SpargebraGraphPattern::Project {
+        if has_value {
+            all_projections.push(Variable::new_unchecked(TIMESTAMP_VARIABLE_NAME));
+        }
+
+        if let Some(group) = &ts_query.group {
+            for var_name in &group.var_names {
+                let var = self
+                    .glue_variables
+                    .iter()
+                    .find(|var| var.as_str() == var_name)
+                    .unwrap();
+                for vp in &self.group_path_name_expressions {
+                    if &vp.variable == var {
+                        inner_gp = GraphPattern::Extend {
+                            inner: Box::new(inner_gp),
+                            variable: vp.path_variable.clone(),
+                            expression: vp.path_to_variable_expression.clone(),
+                        };
+                    }
+                }
+            }
+            inner_gp = GraphPattern::Group {
+                inner: Box::new(Default::default()),
+                variables: vec![],
+                aggregates: vec![],
+            };
+        }
+
+        let project = GraphPattern::Project {
             inner: Box::new(inner_gp),
             variables: all_projections,
         };
@@ -219,7 +325,7 @@ impl Translator {
             base_iri: None,
         }
     }
-    fn translate_graph_pattern(&mut self, gp: &GraphPattern) {
+    fn translate_graph_pattern(&mut self, gp: &GraphPathPattern) {
         let mut optional_counter = 0;
         for cp in &gp.conditioned_paths {
             println!("cp: {:?}", cp);
@@ -403,7 +509,7 @@ impl Translator {
             path_identifier.clear();
             path_identifier.push(path_element.glue.as_ref().unwrap().id.clone());
 
-            if let Some(glue_var) = self.glue_variables.iter().find(|x|x.as_str() == &glue.id) {
+            if let Some(glue_var) = self.glue_variables.iter().find(|x| x.as_str() == &glue.id) {
                 variable = glue_var.clone();
             } else {
                 variable = self.create_and_add_variable(&path_identifier.join(""));
@@ -503,10 +609,10 @@ impl Translator {
         &mut self,
         path_identifier: &mut Vec<String>,
         optional_index: Option<usize>,
-        path_or_literal: &PathOrLiteral,
+        path_or_literal: &PathOrLiteralData,
     ) -> VariableOrLiteral {
         match path_or_literal {
-            PathOrLiteral::Path(p) => {
+            PathOrLiteralData::Path(p) => {
                 assert!(!p.optional);
                 //optional from lhs of condition always dominates, we do not expect p.optional to be set.
                 let mut translated_path = vec![];
@@ -518,19 +624,19 @@ impl Translator {
                 );
                 VariableOrLiteral::Variable(translated_path.last().unwrap().clone())
             }
-            PathOrLiteral::Literal(l) => {
+            PathOrLiteralData::Literal(l) => {
                 let literal = match l {
-                    Literal::Real(r) => {
-                        SpargebraLiteral::new_typed_literal(r.to_string(), xsd::DOUBLE)
+                    LiteralData::Real(r) => {
+                        Literal::new_typed_literal(r.to_string(), xsd::DOUBLE)
                     }
-                    Literal::Integer(i) => {
-                        SpargebraLiteral::new_typed_literal(i.to_string(), xsd::INTEGER)
+                    LiteralData::Integer(i) => {
+                        Literal::new_typed_literal(i.to_string(), xsd::INTEGER)
                     }
-                    Literal::String(s) => {
-                        SpargebraLiteral::new_typed_literal(s.to_string(), xsd::STRING)
+                    LiteralData::String(s) => {
+                        Literal::new_typed_literal(s.to_string(), xsd::STRING)
                     }
-                    Literal::Boolean(b) => {
-                        SpargebraLiteral::new_typed_literal(b.to_string(), xsd::BOOLEAN)
+                    LiteralData::Boolean(b) => {
+                        Literal::new_typed_literal(b.to_string(), xsd::BOOLEAN)
                     }
                 };
                 VariableOrLiteral::Literal(literal)
@@ -597,7 +703,7 @@ impl Translator {
                 if lit.datatype() == xsd::STRING && lit.value() == REPLACE_STR_LITERAL {
                     if let Some(replace_str) = replace_str {
                         object_term_pattern = TermPattern::Literal(
-                            SpargebraLiteral::new_typed_literal(replace_str, xsd::STRING),
+                            Literal::new_typed_literal(replace_str, xsd::STRING),
                         );
                     } else if let Some(replace_str_variable) = replace_str_variable {
                         object_term_pattern = TermPattern::Variable(replace_str_variable.clone())
@@ -650,7 +756,7 @@ impl Translator {
             let mut args_vec = vec![];
             for (vp, cc) in variable_names_path.iter().zip(connectives_path) {
                 args_vec.push(Expression::Variable(vp.clone()));
-                args_vec.push(Expression::Literal(SpargebraLiteral::new_typed_literal(
+                args_vec.push(Expression::Literal(Literal::new_typed_literal(
                     cc.clone(),
                     xsd::STRING,
                 )));
