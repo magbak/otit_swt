@@ -8,7 +8,8 @@ use crate::sparql_result_to_polars::{
 use crate::timeseries_query::TimeSeriesQuery;
 use log::debug;
 use oxrdf::vocab::xsd;
-use oxrdf::{NamedNodeRef, Variable};
+use oxrdf::Term::NamedNode;
+use oxrdf::{NamedNode, NamedNodeRef, Variable};
 use polars::datatypes::DataType;
 use polars::frame::DataFrame;
 use polars::prelude::DataType::Utf8;
@@ -1313,7 +1314,10 @@ impl Combiner {
                                 assert_eq!(args.len(), 1);
                                 let first_context = args_contexts.get(0).unwrap();
                                 inner_lf = inner_lf.with_column(
-                                    col(&first_context.as_str()).dt().nanosecond().alias(context.as_str())
+                                    col(&first_context.as_str())
+                                        .dt()
+                                        .nanosecond()
+                                        .alias(context.as_str()),
                                 );
                             }
                             _ => {
@@ -1497,10 +1501,29 @@ pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
 
             out_expr = col(column_context.as_ref().unwrap().as_str()).first();
         }
-        AggregateExpression::Custom { .. } => {
-            out_lf = todo!();
-            out_expr = todo!();
-            column_context = todo!();
+        AggregateExpression::Custom {
+            name,
+            expr,
+            distinct,
+        } => {
+            let iri = name.as_str();
+            match iri {
+                NEST => {
+                    column_context = Some(context.extension_with(PathEntry::AggregationOperation));
+
+                    out_lf = Combiner::lazy_expression(
+                        expr,
+                        lf,
+                        columns,
+                        time_series,
+                        column_context.as_ref().unwrap(),
+                    );
+                    out_expr = col(column_context.as_ref().unwrap().as_str()).list();
+                }
+                _ => {
+                    panic!("Custom aggregation not supported")
+                }
+            }
         }
     }
     out_expr = out_expr.alias(variable.as_str());
