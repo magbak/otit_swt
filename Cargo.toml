@@ -2,5 +2,7 @@
 
 members=[
     "dsl",
-    "hybrid"
+    "hybrid",
+    "mapper",
+    "integration"
 ]

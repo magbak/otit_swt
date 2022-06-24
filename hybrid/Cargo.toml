@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-polars = {version="0.21.1", features=["lazy", "concat_str", "random", "unique_counts", "list", "dtype-datetime", "abs", "round_series", "is_in", "cum_agg"] }
+polars = {version="0.22.8", features=["lazy", "concat_str", "random", "unique_counts", "list", "dtype-datetime", "abs", "round_series", "is_in", "cum_agg"] }
 arrow-flight="9.1.0"
 tokio = {version="1.18.2", features=["rt-multi-thread"]}
 log="0.4.14"

@@ -383,7 +383,7 @@ impl Translator {
                     .find(|var| var.as_str() == var_name)
                     .unwrap();
 
-                let mut found = false;
+                //These are the groupings that are NOT terminal, and so not projected by default
                 for vp in &self.group_path_name_expressions {
                     if &vp.variable == var {
                         inner_gp = GraphPattern::Extend {
@@ -391,14 +391,10 @@ impl Translator {
                             variable: vp.path_variable.clone(),
                             expression: vp.path_to_variable_expression.clone(),
                         };
-                        found = true;
                         new_projections.push(vp.path_variable.clone());
-                        group_by.push(vp.path_variable.clone());
                     }
                 }
-                if !found {
-                    group_by.push(self.variable_has_path_name.get(var).unwrap().clone());
-                }
+                group_by.push(self.variable_has_path_name.get(var).unwrap().clone());
 
                 //Assuming that only one object may have a timeseries
                 for vp in self.path_name_expressions.iter().chain(
@@ -409,8 +405,10 @@ impl Translator {
                 ) {
                     if &vp.variable == var {
                         grouping_paths.insert(&vp.path_variable);
-                        project_paths.retain(|v| v != &vp.path_variable);
-                        project_paths.insert(grouping_paths.len() - 1, vp.path_variable.clone());
+                        if project_paths.contains(&vp.path_variable) {
+                            project_paths.retain(|v| v != &vp.path_variable);
+                            project_paths.insert(grouping_paths.len() - 1, vp.path_variable.clone());
+                        }
 
                         if let Some(value) = self.variable_has_value.get(var) {
                             grouping_values.insert(value);

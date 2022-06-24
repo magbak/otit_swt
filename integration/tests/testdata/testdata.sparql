@@ -1,0 +1,14 @@
+PREFIX case: <http://example.org/case#>
+PREFIX types: <http://example.org/types#>
+PREFIX quarry: <https://github.com/magbak/quarry-rs#>
+INSERT DATA {
+    case:myWidget1 types:hasSensor case:mySensor1 .
+    case:myWidget1 types:hasSomething case:mySomething1 .
+    case:myWidget2 types:hasSensor case:mySensor2 .
+    case:myWidget1 a types:BigWidget .
+    case:myWidget2 a types:SmallWidget .
+    case:mySensor1 quarry:hasTimeseries case:myTimeseries1 .
+    case:mySensor2 quarry:hasTimeseries case:myTimeseries2 .
+    case:myTimeseries1 quarry:hasExternalId "ts1" .
+    case:myTimeseries2 quarry:hasExternalId "ts2" .
+}
