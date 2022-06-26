@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 nom="7.1.1"
 oxrdf = "0.1.0"
-polars = {version="0.22.8", features=["lazy", "concat_str", "random", "unique_counts", "list", "dtype-datetime", "abs", "round_series", "is_in", "cum_agg"] }
+polars = {version="0.22.8", features=["lazy", "concat_str"] }
