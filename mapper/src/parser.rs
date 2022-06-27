@@ -10,7 +10,7 @@ use nom::bytes::complete::{escaped, is_not, tag};
 use nom::character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, one_of};
 use nom::combinator::{opt, peek};
 use nom::multi::{count, many0, many1, separated_list0, separated_list1};
-use nom::sequence::{pair, tuple};
+use nom::sequence::{tuple};
 use nom::{Finish, IResult};
 use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, NamedNode};
@@ -650,11 +650,6 @@ fn pname_ln(p: &str) -> IResult<&str, PrefixedName> {
     Ok((p, PrefixedName { prefix, name }))
 }
 
-fn pn_chars_base_as_string(p: &str) -> IResult<&str, String> {
-    let (p, chrs) = pn_chars_base(p)?;
-    Ok((p, chrs.to_string()))
-}
-
 //Incomplete from specification
 fn pn_chars_base(p: &str) -> IResult<&str, char> {
     let range_a = chars!('A'..'Z').iter();
@@ -791,29 +786,9 @@ fn one_hex(h: &str) -> IResult<&str, String> {
     Ok((h, hex.to_string()))
 }
 
-fn comma(c: &str) -> IResult<&str, String> {
-    let (c, comma) = tag(",")(c)?;
-    Ok((c, comma.to_string()))
-}
-
 fn colon_as_string(c: &str) -> IResult<&str, String> {
     let (c, colon) = tag(":")(c)?;
     Ok((c, colon.to_string()))
-}
-
-fn period_as_string(c: &str) -> IResult<&str, String> {
-    let (c, period) = tag(".")(c)?;
-    Ok((c, period.to_string()))
-}
-
-fn underscore(c: &str) -> IResult<&str, String> {
-    let (c, underscore) = tag("_")(c)?;
-    Ok((c, underscore.to_string()))
-}
-
-fn dash(c: &str) -> IResult<&str, String> {
-    let (c, dash) = tag("-")(c)?;
-    Ok((c, dash.to_string()))
 }
 
 #[test]
@@ -821,7 +796,7 @@ fn test_iri_ref() {
     let s = "<http://example.org#>";
     let (r, nn) = iri_ref(s).finish().expect("Ok");
     assert_eq!(nn, NamedNode::new_unchecked("http://example.org#"));
-    println!("{:?}", nn);
+    assert_eq!(r, "");
 }
 
 #[test]
@@ -847,7 +822,7 @@ fn test_prefixed_name() {
 #[test]
 fn test_argument_bad_escape_behavior() {
     let s = "foaf:Person,";
-    let (r, i) = argument(s).finish().expect("Ok");
+    let (r, _) = argument(s).finish().expect("Ok");
     assert_eq!(r, ",");
 }
 
