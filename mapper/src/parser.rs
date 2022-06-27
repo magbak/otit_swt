@@ -1,13 +1,17 @@
 extern crate nom;
 
-use crate::ast::{Annotation, Argument, BaseTemplate, ConstantLiteral, ConstantTerm, DefaultValue, Directive, Instance, ListExpanderType, PType, Parameter, Prefix, PrefixedName, ResolvesToNamedNode, Signature, Statement, StottrDocument, StottrTerm, StottrVariable, Template, StottrLiteral};
+use crate::ast::{
+    Annotation, Argument, BaseTemplate, ConstantLiteral, ConstantTerm, DefaultValue, Directive,
+    Instance, ListExpanderType, PType, Parameter, Prefix, PrefixedName, ResolvesToNamedNode,
+    Signature, Statement, StottrDocument, StottrLiteral, StottrTerm, StottrVariable, Template,
+};
 use nom::branch::alt;
 use nom::bytes::complete::{escaped, is_not, tag};
-use nom::character::complete::{alpha1, alphanumeric0, alphanumeric1, one_of};
-use nom::combinator::opt;
-use nom::multi::{count, many0, separated_list0, separated_list1};
+use nom::character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, one_of};
+use nom::combinator::{opt, peek};
+use nom::multi::{count, many0, many1, separated_list0, separated_list1};
 use nom::sequence::{pair, tuple};
-use nom::IResult;
+use nom::{Finish, IResult};
 use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, NamedNode};
 
@@ -16,17 +20,31 @@ enum DirectiveStatement {
     Statement(Statement),
 }
 
-fn stottr_doc(s: &str) -> IResult<&str, StottrDocument>{
-    let (s, parts) = many0(alt((directive_as_union, statement_as_union)))(s)?;
+pub fn stottr_doc(s: &str) -> IResult<&str, StottrDocument> {
+    let (s, parts) = many0(tuple((
+        multispace0,
+        alt((directive_as_union, statement_as_union)),
+        multispace0,
+    )))(s)?;
     let mut directives = vec![];
     let mut statements = vec![];
-    for p in parts {
+    for (_, p, _) in parts {
         match p {
-            DirectiveStatement::Directive(d) => {directives.push(d);}
-            DirectiveStatement::Statement(s) => {statements.push(s);}
+            DirectiveStatement::Directive(d) => {
+                directives.push(d);
+            }
+            DirectiveStatement::Statement(s) => {
+                statements.push(s);
+            }
         }
     }
-    Ok((s, StottrDocument {directives, statements}))
+    Ok((
+        s,
+        StottrDocument {
+            directives,
+            statements,
+        },
+    ))
 }
 
 fn statement_as_union(s: &str) -> IResult<&str, DirectiveStatement> {
@@ -35,12 +53,12 @@ fn statement_as_union(s: &str) -> IResult<&str, DirectiveStatement> {
 }
 
 fn statement(s: &str) -> IResult<&str, Statement> {
-    let (s, statement) = alt((
-        signature_as_statement,
+    let (s, (statement, _,_)) = tuple((alt((
         template_as_statement,
-        base_template_as_statement,
         instance_as_statement,
-    ))(s)?;
+        signature_as_statement,
+        base_template_as_statement,
+    )), multispace0, tag(".")))(s)?;
     Ok((s, statement))
 }
 
@@ -50,11 +68,15 @@ fn signature_as_statement(s: &str) -> IResult<&str, Statement> {
 }
 
 fn signature(s: &str) -> IResult<&str, Signature> {
-    let (s, (template_name, _, parameter_list, _, annotation_list)) = tuple((
+    let (s, (template_name, _, _, _, parameter_list, _, _, _, annotation_list)) = tuple((
         template_name,
+        multispace0,
         tag("["),
+        multispace0,
         separated_list1(tag(","), parameter),
+        multispace0,
         tag("]"),
+        multispace0,
         opt(annotation_list),
     ))(s)?;
     Ok((
@@ -73,7 +95,7 @@ fn annotation_list(a: &str) -> IResult<&str, Vec<Annotation>> {
 }
 
 fn annotation(a: &str) -> IResult<&str, Annotation> {
-    let (a, (_, instance)) = tuple((tag("@@"), instance))(a)?;
+    let (a, (_, _, instance, _)) = tuple((multispace0, tag("@@"), instance, multispace0))(a)?;
     Ok((a, Annotation { instance }))
 }
 
@@ -83,7 +105,8 @@ fn template_as_statement(t: &str) -> IResult<&str, Statement> {
 }
 
 fn template(t: &str) -> IResult<&str, Template> {
-    let (t, (signature, _, pattern_list)) = tuple((signature, tag("::"), pattern_list))(t)?;
+    let (t, (signature, _, _, _, pattern_list)) =
+        tuple((signature, multispace0, tag("::"), multispace0, pattern_list))(t)?;
     Ok((
         t,
         Template {
@@ -104,7 +127,8 @@ fn base_template_as_statement(b: &str) -> IResult<&str, Statement> {
 }
 
 fn base_template(b: &str) -> IResult<&str, BaseTemplate> {
-    let (b, (signature, _, _)) = tuple((signature, tag("::"), tag("BASE")))(b)?;
+    let (b, (signature, _, _, _, _)) =
+        tuple((signature, multispace0, tag("::"), multispace0, tag("BASE")))(b)?;
     Ok((b, BaseTemplate { signature }))
 }
 
@@ -114,22 +138,26 @@ fn instance_as_statement(i: &str) -> IResult<&str, Statement> {
 }
 
 fn instance(i: &str) -> IResult<&str, Instance> {
-    let (i, (expander, template_name, argument_list)) = tuple(
-        (opt(tuple((
-            list_expander,
-            tag("/")))),
-            template_name,
-            argument_list,
-        ))(i)?;
+    let (i, (_, expander, template_name, _, argument_list, _)) = tuple((
+        multispace0,
+        opt(tuple((list_expander, tag("/")))),
+        template_name,
+        multispace0,
+        argument_list,
+        multispace0,
+    ))(i)?;
     let mut exp = None;
     if let Some((some_exp, _)) = expander {
         exp = Some(some_exp)
     }
-    Ok((i, Instance{
-        list_expander:exp,
-        template_name,
-        argument_list
-    }))
+    Ok((
+        i,
+        Instance {
+            list_expander: exp,
+            template_name,
+            argument_list,
+        },
+    ))
 }
 
 fn list_expander(l: &str) -> IResult<&str, ListExpanderType> {
@@ -144,7 +172,8 @@ fn argument_list(a: &str) -> IResult<&str, Vec<Argument>> {
 }
 
 fn argument(a: &str) -> IResult<&str, Argument> {
-    let (a, (list_expand, term)) = tuple((opt(list_expand), term))(a)?;
+    let (a, (_, list_expand, term, _)) =
+        tuple((multispace0, opt(list_expand), term, multispace0))(a)?;
     Ok((
         a,
         Argument {
@@ -190,32 +219,57 @@ fn pattern_list(p: &str) -> IResult<&str, Vec<Instance>> {
 }
 
 fn parameter(p: &str) -> IResult<&str, Parameter> {
-    let (p, (pmode, ptype, variable, default_value)) = tuple((
-        many0(alt((tag("!"), tag("?")))),
-        opt(ptype),
+    let only_variable_and_opt_default = || { tuple((
+        multispace0,
         variable,
+        multispace0,
         opt(default_value),
-    ))(p)?;
-    //Todo check duplicate modes..
-    let mut optional = false;
-    let mut non_blank = false;
-    if pmode.contains(&"!") {
-        non_blank = true;
-    }
-    if pmode.contains(&"?") {
-        optional = true;
-    }
+        multispace0,
+    ))};
+    if let Ok(_) = peek(only_variable_and_opt_default())(p).finish() {
+        let (p, (_, stottr_variable, _, default_value, _)) = only_variable_and_opt_default()(p)?;
+        Ok((
+            p,
+            Parameter {
+                optional: false,
+                non_blank: false,
+                ptype: None,
+                stottr_variable,
+                default_value,
+            },
+        ))
+    } else {
+        let (p, (_, pmode, _, ptype, _, variable, _, default_value, _)) = tuple((
+            multispace0,
+            alt((tag("?!"), tag("!?"), tag("?"), tag("!"))),
+            multispace1,
+            opt(ptype),
+            multispace1,
+            variable,
+            multispace0,
+            opt(default_value),
+            multispace0,
+        ))(p)?;
+        let mut optional = false;
+        let mut non_blank = false;
+        if pmode.contains(&"!") {
+            non_blank = true;
+        }
+        if pmode.contains(&"?") {
+            optional = true;
+        }
 
-    Ok((
-        p,
-        Parameter {
-            optional,
-            non_blank,
-            ptype,
-            stottr_variable: variable,
-            default_value,
-        },
-    ))
+        Ok((
+            p,
+            Parameter {
+                optional,
+                non_blank,
+                ptype,
+                stottr_variable: variable,
+                default_value,
+            },
+        ))
+    }
 }
 
 fn ptype(p: &str) -> IResult<&str, PType> {
@@ -249,7 +303,7 @@ fn variable(v: &str) -> IResult<&str, StottrVariable> {
 }
 
 fn default_value(d: &str) -> IResult<&str, DefaultValue> {
-    let (d, (_, constant_term)) = tuple((tag("="), constant_term))(d)?;
+    let (d, (_, _, constant_term)) = tuple((tag("="), multispace0, constant_term))(d)?;
     Ok((d, DefaultValue { constant_term }))
 }
 
@@ -263,7 +317,7 @@ fn constant_term_list(c: &str) -> IResult<&str, ConstantTerm> {
     Ok((c, ConstantTerm::ConstantList(li)))
 }
 
-fn constant_literal_as_term(c:&str) -> IResult<&str, ConstantTerm> {
+fn constant_literal_as_term(c: &str) -> IResult<&str, ConstantTerm> {
     let (c, lit) = constant_literal(c)?;
     Ok((c, ConstantTerm::Constant(lit)))
 }
@@ -309,18 +363,21 @@ fn anon(a: &str) -> IResult<&str, String> {
 }
 
 fn blank_node_label(b: &str) -> IResult<&str, String> {
-    let (b, (_, mid, end)) = tuple((
+    let (b, (_, startchar, opt_period, period_sep_list)) = tuple((
         tag("_:"),
         alt((pn_chars_u, one_digit)),
-        opt(tuple((many0(alt((pn_chars, period))), pn_chars))),
+        opt(tag(".")),
+        separated_list0(tag("."), many1(pn_chars)),
     ))(b)?;
-    let rhs = if let Some((mut a, b)) = end {
-        a.push(b);
-        a.join("")
-    } else {
-        "".to_string()
-    };
-    let out = mid.to_string() + &rhs;
+    let mut out = startchar.to_string();
+    if let Some(period) = opt_period {
+        out += &period.to_string();
+    }
+    let stringvec: Vec<String> = period_sep_list
+        .iter()
+        .map(|x| x.iter().collect::<String>())
+        .collect();
+    out += &stringvec.join(".");
     Ok((b, out))
 }
 
@@ -331,7 +388,14 @@ fn literal(l: &str) -> IResult<&str, StottrLiteral> {
 
 fn boolean_literal(b: &str) -> IResult<&str, StottrLiteral> {
     let (b, value) = alt((tag("true"), tag("false")))(b)?;
-    Ok((b, StottrLiteral{value:value.to_string(), language:None, data_type_iri:Some(ResolvesToNamedNode::NamedNode(xsd::BOOLEAN.into_owned()))}))
+    Ok((
+        b,
+        StottrLiteral {
+            value: value.to_string(),
+            language: None,
+            data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::BOOLEAN.into_owned())),
+        },
+    ))
 }
 
 fn numeric_literal(n: &str) -> IResult<&str, StottrLiteral> {
@@ -359,7 +423,11 @@ fn rdf_literal_lang_tag(r: &str) -> IResult<&str, StottrLiteral> {
     let (r, (value, language)) = tuple((string, lang_tag))(r)?;
     Ok((
         r,
-        StottrLiteral{value:value.to_string(), language:Some(language), data_type_iri:None},
+        StottrLiteral {
+            value: value.to_string(),
+            language: Some(language),
+            data_type_iri: None,
+        },
     ))
 }
 
@@ -367,7 +435,11 @@ fn rdf_literal_iri(r: &str) -> IResult<&str, StottrLiteral> {
     let (r, (value, _, datatype_iri)) = tuple((string, tag("^^"), iri))(r)?;
     Ok((
         r,
-        StottrLiteral{value:value.to_string(), language:None, data_type_iri:Some(datatype_iri)},
+        StottrLiteral {
+            value: value.to_string(),
+            language: None,
+            data_type_iri: Some(datatype_iri),
+        },
     ))
 }
 
@@ -443,10 +515,18 @@ fn escapable_echar(e: &str) -> IResult<&str, String> {
 }
 
 fn b_node_label(b: &str) -> IResult<&str, String> {
-    let (b, (first, list)) = pair(pn_chars_u, separated_list0(tag("."), pn_chars))(b)?;
-    let first_string = first.to_string();
-
-    Ok((b, first_string + &list.join(".")))
+    let (b, (first, opt_period, list)) = tuple((
+        pn_chars_u_as_string,
+        opt(tag(".")),
+        separated_list0(tag("."), many1(pn_chars_as_string)),
+    ))(b)?;
+    let mut first_string = first.to_string();
+    if let Some(period) = opt_period {
+        first_string += period;
+    }
+    let list_strings: Vec<String> = list.iter().map(|x| x.join("")).collect();
+    first_string += &list_strings.join(".");
+    Ok((b, first_string))
 }
 
 fn directive_as_union(d: &str) -> IResult<&str, DirectiveStatement> {
@@ -500,7 +580,15 @@ fn base(b: &str) -> IResult<&str, NamedNode> {
 }
 
 fn prefix_id(p: &str) -> IResult<&str, Prefix> {
-    let (p, (_, name, iri)) = tuple((tag("@prefix"), pname_ns, iri_ref))(p)?;
+    let (p, (_, _, _, name, _, iri, _)) = tuple((
+        multispace0,
+        tag("@prefix"),
+        multispace0,
+        pname_ns,
+        multispace0,
+        iri_ref,
+        tag("."),
+    ))(p)?;
     Ok((p, Prefix { name, iri }))
 }
 
@@ -516,10 +604,7 @@ fn prefixed_name_as_resolves(p: &str) -> IResult<&str, ResolvesToNamedNode> {
 
 fn prefixed_name(p: &str) -> IResult<&str, PrefixedName> {
     let (p, pn) = alt((pname_ln, pname_ns_as_prefixed_name))(p)?;
-    Ok((
-        p,
-        pn
-    ))
+    Ok((p, pn))
 }
 
 fn iri_ref_as_resolves(i: &str) -> IResult<&str, ResolvesToNamedNode> {
@@ -528,14 +613,26 @@ fn iri_ref_as_resolves(i: &str) -> IResult<&str, ResolvesToNamedNode> {
 }
 
 fn iri_ref(i: &str) -> IResult<&str, NamedNode> {
-    let (i, (_, iri, _)) = tuple((tag("<"), alphanumeric0, tag(">")))(i)?;
-    let nn = NamedNode::new(iri).expect("Invalid IRI");
+    let mut notin: String = chars!('\u{0000}'..='\u{0020}').iter().collect();
+    let rest = "<>\"{}|^`\\";
+    notin += rest;
+    let (i, (_, iri, _)) = tuple((tag("<"), many0(is_not(notin.as_str())), tag(">")))(i)?;
+    let nn = NamedNode::new(
+        iri.iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>()
+            .join(""),
+    )
+    .expect("Invalid IRI");
     Ok((i, nn))
 }
 
-fn pname_ns_as_prefixed_name(p:&str) -> IResult<&str, PrefixedName> {
+fn pname_ns_as_prefixed_name(p: &str) -> IResult<&str, PrefixedName> {
     let (p, prefix) = pname_ns(p)?;
-    let out = PrefixedName { prefix: prefix, name: "".to_string() };
+    let out = PrefixedName {
+        prefix: prefix,
+        name: "".to_string(),
+    };
     Ok((p, out))
 }
 
@@ -550,55 +647,117 @@ fn pname_ns(p: &str) -> IResult<&str, String> {
 
 fn pname_ln(p: &str) -> IResult<&str, PrefixedName> {
     let (p, (prefix, name)) = tuple((pname_ns, pn_local))(p)?;
-    Ok((
-        p,
-        PrefixedName{ prefix, name }
-    ))
+    Ok((p, PrefixedName { prefix, name }))
 }
 
-//Incomplete from specification
-fn pn_chars_base(p: &str) -> IResult<&str, String> {
-    let (p, chrs) = alpha1(p)?;
+fn pn_chars_base_as_string(p: &str) -> IResult<&str, String> {
+    let (p, chrs) = pn_chars_base(p)?;
     Ok((p, chrs.to_string()))
 }
 
-fn pn_chars_u(p: &str) -> IResult<&str, String> {
-    let (p, chrs) = alt((pn_chars_base, underscore))(p)?;
+//Incomplete from specification
+fn pn_chars_base(p: &str) -> IResult<&str, char> {
+    let range_a = chars!('A'..'Z').iter();
+    let range_b = chars!('a'..'z').iter();
+    let range_c = chars!('\u{00C0}'..'\u{00D6}').iter();
+    let range_d = chars!('\u{00D8}'..'\u{00F6}').iter();
+    let range_e = chars!('\u{00F8}'..'\u{02FF}').iter();
+    let range_f = chars!('\u{0370}'..'\u{037D}').iter();
+    let range_g = chars!('\u{037F}'..'\u{1FFF}').iter();
+    let range_h = chars!('\u{200C}'..'\u{200D}').iter();
+    let range_i = chars!('\u{2070}'..'\u{218F}').iter();
+    let range_j = chars!('\u{2C00}'..'\u{2FEF}').iter();
+    let range_k = chars!('\u{3001}'..'\u{D7FF}').iter();
+    let range_l = chars!('\u{F900}'..'\u{FDCF}').iter();
+    let range_m = chars!('\u{FDF0}'..'\u{FFFD}').iter();
+    let all_chars: String = range_a
+        .chain(range_b)
+        .chain(range_c)
+        .chain(range_d)
+        .chain(range_e)
+        .chain(range_f)
+        .chain(range_g)
+        .chain(range_h)
+        .chain(range_i)
+        .chain(range_j)
+        .chain(range_k)
+        .chain(range_l)
+        .chain(range_m)
+        .collect();
+    let (p, chrs) = one_of(all_chars.as_str())(p)?;
+    Ok((p, chrs))
+}
+
+fn pn_chars_u_as_string(p: &str) -> IResult<&str, String> {
+    let (p, chrs) = pn_chars_u(p)?;
+    Ok((p, chrs.to_string()))
+}
+
+fn pn_chars_u(p: &str) -> IResult<&str, char> {
+    let (p, chrs) = alt((pn_chars_base, char('_')))(p)?;
     Ok((p, chrs))
 }
 
 //Incomplete from specification
-fn pn_chars(p: &str) -> IResult<&str, String> {
-    let (p, chrs) = alt((pn_chars_u, dash, one_digit))(p)?;
+fn pn_chars_as_string(p: &str) -> IResult<&str, String> {
+    let (p, chrs) = pn_chars(p)?;
+    Ok((p, chrs.to_string()))
+}
+
+fn pn_chars(p: &str) -> IResult<&str, char> {
+    let range_a: String = chars!('\u{0300}'..'\u{036F}').iter().collect();
+    let range_b: String = chars!('\u{203F}'..'\u{2040}').iter().collect();
+    let (p, chrs) = alt((
+        pn_chars_u,
+        char('-'),
+        one_of("0123456789"),
+        one_of(range_a.as_str()),
+        one_of(range_b.as_str()),
+    ))(p)?;
     Ok((p, chrs))
 }
 
 fn pn_prefix(p: &str) -> IResult<&str, String> {
-    let (p, (pbase, dotnot)) = tuple((
+    let (p, (pbase, opt_period, dotnot)) = tuple((
         pn_chars_base,
-        opt(tuple((many0(alt((pn_chars, period))), pn_chars))),
+        opt(tag(".")),
+        opt(separated_list0(tag("."), many1(pn_chars))),
     ))(p)?;
-    let out = match dotnot {
-        None => pbase.to_string(),
-        Some((mut strvec, end)) => {
-            strvec.insert(0, pbase);
-            strvec.push(end);
-            strvec.join("")
+    let mut out = pbase.to_string();
+    if let Some(period) = opt_period {
+        out += period;
+    }
+    if let Some(v) = dotnot {
+        let mut strings: Vec<String> = vec![];
+        for chars in v {
+            strings.push(chars.iter().collect());
         }
-    };
+        out += &strings.join(".");
+    }
     Ok((p, out))
 }
 
-//TODO: Big errors here..
 fn pn_local(p: &str) -> IResult<&str, String> {
-    let (p, (mut s1, s2)) = tuple((alt((pn_chars_u, colon, one_digit, plx)), opt(tuple( (many0(alt((pn_chars, period, colon, plx))), alt((pn_chars, colon, plx)))))))(p)?;
-    if let Some((s2_1, s2_2)) = s2 {
-        for s in s2_1 {
-            s1 += &s;
-        }
-        s1 += &s2_2;
+    let (p, (s1, opt_period, s2)) = tuple((
+        alt((
+            pn_chars_u_as_string,
+            colon_as_string,
+            one_digit_as_string,
+            plx,
+        )),
+        opt(tag(".")),
+        separated_list0(
+            tag("."),
+            many1(alt((pn_chars_as_string, colon_as_string, plx))),
+        ),
+    ))(p)?;
+    let mut out = s1.to_string();
+    if let Some(period) = opt_period {
+        out += &period;
     }
-    Ok((p, s1))
+    let liststrings: Vec<String> = s2.into_iter().map(|x| x.join("")).collect();
+    out += &liststrings.join(".");
+    Ok((p, out))
 }
 
 fn plx(p: &str) -> IResult<&str, String> {
@@ -611,15 +770,19 @@ fn percent(p: &str) -> IResult<&str, String> {
     Ok((p, h.join("")))
 }
 
-fn one_digit(d: &str) -> IResult<&str, String> {
-    let (d, digit) = one_of("0123456789")(d)?;
+fn one_digit_as_string(d: &str) -> IResult<&str, String> {
+    let (d, digit) = one_digit(d)?;
     Ok((d, digit.to_string()))
 }
 
+fn one_digit(d: &str) -> IResult<&str, char> {
+    let (d, digit) = one_of("0123456789")(d)?;
+    Ok((d, digit))
+}
 
 fn pn_local_esc(s: &str) -> IResult<&str, String> {
     let esc = r#"\(_~.-!$&\()*+,;=/?#@%"#;
-    let (s, c) = one_of(esc)(s)?;
+    let (s, (_, c)) = tuple((tag("\\"), one_of(esc)))(s)?;
     Ok((s, c.to_string()))
 }
 
@@ -628,27 +791,100 @@ fn one_hex(h: &str) -> IResult<&str, String> {
     Ok((h, hex.to_string()))
 }
 
-fn comma(c:&str) -> IResult<&str, String> {
+fn comma(c: &str) -> IResult<&str, String> {
     let (c, comma) = tag(",")(c)?;
-    Ok((c,comma.to_string()))
+    Ok((c, comma.to_string()))
 }
 
-fn colon(c:&str) -> IResult<&str, String> {
+fn colon_as_string(c: &str) -> IResult<&str, String> {
     let (c, colon) = tag(":")(c)?;
-    Ok((c,colon.to_string()))
+    Ok((c, colon.to_string()))
 }
 
-fn period(c:&str) -> IResult<&str, String> {
+fn period_as_string(c: &str) -> IResult<&str, String> {
     let (c, period) = tag(".")(c)?;
-    Ok((c,period.to_string()))
+    Ok((c, period.to_string()))
 }
 
-fn underscore(c:&str) -> IResult<&str, String> {
+fn underscore(c: &str) -> IResult<&str, String> {
     let (c, underscore) = tag("_")(c)?;
-    Ok((c,underscore.to_string()))
+    Ok((c, underscore.to_string()))
 }
 
-fn dash(c:&str) -> IResult<&str, String> {
+fn dash(c: &str) -> IResult<&str, String> {
     let (c, dash) = tag("-")(c)?;
-    Ok((c,dash.to_string()))
+    Ok((c, dash.to_string()))
+}
+
+#[test]
+fn test_iri_ref() {
+    let s = "<http://example.org#>";
+    let (r, nn) = iri_ref(s).finish().expect("Ok");
+    assert_eq!(nn, NamedNode::new_unchecked("http://example.org#"));
+    println!("{:?}", nn);
+}
+
+#[test]
+fn test_pn_prefix() {
+    let s = "o-.rd.f.";
+    let (r, p) = pn_prefix(s).finish().expect("Ok");
+    assert_eq!(r, ".");
+    assert_eq!(&p, "o-.rd.f")
+}
+
+#[test]
+fn test_prefixed_name() {
+    let s = "o-rdf:Type";
+    let (r, p) = prefixed_name(s).finish().expect("Ok");
+    let expected = PrefixedName {
+        prefix: "o-rdf".to_string(),
+        name: "Type".to_string(),
+    };
+    assert_eq!(p, expected);
+    assert_eq!(r, "");
+}
+
+#[test]
+fn test_argument_bad_escape_behavior() {
+    let s = "foaf:Person,";
+    let (r, i) = argument(s).finish().expect("Ok");
+    assert_eq!(r, ",");
+}
+
+#[test]
+fn test_instance() {
+    let s = "ottr:Triple (_:person, foaf:Person, ?var)";
+    let (r, i) = instance(s).finish().expect("Ok");
+    let expected = Instance {
+        list_expander: None,
+        template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
+            prefix: "ottr".to_string(),
+            name: "Triple".to_string(),
+        }),
+        argument_list: vec![
+            Argument {
+                list_expand: false,
+                term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::BlankNode(
+                    BlankNode::new_unchecked("person"),
+                ))),
+            },
+            Argument {
+                list_expand: false,
+                term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::IRI(
+                    ResolvesToNamedNode::PrefixedName(PrefixedName {
+                        prefix: "foaf".to_string(),
+                        name: "Person".to_string(),
+                    }),
+                ))),
+            },
+            Argument {
+                list_expand: false,
+                term: StottrTerm::Variable(StottrVariable {
+                    name: "var".to_string(),
+                }),
+            },
+        ],
+    };
+    assert_eq!(i, expected);
+    assert_eq!(r, "");
 }
