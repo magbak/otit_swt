@@ -1,6 +1,6 @@
 use mapper::ast::{
-    Argument, ConstantLiteral, ConstantTerm, Directive, Instance, PType, Parameter, Prefix,
-    PrefixedName, ResolvesToNamedNode, Signature, Statement, StottrDocument, StottrTerm,
+    Argument, ConstantLiteral, ConstantTerm, DefaultValue, Directive, Instance, PType, Parameter,
+    Prefix, PrefixedName, ResolvesToNamedNode, Signature, Statement, StottrDocument, StottrTerm,
     StottrVariable, Template,
 };
 use mapper::parser::stottr_doc;
@@ -262,6 +262,131 @@ fn test_spec_type_1() {
                     name: "pizza".to_string(),
                 },
                 default_value: None,
+            }],
+            annotation_list: None,
+        })],
+    };
+    assert_eq!(expected, doc);
+}
+
+#[test]
+fn test_spec_type_2() {
+    let stottr = r#"
+        @prefix ex:<http://example.net/ns#>.
+
+    ex:NamedPizza [ ? owl:Class ?pizza ].
+    "#;
+
+    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
+    assert_eq!("", s);
+    let expected = StottrDocument {
+        directives: vec![Directive::Prefix(Prefix {
+            name: "ex".to_string(),
+            iri: NamedNode::new_unchecked("http://example.net/ns#"),
+        })],
+        statements: vec![Statement::Signature(Signature {
+            template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
+                prefix: "ex".to_string(),
+                name: "NamedPizza".to_string(),
+            }),
+            parameter_list: vec![Parameter {
+                optional: true,
+                non_blank: false,
+                ptype: Some(PType::BasicType(PrefixedName {
+                    prefix: "owl".to_string(),
+                    name: "Class".to_string(),
+                })),
+                stottr_variable: StottrVariable {
+                    name: "pizza".to_string(),
+                },
+                default_value: None,
+            }],
+            annotation_list: None,
+        })],
+    };
+    assert_eq!(expected, doc);
+}
+
+#[test]
+fn test_spec_type_3() {
+    let stottr = r#"
+        @prefix ex:<http://example.net/ns#>.
+
+    ex:NamedPizza [ ?! owl:Class ?pizza ].
+    "#;
+
+    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
+    assert_eq!("", s);
+    let expected = StottrDocument {
+        directives: vec![Directive::Prefix(Prefix {
+            name: "ex".to_string(),
+            iri: NamedNode::new_unchecked("http://example.net/ns#"),
+        })],
+        statements: vec![Statement::Signature(Signature {
+            template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
+                prefix: "ex".to_string(),
+                name: "NamedPizza".to_string(),
+            }),
+            parameter_list: vec![Parameter {
+                optional: true,
+                non_blank: true,
+                ptype: Some(PType::BasicType(PrefixedName {
+                    prefix: "owl".to_string(),
+                    name: "Class".to_string(),
+                })),
+                stottr_variable: StottrVariable {
+                    name: "pizza".to_string(),
+                },
+                default_value: None,
+            }],
+            annotation_list: None,
+        })],
+    };
+    assert_eq!(expected, doc);
+}
+
+#[test]
+fn test_spec_default_value_1() {
+    let stottr = r#"@prefix ex:<http://example.net/ns#>.
+    @prefix p:<http://example.net/pizzas#>.
+    ex:NamedPizza[ owl:Class ?pizza = p:pizza] ."#;
+
+    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
+    assert_eq!("", s);
+    let expected = StottrDocument {
+        directives: vec![
+            Directive::Prefix(Prefix {
+                name: "ex".to_string(),
+                iri: NamedNode::new_unchecked("http://example.net/ns#"),
+            }),
+            Directive::Prefix(Prefix {
+                name: "p".to_string(),
+                iri: NamedNode::new_unchecked("http://example.net/pizzas#"),
+            }),
+        ],
+        statements: vec![Statement::Signature(Signature {
+            template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
+                prefix: "ex".to_string(),
+                name: "NamedPizza".to_string(),
+            }),
+            parameter_list: vec![Parameter {
+                optional: false,
+                non_blank: false,
+                ptype: Some(PType::BasicType(PrefixedName {
+                    prefix: "owl".to_string(),
+                    name: "Class".to_string(),
+                })),
+                stottr_variable: StottrVariable {
+                    name: "pizza".to_string(),
+                },
+                default_value: Some(DefaultValue {
+                    constant_term: ConstantTerm::Constant(ConstantLiteral::IRI(
+                        ResolvesToNamedNode::PrefixedName(PrefixedName {
+                            prefix: "p".to_string(),
+                            name: "pizza".to_string(),
+                        }),
+                    )),
+                }),
             }],
             annotation_list: None,
         })],
