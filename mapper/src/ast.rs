@@ -1,4 +1,4 @@
-use oxrdf::{BlankNode, Literal, NamedNode};
+use oxrdf::{BlankNode, NamedNode};
 
 pub struct Prefix {
     pub name: String,
@@ -65,12 +65,18 @@ pub enum ConstantTerm {
 pub enum ConstantLiteral {
     IRI(ResolvesToNamedNode),
     BlankNode(BlankNode),
-    Literal(Literal),
+    Literal(StottrLiteral),
     None,
 }
 
+pub struct StottrLiteral {
+    pub value:String,
+    pub language: Option<String>,
+    pub data_type_iri: Option<ResolvesToNamedNode>
+}
+
 pub struct PrefixedName {
-    pub prefix: Prefix,
+    pub prefix: String,
     pub name: String,
 }
 
@@ -81,7 +87,7 @@ pub enum ResolvesToNamedNode {
 
 pub struct Instance {
     pub list_expander: Option<ListExpanderType>,
-    pub template_name: String,
+    pub template_name: ResolvesToNamedNode,
     pub argument_list: Vec<Argument>
 }
 
@@ -118,5 +124,6 @@ pub enum StottrTerm {
 }
 
 pub struct StottrDocument {
-
+    pub directives: Vec<Directive>,
+    pub statements: Vec<Statement>
 }
