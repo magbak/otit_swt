@@ -7,13 +7,16 @@ use crate::ast::{
 };
 use nom::branch::alt;
 use nom::bytes::complete::{escaped, is_not, tag};
-use nom::character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, one_of};
-use nom::combinator::{not, opt, peek};
+use nom::character::complete::{alpha1, alphanumeric1, char, digit0, digit1, multispace0, one_of};
+use nom::combinator::{opt};
 use nom::multi::{count, many0, many1, separated_list0, separated_list1};
 use nom::sequence::tuple;
-use nom::{Finish, IResult};
+use nom::{IResult};
 use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, NamedNode};
+
+#[cfg(test)]
+use nom::Finish;
 
 enum DirectiveStatement {
     Directive(Directive),
@@ -77,7 +80,7 @@ fn signature(s: &str) -> IResult<&str, Signature> {
         multispace0,
         tag("["),
         multispace0,
-        separated_list1(tag(","), parameter),
+        separated_list0(tag(","), parameter),
         multispace0,
         tag("]"),
         multispace0,
@@ -99,7 +102,7 @@ fn annotation_list(a: &str) -> IResult<&str, Vec<Annotation>> {
 }
 
 fn annotation(a: &str) -> IResult<&str, Annotation> {
-    let (a, (_, _, instance, _)) = tuple((multispace0, tag("@@"), instance, multispace0))(a)?;
+    let (a, (_, _, _,instance, _)) = tuple((multispace0, tag("@@"), multispace0,  instance, multispace0))(a)?;
     Ok((a, Annotation { instance }))
 }
 
@@ -144,14 +147,14 @@ fn instance_as_statement(i: &str) -> IResult<&str, Statement> {
 fn instance(i: &str) -> IResult<&str, Instance> {
     let (i, (_, expander, template_name, _, argument_list, _)) = tuple((
         multispace0,
-        opt(tuple((list_expander, tag("/")))),
+        opt(tuple((list_expander, multispace0, tag("|"), multispace0))),
         template_name,
         multispace0,
         argument_list,
         multispace0,
     ))(i)?;
     let mut exp = None;
-    if let Some((some_exp, _)) = expander {
+    if let Some((some_exp, _,_,_)) = expander {
         exp = Some(some_exp)
     }
     Ok((
@@ -306,12 +309,12 @@ fn default_value(d: &str) -> IResult<&str, DefaultValue> {
 }
 
 fn constant_term(c: &str) -> IResult<&str, ConstantTerm> {
-    let (c, t) = alt((constant_literal_as_term, constant_term_list))(c)?;
+    let (c, (_,t,_)) = tuple((multispace0, alt((constant_term_list, constant_literal_as_term)), multispace0))(c)?;
     Ok((c, t))
 }
 
 fn constant_term_list(c: &str) -> IResult<&str, ConstantTerm> {
-    let (c, (_, li, _)) = tuple((tag("("), separated_list0(tag(","), constant_term), tag(")")))(c)?;
+    let (c, (_,_, li,_, _)) = tuple((tag("("), multispace0, separated_list0(tag(","), constant_term), multispace0, tag(")")))(c)?;
     Ok((c, ConstantTerm::ConstantList(li)))
 }
 
@@ -357,7 +360,7 @@ fn blank_node(b: &str) -> IResult<&str, BlankNode> {
 
 fn anon(a: &str) -> IResult<&str, String> {
     let (a, _) = tuple((tag("["), tag("]")))(a)?;
-    Ok((a, "".to_string()))
+    Ok((a, "AnonymousBlankNode".to_string()))
 }
 
 fn blank_node_label(b: &str) -> IResult<&str, String> {
@@ -397,23 +400,100 @@ fn boolean_literal(b: &str) -> IResult<&str, StottrLiteral> {
 }
 
 fn numeric_literal(n: &str) -> IResult<&str, StottrLiteral> {
-    let (n, numeric) = alt((turtle_integer, turtle_decimal, turtle_double))(n)?;
+    let (n, numeric) = alt((turtle_double, turtle_decimal, turtle_integer ))(n)?;
     Ok((n, numeric))
 }
 
 fn turtle_integer(i: &str) -> IResult<&str, StottrLiteral> {
-    todo!()
+    let (i, (plus_minus, digits)) = tuple((opt(one_of("+-")), digit1))(i)?;
+    let mut value = digits.to_string();
+    if let Some(pm) = plus_minus {
+        value.insert(0, pm);
+    }
+
+    Ok((i, StottrLiteral{
+        value,
+        language: None,
+        data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::INTEGER.into_owned()))
+    }))
 }
 
 fn turtle_decimal(i: &str) -> IResult<&str, StottrLiteral> {
-    todo!()
+    let (i, (plus_minus, before, period, after)) = tuple((opt(one_of("+-")), digit0, char('.'), digit1))(i)?;
+    let mut value = before.to_string();
+    value.push(period);
+    value += after;
+    if let Some(pm) = plus_minus {
+        value.insert(0, pm);
+    }
+
+    Ok((i, StottrLiteral{
+        value,
+        language: None,
+        data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::DECIMAL.into_owned()))
+    }))
 }
+
 fn turtle_double(i: &str) -> IResult<&str, StottrLiteral> {
-    todo!()
+    let (i, value) =
+        alt((turtle_double1, turtle_double2, turtle_double3))(i)?;
+    Ok((i, StottrLiteral{
+        value,
+        language: None,
+        data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::DOUBLE.into_owned()))
+    }))
+}
+
+fn turtle_double1(i: &str) -> IResult<&str, String> {
+    let (i, (plus_minus, before, period, after, exponent)) =
+        tuple((opt(one_of("+-")), digit1, tag("."), digit0, exponent))(i)?;
+    let mut value = before.to_string();
+    if let Some(pm) = plus_minus {
+        value.insert(0, pm);
+    }
+    value += period;
+    value += after;
+    value += &exponent;
+    Ok((i, value))
+}
+
+fn turtle_double2(i: &str) -> IResult<&str, String> {
+    let (i, (plus_minus, period, after, exponent)) =
+        tuple((opt(one_of("+-")), tag("."), digit1, exponent))(i)?;
+    let mut value = "".to_string();
+    if let Some(pm) = plus_minus {
+        value.insert(0, pm);
+    }
+    value += period;
+    value += after;
+    value += &exponent;
+    Ok((i, value))
+}
+
+fn turtle_double3(i: &str) -> IResult<&str, String> {
+    let (i, (plus_minus, after, exponent)) =
+        tuple((opt(one_of("+-")), digit1, exponent))(i)?;
+    let mut value = "".to_string();
+    if let Some(pm) = plus_minus {
+        value.insert(0, pm);
+    }
+    value += after;
+    value += &exponent;
+    Ok((i, value))
+}
+
+fn exponent(e:&str) -> IResult<&str, String> {
+    let (e, (exp, plusminus_opt, digits )) = tuple((one_of("eE"), opt(one_of("+-")), digit1))(e)?;
+    let mut value = exp.to_string();
+    if let Some(plusminus) = plusminus_opt {
+        value.push(plusminus);
+    }
+    value += digits;
+    Ok((e, value))
 }
 
 fn rdf_literal(r: &str) -> IResult<&str, StottrLiteral> {
-    let (r, lit) = alt((rdf_literal_lang_tag, rdf_literal_iri))(r)?;
+    let (r, lit) = alt((rdf_literal_lang_tag, rdf_literal_iri, rdf_literal_string))(r)?;
     Ok((r, lit))
 }
 
@@ -440,6 +520,19 @@ fn rdf_literal_iri(r: &str) -> IResult<&str, StottrLiteral> {
         },
     ))
 }
+
+fn rdf_literal_string(r: &str) -> IResult<&str, StottrLiteral> {
+    let (r, value) = string(r)?;
+    Ok((
+        r,
+        StottrLiteral {
+            value: value.to_string(),
+            language: None,
+            data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::STRING.into_owned())),
+        },
+    ))
+}
+
 
 fn lang_tag(l: &str) -> IResult<&str, String> {
     let (l, (_, language, dashthings)) =
@@ -611,7 +704,7 @@ fn iri_ref_as_resolves(i: &str) -> IResult<&str, ResolvesToNamedNode> {
 }
 
 fn iri_ref(i: &str) -> IResult<&str, NamedNode> {
-    let mut notin = r#" 
+    let notin = r#" 
  <>"{}|^`\"#;
     let (i, (_, iri, _)) = tuple((tag("<"), many0(is_not(notin)), tag(">")))(i)?;
     let nn = NamedNode::new(
@@ -671,7 +764,7 @@ fn pn_chars_as_string(p: &str) -> IResult<&str, String> {
 }
 
 fn pn_chars(p: &str) -> IResult<&str, char> {
-    let mut chars_string = r#"̴̵̶̷̸̡̢̧̨̛̖̗̘̙̜̝̞̟̠̣̤̥̦̩̪̫̬̭̮̯̰̱̲̳̹̺̻̼͇͈͉͍͎̀́̂̃̄̅̆̇̈̉̊̋̌̍̎̏̐̑̒̓̔̽̾̿̀́͂̓̈́͆͊͋͌̕̚ͅ͏͓͔͕͖͙͚͐͑͒͗͛ͣͤͥͦͧͨͩͪͫͬͭͮͯ͘͜͟͢͝͞͠͡‿⁀·"#;
+    let chars_string = r#"̴̵̶̷̸̡̢̧̨̛̖̗̘̙̜̝̞̟̠̣̤̥̦̩̪̫̬̭̮̯̰̱̲̳̹̺̻̼͇͈͉͍͎̀́̂̃̄̅̆̇̈̉̊̋̌̍̎̏̐̑̒̓̔̽̾̿̀́͂̓̈́͆͊͋͌̕̚ͅ͏͓͔͕͖͙͚͐͑͒͗͛ͣͤͥͦͧͨͩͪͫͬͭͮͯ͘͜͟͢͝͞͠͡‿⁀·"#;
     let (p, chrs) = alt((
         pn_chars_u,
         char('-'),
@@ -838,6 +931,14 @@ fn test_statement_signature() {
     let s = "ex:NamedPizza [ ??pizza  ] .";
     let (r, _) = statement(s).finish().expect("Ok");
     assert_eq!(r, "");
+}
+
+#[test]
+fn test_default_value_list() {
+    let s = "= (\"asdf\", \"asdf\")";
+    let (r, _) = default_value(s).finish().expect("Ok");
+    assert_eq!(r, "");
+
 }
 
 //The below tests are used to generate static data

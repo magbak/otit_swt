@@ -1,4 +1,5 @@
-//#[macro_use] extern crate unic_char_range; Used for generating char-ranges
+#[cfg(test)]
+#[macro_use] extern crate unic_char_range;
 
 use mimalloc::MiMalloc;
 
