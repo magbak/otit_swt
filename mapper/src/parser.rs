@@ -8,10 +8,10 @@ use crate::ast::{
 use nom::branch::alt;
 use nom::bytes::complete::{escaped, is_not, tag};
 use nom::character::complete::{alpha1, alphanumeric1, char, digit0, digit1, multispace0, one_of};
-use nom::combinator::{opt};
+use nom::combinator::opt;
 use nom::multi::{count, many0, many1, separated_list0, separated_list1};
 use nom::sequence::tuple;
-use nom::{IResult};
+use nom::IResult;
 use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, NamedNode};
 
@@ -102,7 +102,8 @@ fn annotation_list(a: &str) -> IResult<&str, Vec<Annotation>> {
 }
 
 fn annotation(a: &str) -> IResult<&str, Annotation> {
-    let (a, (_, _, _,instance, _)) = tuple((multispace0, tag("@@"), multispace0,  instance, multispace0))(a)?;
+    let (a, (_, _, _, instance, _)) =
+        tuple((multispace0, tag("@@"), multispace0, instance, multispace0))(a)?;
     Ok((a, Annotation { instance }))
 }
 
@@ -154,7 +155,7 @@ fn instance(i: &str) -> IResult<&str, Instance> {
         multispace0,
     ))(i)?;
     let mut exp = None;
-    if let Some((some_exp, _,_,_)) = expander {
+    if let Some((some_exp, _, _, _)) = expander {
         exp = Some(some_exp)
     }
     Ok((
@@ -227,50 +228,50 @@ fn pattern_list(p: &str) -> IResult<&str, Vec<Instance>> {
 
 fn parameter(p: &str) -> IResult<&str, Parameter> {
     let path1 = tuple((
-            multispace0,
-            opt(alt((tag("?"), tag("!?")))),
-            multispace0,
-            opt(ptype),
-            multispace0,
-            variable,
-            multispace0,
-            opt(default_value),
-            multispace0,
-        ));
+        multispace0,
+        opt(alt((tag("?"), tag("!?")))),
+        multispace0,
+        opt(ptype),
+        multispace0,
+        variable,
+        multispace0,
+        opt(default_value),
+        multispace0,
+    ));
     let path2 = tuple((
-            multispace0,
-            opt(alt((tag("?!"), tag("!")))), // !? and ? is covered above, since it is ambiguous
-            multispace0,
-            opt(ptype),
-            multispace0,
-            variable,
-            multispace0,
-            opt(default_value),
-            multispace0,
-        ));
+        multispace0,
+        opt(alt((tag("?!"), tag("!")))), // !? and ? is covered above, since it is ambiguous
+        multispace0,
+        opt(ptype),
+        multispace0,
+        variable,
+        multispace0,
+        opt(default_value),
+        multispace0,
+    ));
 
     let (p, (_, opt_mode, _, ptype, _, variable, _, default_value, _)) = alt((path1, path2))(p)?;
-        let mut optional = false;
-        let mut non_blank = false;
-        if let Some(mode) = opt_mode {
-            if mode.contains(&"!") {
-                non_blank = true;
-            }
-            if mode.contains(&"?") {
-                optional = true;
-            }
+    let mut optional = false;
+    let mut non_blank = false;
+    if let Some(mode) = opt_mode {
+        if mode.contains(&"!") {
+            non_blank = true;
         }
+        if mode.contains(&"?") {
+            optional = true;
+        }
+    }
 
-        Ok((
-            p,
-            Parameter {
-                optional,
-                non_blank,
-                ptype,
-                stottr_variable: variable,
-                default_value,
-            },
-        ))
+    Ok((
+        p,
+        Parameter {
+            optional,
+            non_blank,
+            ptype,
+            stottr_variable: variable,
+            default_value,
+        },
+    ))
 }
 
 fn ptype(p: &str) -> IResult<&str, PType> {
@@ -309,12 +310,22 @@ fn default_value(d: &str) -> IResult<&str, DefaultValue> {
 }
 
 fn constant_term(c: &str) -> IResult<&str, ConstantTerm> {
-    let (c, (_,t,_)) = tuple((multispace0, alt((constant_term_list, constant_literal_as_term)), multispace0))(c)?;
+    let (c, (_, t, _)) = tuple((
+        multispace0,
+        alt((constant_term_list, constant_literal_as_term)),
+        multispace0,
+    ))(c)?;
     Ok((c, t))
 }
 
 fn constant_term_list(c: &str) -> IResult<&str, ConstantTerm> {
-    let (c, (_,_, li,_, _)) = tuple((tag("("), multispace0, separated_list0(tag(","), constant_term), multispace0, tag(")")))(c)?;
+    let (c, (_, _, li, _, _)) = tuple((
+        tag("("),
+        multispace0,
+        separated_list0(tag(","), constant_term),
+        multispace0,
+        tag(")"),
+    ))(c)?;
     Ok((c, ConstantTerm::ConstantList(li)))
 }
 
@@ -400,7 +411,7 @@ fn boolean_literal(b: &str) -> IResult<&str, StottrLiteral> {
 }
 
 fn numeric_literal(n: &str) -> IResult<&str, StottrLiteral> {
-    let (n, numeric) = alt((turtle_double, turtle_decimal, turtle_integer ))(n)?;
+    let (n, numeric) = alt((turtle_double, turtle_decimal, turtle_integer))(n)?;
     Ok((n, numeric))
 }
 
@@ -411,15 +422,19 @@ fn turtle_integer(i: &str) -> IResult<&str, StottrLiteral> {
         value.insert(0, pm);
     }
 
-    Ok((i, StottrLiteral{
-        value,
-        language: None,
-        data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::INTEGER.into_owned()))
-    }))
+    Ok((
+        i,
+        StottrLiteral {
+            value,
+            language: None,
+            data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::INTEGER.into_owned())),
+        },
+    ))
 }
 
 fn turtle_decimal(i: &str) -> IResult<&str, StottrLiteral> {
-    let (i, (plus_minus, before, period, after)) = tuple((opt(one_of("+-")), digit0, char('.'), digit1))(i)?;
+    let (i, (plus_minus, before, period, after)) =
+        tuple((opt(one_of("+-")), digit0, char('.'), digit1))(i)?;
     let mut value = before.to_string();
     value.push(period);
     value += after;
@@ -427,21 +442,26 @@ fn turtle_decimal(i: &str) -> IResult<&str, StottrLiteral> {
         value.insert(0, pm);
     }
 
-    Ok((i, StottrLiteral{
-        value,
-        language: None,
-        data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::DECIMAL.into_owned()))
-    }))
+    Ok((
+        i,
+        StottrLiteral {
+            value,
+            language: None,
+            data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::DECIMAL.into_owned())),
+        },
+    ))
 }
 
 fn turtle_double(i: &str) -> IResult<&str, StottrLiteral> {
-    let (i, value) =
-        alt((turtle_double1, turtle_double2, turtle_double3))(i)?;
-    Ok((i, StottrLiteral{
-        value,
-        language: None,
-        data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::DOUBLE.into_owned()))
-    }))
+    let (i, value) = alt((turtle_double1, turtle_double2, turtle_double3))(i)?;
+    Ok((
+        i,
+        StottrLiteral {
+            value,
+            language: None,
+            data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::DOUBLE.into_owned())),
+        },
+    ))
 }
 
 fn turtle_double1(i: &str) -> IResult<&str, String> {
@@ -471,8 +491,7 @@ fn turtle_double2(i: &str) -> IResult<&str, String> {
 }
 
 fn turtle_double3(i: &str) -> IResult<&str, String> {
-    let (i, (plus_minus, after, exponent)) =
-        tuple((opt(one_of("+-")), digit1, exponent))(i)?;
+    let (i, (plus_minus, after, exponent)) = tuple((opt(one_of("+-")), digit1, exponent))(i)?;
     let mut value = "".to_string();
     if let Some(pm) = plus_minus {
         value.insert(0, pm);
@@ -482,8 +501,8 @@ fn turtle_double3(i: &str) -> IResult<&str, String> {
     Ok((i, value))
 }
 
-fn exponent(e:&str) -> IResult<&str, String> {
-    let (e, (exp, plusminus_opt, digits )) = tuple((one_of("eE"), opt(one_of("+-")), digit1))(e)?;
+fn exponent(e: &str) -> IResult<&str, String> {
+    let (e, (exp, plusminus_opt, digits)) = tuple((one_of("eE"), opt(one_of("+-")), digit1))(e)?;
     let mut value = exp.to_string();
     if let Some(plusminus) = plusminus_opt {
         value.push(plusminus);
@@ -532,7 +551,6 @@ fn rdf_literal_string(r: &str) -> IResult<&str, StottrLiteral> {
         },
     ))
 }
-
 
 fn lang_tag(l: &str) -> IResult<&str, String> {
     let (l, (_, language, dashthings)) =
@@ -938,7 +956,6 @@ fn test_default_value_list() {
     let s = "= (\"asdf\", \"asdf\")";
     let (r, _) = default_value(s).finish().expect("Ok");
     assert_eq!(r, "");
-
 }
 
 //The below tests are used to generate static data
