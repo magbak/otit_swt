@@ -1,45 +1,37 @@
 use oxrdf::{BlankNode, NamedNode};
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Prefix {
     pub name: String,
     pub iri: NamedNode,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Directive {
     Prefix(Prefix),
-    Base(NamedNode),
-    SparqlBase(NamedNode),
-    SparqlPrefix(Prefix),
+    Base(NamedNode)
 }
-#[derive(PartialEq, Debug)]
+
+#[derive(PartialEq, Debug, Clone)]
 pub enum Statement {
-    Signature(Signature),
     Template(Template),
-    BaseTemplate(BaseTemplate),
     Instance(Instance),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Template {
     pub signature: Signature,
     pub pattern_list: Vec<Instance>,
 }
 
-#[derive(PartialEq, Debug)]
-pub struct BaseTemplate {
-    pub signature: Signature,
-}
-
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Signature {
-    pub template_name: ResolvesToNamedNode,
+    pub template_name: NamedNode,
     pub parameter_list: Vec<Parameter>,
     pub annotation_list: Option<Vec<Annotation>>,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Parameter {
     pub optional: bool,
     pub non_blank: bool,
@@ -48,76 +40,64 @@ pub struct Parameter {
     pub default_value: Option<DefaultValue>,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum PType {
-    BasicType(PrefixedName),
+    BasicType(NamedNode),
     LUBType(Box<PType>),
     ListType(Box<PType>),
     NEListType(Box<PType>),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct StottrVariable {
     pub name: String,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct DefaultValue {
     pub constant_term: ConstantTerm,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum ConstantTerm {
     Constant(ConstantLiteral),
     ConstantList(Vec<ConstantTerm>),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum ConstantLiteral {
-    IRI(ResolvesToNamedNode),
+    IRI(NamedNode),
     BlankNode(BlankNode),
     Literal(StottrLiteral),
     None,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct StottrLiteral {
     pub value: String,
     pub language: Option<String>,
-    pub data_type_iri: Option<ResolvesToNamedNode>,
+    pub data_type_iri: Option<NamedNode>,
 }
 
-#[derive(PartialEq, Debug)]
-pub struct PrefixedName {
-    pub prefix: String,
-    pub name: String,
-}
-
-#[derive(PartialEq, Debug)]
-pub enum ResolvesToNamedNode {
-    PrefixedName(PrefixedName),
-    NamedNode(NamedNode),
-}
-
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Instance {
     pub list_expander: Option<ListExpanderType>,
-    pub template_name: ResolvesToNamedNode,
+    pub template_name: NamedNode,
     pub argument_list: Vec<Argument>,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Annotation {
     pub instance: Instance,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Argument {
     pub list_expand: bool,
     pub term: StottrTerm,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum ListExpanderType {
     Cross,
     ZipMin,
@@ -135,7 +115,7 @@ impl ListExpanderType {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum StottrTerm {
     Variable(StottrVariable),
     ConstantTerm(ConstantTerm),

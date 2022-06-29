@@ -1,12 +1,13 @@
-use mapper::ast::{
-    Annotation, Argument, ConstantLiteral, ConstantTerm, DefaultValue, Directive, Instance,
-    ListExpanderType, PType, Parameter, Prefix, PrefixedName, ResolvesToNamedNode, Signature,
-    Statement, StottrDocument, StottrLiteral, StottrTerm, StottrVariable, Template,
+use mapper::parsing_ast::{
+    UnresolvedAnnotation, UnresolvedArgument, UnresolvedConstantLiteral, UnresolvedConstantTerm, UnresolvedDefaultValue, UnresolvedInstance,
+    UnresolvedPType, UnresolvedParameter, PrefixedName, ResolvesToNamedNode, UnresolvedSignature,
+    UnresolvedStatement, UnresolvedStottrDocument, UnresolvedStottrLiteral, UnresolvedStottrTerm, UnresolvedTemplate,
 };
 use mapper::parser::stottr_doc;
 use nom::Finish;
 use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, NamedNode};
+use mapper::ast::{Directive, ListExpanderType, Prefix, StottrVariable};
 
 #[test]
 fn test_easy_template() {
@@ -21,19 +22,19 @@ fn test_easy_template() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
             iri: NamedNode::new_unchecked("http://example.org#"),
         })],
-        statements: vec![Statement::Template(Template {
-            signature: Signature {
+        statements: vec![UnresolvedStatement::Template(UnresolvedTemplate {
+            signature: UnresolvedSignature {
                 template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "ex".to_string(),
                     name: "Person".to_string(),
                 }),
                 parameter_list: vec![
-                    Parameter {
+                    UnresolvedParameter {
                         optional: false,
                         non_blank: false,
                         ptype: None,
@@ -42,7 +43,7 @@ fn test_easy_template() {
                         },
                         default_value: None,
                     },
-                    Parameter {
+                    UnresolvedParameter {
                         optional: false,
                         non_blank: false,
                         ptype: None,
@@ -51,7 +52,7 @@ fn test_easy_template() {
                         },
                         default_value: None,
                     },
-                    Parameter {
+                    UnresolvedParameter {
                         optional: false,
                         non_blank: false,
                         ptype: None,
@@ -63,23 +64,23 @@ fn test_easy_template() {
                 ],
                 annotation_list: None,
             },
-            pattern_list: vec![Instance {
+            pattern_list: vec![UnresolvedInstance {
                 list_expander: None,
                 template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "o-rdf".to_string(),
                     name: "Type".to_string(),
                 }),
                 argument_list: vec![
-                    Argument {
+                    UnresolvedArgument {
                         list_expand: false,
-                        term: StottrTerm::ConstantTerm(ConstantTerm::Constant(
-                            ConstantLiteral::BlankNode(BlankNode::new_unchecked("person")),
+                        term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(
+                            UnresolvedConstantLiteral::BlankNode(BlankNode::new_unchecked("person")),
                         )),
                     },
-                    Argument {
+                    UnresolvedArgument {
                         list_expand: false,
-                        term: StottrTerm::ConstantTerm(ConstantTerm::Constant(
-                            ConstantLiteral::IRI(ResolvesToNamedNode::PrefixedName(PrefixedName {
+                        term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(
+                            UnresolvedConstantLiteral::IRI(ResolvesToNamedNode::PrefixedName(PrefixedName {
                                 prefix: "foaf".to_string(),
                                 name: "Person".to_string(),
                             })),
@@ -102,17 +103,17 @@ fn test_spec_modifiers_1() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
             iri: NamedNode::new_unchecked("http://example.net/ns#"),
         })],
-        statements: vec![Statement::Signature(Signature {
+        statements: vec![UnresolvedStatement::Signature(UnresolvedSignature {
             template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                 prefix: "ex".to_string(),
                 name: "NamedPizza".to_string(),
             }),
-            parameter_list: vec![Parameter {
+            parameter_list: vec![UnresolvedParameter {
                 optional: true,
                 non_blank: false,
                 ptype: None,
@@ -137,17 +138,17 @@ fn test_spec_modifiers_2() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
             iri: NamedNode::new_unchecked("http://example.net/ns#"),
         })],
-        statements: vec![Statement::Signature(Signature {
+        statements: vec![UnresolvedStatement::Signature(UnresolvedSignature {
             template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                 prefix: "ex".to_string(),
                 name: "NamedPizza".to_string(),
             }),
-            parameter_list: vec![Parameter {
+            parameter_list: vec![UnresolvedParameter {
                 optional: false,
                 non_blank: true,
                 ptype: None,
@@ -172,17 +173,17 @@ fn test_spec_modifiers_3() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
             iri: NamedNode::new_unchecked("http://example.net/ns#"),
         })],
-        statements: vec![Statement::Signature(Signature {
+        statements: vec![UnresolvedStatement::Signature(UnresolvedSignature {
             template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                 prefix: "ex".to_string(),
                 name: "NamedPizza".to_string(),
             }),
-            parameter_list: vec![Parameter {
+            parameter_list: vec![UnresolvedParameter {
                 optional: true,
                 non_blank: true,
                 ptype: None,
@@ -207,17 +208,17 @@ fn test_spec_modifiers_4() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
             iri: NamedNode::new_unchecked("http://example.net/ns#"),
         })],
-        statements: vec![Statement::Signature(Signature {
+        statements: vec![UnresolvedStatement::Signature(UnresolvedSignature {
             template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                 prefix: "ex".to_string(),
                 name: "NamedPizza".to_string(),
             }),
-            parameter_list: vec![Parameter {
+            parameter_list: vec![UnresolvedParameter {
                 optional: true,
                 non_blank: true,
                 ptype: None,
@@ -242,23 +243,23 @@ fn test_spec_type_1() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
             iri: NamedNode::new_unchecked("http://example.net/ns#"),
         })],
-        statements: vec![Statement::Signature(Signature {
+        statements: vec![UnresolvedStatement::Signature(UnresolvedSignature {
             template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                 prefix: "ex".to_string(),
                 name: "NamedPizza".to_string(),
             }),
-            parameter_list: vec![Parameter {
+            parameter_list: vec![UnresolvedParameter {
                 optional: false,
                 non_blank: false,
-                ptype: Some(PType::BasicType(PrefixedName {
+                ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "owl".to_string(),
                     name: "Class".to_string(),
-                })),
+                }))),
                 stottr_variable: StottrVariable {
                     name: "pizza".to_string(),
                 },
@@ -280,23 +281,23 @@ fn test_spec_type_2() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
             iri: NamedNode::new_unchecked("http://example.net/ns#"),
         })],
-        statements: vec![Statement::Signature(Signature {
+        statements: vec![UnresolvedStatement::Signature(UnresolvedSignature {
             template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                 prefix: "ex".to_string(),
                 name: "NamedPizza".to_string(),
             }),
-            parameter_list: vec![Parameter {
+            parameter_list: vec![UnresolvedParameter {
                 optional: true,
                 non_blank: false,
-                ptype: Some(PType::BasicType(PrefixedName {
+                ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "owl".to_string(),
                     name: "Class".to_string(),
-                })),
+                }))),
                 stottr_variable: StottrVariable {
                     name: "pizza".to_string(),
                 },
@@ -318,23 +319,23 @@ fn test_spec_type_3() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
             iri: NamedNode::new_unchecked("http://example.net/ns#"),
         })],
-        statements: vec![Statement::Signature(Signature {
+        statements: vec![UnresolvedStatement::Signature(UnresolvedSignature {
             template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                 prefix: "ex".to_string(),
                 name: "NamedPizza".to_string(),
             }),
-            parameter_list: vec![Parameter {
+            parameter_list: vec![UnresolvedParameter {
                 optional: true,
                 non_blank: true,
-                ptype: Some(PType::BasicType(PrefixedName {
+                ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "owl".to_string(),
                     name: "Class".to_string(),
-                })),
+                }))),
                 stottr_variable: StottrVariable {
                     name: "pizza".to_string(),
                 },
@@ -354,7 +355,7 @@ fn test_spec_default_value_1() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
                 name: "ex".to_string(),
@@ -365,23 +366,23 @@ fn test_spec_default_value_1() {
                 iri: NamedNode::new_unchecked("http://example.net/pizzas#"),
             }),
         ],
-        statements: vec![Statement::Signature(Signature {
+        statements: vec![UnresolvedStatement::Signature(UnresolvedSignature {
             template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                 prefix: "ex".to_string(),
                 name: "NamedPizza".to_string(),
             }),
-            parameter_list: vec![Parameter {
+            parameter_list: vec![UnresolvedParameter {
                 optional: false,
                 non_blank: false,
-                ptype: Some(PType::BasicType(PrefixedName {
+                ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "owl".to_string(),
                     name: "Class".to_string(),
-                })),
+                }))),
                 stottr_variable: StottrVariable {
                     name: "pizza".to_string(),
                 },
-                default_value: Some(DefaultValue {
-                    constant_term: ConstantTerm::Constant(ConstantLiteral::IRI(
+                default_value: Some(UnresolvedDefaultValue {
+                    constant_term: UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::IRI(
                         ResolvesToNamedNode::PrefixedName(PrefixedName {
                             prefix: "p".to_string(),
                             name: "pizza".to_string(),
@@ -403,7 +404,7 @@ fn test_spec_default_value_2() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
                 name: "ex".to_string(),
@@ -414,24 +415,24 @@ fn test_spec_default_value_2() {
                 iri: NamedNode::new_unchecked("http://example.net/pizzas#"),
             }),
         ],
-        statements: vec![Statement::Signature(Signature {
+        statements: vec![UnresolvedStatement::Signature(UnresolvedSignature {
             template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                 prefix: "ex".to_string(),
                 name: "NamedPizza".to_string(),
             }),
-            parameter_list: vec![Parameter {
+            parameter_list: vec![UnresolvedParameter {
                 optional: false,
                 non_blank: false,
-                ptype: Some(PType::BasicType(PrefixedName {
+                ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "owl".to_string(),
                     name: "Class".to_string(),
-                })),
+                }))),
                 stottr_variable: StottrVariable {
                     name: "pizza".to_string(),
                 },
-                default_value: Some(DefaultValue {
-                    constant_term: ConstantTerm::Constant(ConstantLiteral::Literal(
-                        StottrLiteral {
+                default_value: Some(UnresolvedDefaultValue {
+                    constant_term: UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(
+                        UnresolvedStottrLiteral {
                             value: "2".to_string(),
                             language: None,
                             data_type_iri: Some(ResolvesToNamedNode::NamedNode(
@@ -455,7 +456,7 @@ fn test_spec_default_value_3() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
                 name: "ex".to_string(),
@@ -466,24 +467,24 @@ fn test_spec_default_value_3() {
                 iri: NamedNode::new_unchecked("http://example.net/pizzas#"),
             }),
         ],
-        statements: vec![Statement::Signature(Signature {
+        statements: vec![UnresolvedStatement::Signature(UnresolvedSignature {
             template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                 prefix: "ex".to_string(),
                 name: "NamedPizza".to_string(),
             }),
-            parameter_list: vec![Parameter {
+            parameter_list: vec![UnresolvedParameter {
                 optional: false,
                 non_blank: false,
-                ptype: Some(PType::BasicType(PrefixedName {
+                ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "owl".to_string(),
                     name: "Class".to_string(),
-                })),
+                }))),
                 stottr_variable: StottrVariable {
                     name: "pizza".to_string(),
                 },
-                default_value: Some(DefaultValue {
-                    constant_term: ConstantTerm::Constant(ConstantLiteral::Literal(
-                        StottrLiteral {
+                default_value: Some(UnresolvedDefaultValue {
+                    constant_term: UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(
+                        UnresolvedStottrLiteral {
                             value: "asdf".to_string(),
                             language: None,
                             data_type_iri: Some(ResolvesToNamedNode::NamedNode(
@@ -507,7 +508,7 @@ fn test_spec_more_parameters() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
                 name: "ex".to_string(),
@@ -518,13 +519,13 @@ fn test_spec_more_parameters() {
                 iri: NamedNode::new_unchecked("http://example.net/pizzas#"),
             }),
         ],
-        statements: vec![Statement::Signature(Signature {
+        statements: vec![UnresolvedStatement::Signature(UnresolvedSignature {
             template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                 prefix: "ex".to_string(),
                 name: "NamedPizza".to_string(),
             }),
             parameter_list: vec![
-                Parameter {
+                UnresolvedParameter {
                     optional: false,
                     non_blank: false,
                     ptype: None,
@@ -533,7 +534,7 @@ fn test_spec_more_parameters() {
                     },
                     default_value: None,
                 },
-                Parameter {
+                UnresolvedParameter {
                     optional: false,
                     non_blank: false,
                     ptype: None,
@@ -542,7 +543,7 @@ fn test_spec_more_parameters() {
                     },
                     default_value: None,
                 },
-                Parameter {
+                UnresolvedParameter {
                     optional: false,
                     non_blank: false,
                     ptype: None,
@@ -566,7 +567,7 @@ fn test_spec_lists() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
                 name: "ex".to_string(),
@@ -577,22 +578,22 @@ fn test_spec_lists() {
                 iri: NamedNode::new_unchecked("http://example.net/pizzas#"),
             }),
         ],
-        statements: vec![Statement::Signature(Signature {
+        statements: vec![UnresolvedStatement::Signature(UnresolvedSignature {
             template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                 prefix: "ex".to_string(),
                 name: "NamedPizza".to_string(),
             }),
             parameter_list: vec![
-                Parameter {
+                UnresolvedParameter {
                     optional: false,
                     non_blank: false,
                     ptype: None,
                     stottr_variable: StottrVariable {
                         name: "pizza".to_string(),
                     },
-                    default_value: Some(DefaultValue {
-                        constant_term: ConstantTerm::Constant(ConstantLiteral::Literal(
-                            StottrLiteral {
+                    default_value: Some(UnresolvedDefaultValue {
+                        constant_term: UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(
+                            UnresolvedStottrLiteral {
                                 value: "asdf".to_string(),
                                 language: None,
                                 data_type_iri: Some(ResolvesToNamedNode::NamedNode(
@@ -604,16 +605,16 @@ fn test_spec_lists() {
                         )),
                     }),
                 },
-                Parameter {
+                UnresolvedParameter {
                     optional: false,
                     non_blank: false,
                     ptype: None,
                     stottr_variable: StottrVariable {
                         name: "country".to_string(),
                     },
-                    default_value: Some(DefaultValue {
-                        constant_term: ConstantTerm::ConstantList(vec![
-                            ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                    default_value: Some(UnresolvedDefaultValue {
+                        constant_term: UnresolvedConstantTerm::ConstantList(vec![
+                            UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                 value: "asdf".to_string(),
                                 language: None,
                                 data_type_iri: Some(ResolvesToNamedNode::NamedNode(
@@ -622,7 +623,7 @@ fn test_spec_lists() {
                                     ),
                                 )),
                             })),
-                            ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                            UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                 value: "asdf".to_string(),
                                 language: None,
                                 data_type_iri: Some(ResolvesToNamedNode::NamedNode(
@@ -634,16 +635,16 @@ fn test_spec_lists() {
                         ]),
                     }),
                 },
-                Parameter {
+                UnresolvedParameter {
                     optional: false,
                     non_blank: false,
                     ptype: None,
                     stottr_variable: StottrVariable {
                         name: "toppings".to_string(),
                     },
-                    default_value: Some(DefaultValue {
-                        constant_term: ConstantTerm::ConstantList(vec![
-                            ConstantTerm::ConstantList(vec![ConstantTerm::ConstantList(vec![])]),
+                    default_value: Some(UnresolvedDefaultValue {
+                        constant_term: UnresolvedConstantTerm::ConstantList(vec![
+                            UnresolvedConstantTerm::ConstantList(vec![UnresolvedConstantTerm::ConstantList(vec![])]),
                         ]),
                     }),
                 },
@@ -666,7 +667,7 @@ fn test_spec_more_complex_types() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
                 name: "ex".to_string(),
@@ -677,36 +678,36 @@ fn test_spec_more_complex_types() {
                 iri: NamedNode::new_unchecked("http://example.net/pizzas#"),
             }),
         ],
-        statements: vec![Statement::Signature(Signature {
+        statements: vec![UnresolvedStatement::Signature(UnresolvedSignature {
             template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                 prefix: "ex".to_string(),
                 name: "NamedPizza".to_string(),
             }),
             parameter_list: vec![
-                Parameter {
+                UnresolvedParameter {
                     optional: false,
                     non_blank: true,
-                    ptype: Some(PType::BasicType(PrefixedName {
+                    ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
                         prefix: "owl".to_string(),
                         name: "Class".to_string(),
-                    })),
+                    }))),
                     stottr_variable: StottrVariable {
                         name: "pizza".to_string(),
                     },
                     default_value: None,
                 },
-                Parameter {
+                UnresolvedParameter {
                     optional: true,
                     non_blank: true,
-                    ptype: Some(PType::BasicType(PrefixedName {
+                    ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
                         prefix: "owl".to_string(),
                         name: "NamedIndividual".to_string(),
-                    })),
+                    }))),
                     stottr_variable: StottrVariable {
                         name: "country".to_string(),
                     },
-                    default_value: Some(DefaultValue {
-                        constant_term: ConstantTerm::Constant(ConstantLiteral::IRI(
+                    default_value: Some(UnresolvedDefaultValue {
+                        constant_term: UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::IRI(
                             ResolvesToNamedNode::PrefixedName(PrefixedName {
                                 prefix: "ex".to_string(),
                                 name: "Class".to_string(),
@@ -714,14 +715,14 @@ fn test_spec_more_complex_types() {
                         )),
                     }),
                 },
-                Parameter {
+                UnresolvedParameter {
                     optional: false,
                     non_blank: false,
-                    ptype: Some(PType::NEListType(Box::new(PType::ListType(Box::new(
-                        PType::ListType(Box::new(PType::BasicType(PrefixedName {
+                    ptype: Some(UnresolvedPType::NEListType(Box::new(UnresolvedPType::ListType(Box::new(
+                        UnresolvedPType::ListType(Box::new(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
                             prefix: "owl".to_string(),
                             name: "Class".to_string(),
-                        }))),
+                        })))),
                     ))))),
                     stottr_variable: StottrVariable {
                         name: "toppings".to_string(),
@@ -743,7 +744,7 @@ fn test_spec_example_1() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
                 name: "ex".to_string(),
@@ -754,8 +755,8 @@ fn test_spec_example_1() {
                 iri: NamedNode::new_unchecked("http://example.net/pizzas#"),
             }),
         ],
-        statements: vec![Statement::Template(Template {
-            signature: Signature {
+        statements: vec![UnresolvedStatement::Template(UnresolvedTemplate {
+            signature: UnresolvedSignature {
                 template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "ex".to_string(),
                     name: "template".to_string(),
@@ -763,16 +764,16 @@ fn test_spec_example_1() {
                 parameter_list: vec![],
                 annotation_list: None,
             },
-            pattern_list: vec![Instance {
+            pattern_list: vec![UnresolvedInstance {
                 list_expander: None,
                 template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "ex".to_string(),
                     name: "template".to_string(),
                 }),
-                argument_list: vec![Argument {
+                argument_list: vec![UnresolvedArgument {
                     list_expand: false,
-                    term: StottrTerm::ConstantTerm(ConstantTerm::ConstantList(vec![
-                        ConstantTerm::Constant(ConstantLiteral::IRI(
+                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::ConstantList(vec![
+                        UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::IRI(
                             ResolvesToNamedNode::PrefixedName(PrefixedName {
                                 prefix: "ex".to_string(),
                                 name: "template".to_string(),
@@ -794,7 +795,7 @@ fn test_spec_example_2() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
                 name: "ex".to_string(),
@@ -805,13 +806,13 @@ fn test_spec_example_2() {
                 iri: NamedNode::new_unchecked("http://example.net/pizzas#"),
             }),
         ],
-        statements: vec![Statement::Template(Template {
-            signature: Signature {
+        statements: vec![UnresolvedStatement::Template(UnresolvedTemplate {
+            signature: UnresolvedSignature {
                 template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "ex".to_string(),
                     name: "template".to_string(),
                 }),
-                parameter_list: vec![Parameter {
+                parameter_list: vec![UnresolvedParameter {
                     optional: true,
                     non_blank: true,
                     ptype: None,
@@ -822,17 +823,17 @@ fn test_spec_example_2() {
                 }],
                 annotation_list: None,
             },
-            pattern_list: vec![Instance {
+            pattern_list: vec![UnresolvedInstance {
                 list_expander: None,
                 template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "ex".to_string(),
                     name: "template".to_string(),
                 }),
-                argument_list: vec![Argument {
+                argument_list: vec![UnresolvedArgument {
                     list_expand: false,
-                    term: StottrTerm::ConstantTerm(ConstantTerm::ConstantList(vec![
-                        ConstantTerm::ConstantList(vec![ConstantTerm::ConstantList(vec![
-                            ConstantTerm::Constant(ConstantLiteral::IRI(
+                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::ConstantList(vec![
+                        UnresolvedConstantTerm::ConstantList(vec![UnresolvedConstantTerm::ConstantList(vec![
+                            UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::IRI(
                                 ResolvesToNamedNode::PrefixedName(PrefixedName {
                                     prefix: "ex".to_string(),
                                     name: "template".to_string(),
@@ -855,7 +856,7 @@ fn test_spec_example_3() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
                 name: "ex".to_string(),
@@ -866,8 +867,8 @@ fn test_spec_example_3() {
                 iri: NamedNode::new_unchecked("http://example.net/pizzas#"),
             }),
         ],
-        statements: vec![Statement::Template(Template {
-            signature: Signature {
+        statements: vec![UnresolvedStatement::Template(UnresolvedTemplate {
+            signature: UnresolvedSignature {
                 template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "ex".to_string(),
                     name: "template".to_string(),
@@ -875,16 +876,16 @@ fn test_spec_example_3() {
                 parameter_list: vec![],
                 annotation_list: None,
             },
-            pattern_list: vec![Instance {
+            pattern_list: vec![UnresolvedInstance {
                 list_expander: None,
                 template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "ex".to_string(),
                     name: "template".to_string(),
                 }),
-                argument_list: vec![Argument {
+                argument_list: vec![UnresolvedArgument {
                     list_expand: false,
-                    term: StottrTerm::ConstantTerm(ConstantTerm::ConstantList(vec![
-                        ConstantTerm::Constant(ConstantLiteral::IRI(
+                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::ConstantList(vec![
+                        UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::IRI(
                             ResolvesToNamedNode::PrefixedName(PrefixedName {
                                 prefix: "ex".to_string(),
                                 name: "template".to_string(),
@@ -918,7 +919,7 @@ fn test_spec_example_4() {
 
     let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
     assert_eq!("", s);
-    let expected = StottrDocument {
+    let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
                 name: "ex".to_string(),
@@ -930,79 +931,79 @@ fn test_spec_example_4() {
 
             }),
         ],
-        statements: vec![Statement::Template(Template {
-            signature: Signature {
+        statements: vec![UnresolvedStatement::Template(UnresolvedTemplate {
+            signature: UnresolvedSignature {
                 template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                     prefix: "ex".to_string(),
                     name: "NamedPizza".to_string(),
                 }),
                 parameter_list: vec![
-                    Parameter {
+                    UnresolvedParameter {
                         optional: false,
                         non_blank: true,
-                        ptype: Some(PType::BasicType(PrefixedName {
+                        ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
                             prefix: "owl".to_string(),
                             name: "Class".to_string(),
-                        })),
+                        }))),
                         stottr_variable: StottrVariable { name: "pizza".to_string() },
-                        default_value: Some(DefaultValue {
-                            constant_term: ConstantTerm::Constant(ConstantLiteral::IRI(ResolvesToNamedNode::PrefixedName(PrefixedName {
+                        default_value: Some(UnresolvedDefaultValue {
+                            constant_term: UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::IRI(ResolvesToNamedNode::PrefixedName(PrefixedName {
                                 prefix: "p".to_string(),
                                 name: "Grandiosa".to_string(),
                             }))),
                         }),
                     },
-                    Parameter {
+                    UnresolvedParameter {
                         optional: true,
                         non_blank: true,
-                        ptype: Some(PType::LUBType(Box::new(PType::BasicType(PrefixedName {
+                        ptype: Some(UnresolvedPType::LUBType(Box::new(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
                             prefix: "owl".to_string(),
                             name: "NamedIndividual".to_string(),
-                        })))),
+                        }))))),
                         stottr_variable: StottrVariable { name: "country".to_string() },
                         default_value: None,
                     },
-                    Parameter {
+                    UnresolvedParameter {
                         optional: false,
                         non_blank: false,
-                        ptype: Some(PType::ListType(Box::new(PType::BasicType(PrefixedName {
+                        ptype: Some(UnresolvedPType::ListType(Box::new(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
                             prefix: "owl".to_string(),
                             name: "Class".to_string(),
-                        })))),
+                        }))))),
                         stottr_variable: StottrVariable { name: "toppings".to_string() },
                         default_value: None,
                     },
                 ],
                 annotation_list: Some(vec![
-                    Annotation {
-                        instance: Instance {
+                    UnresolvedAnnotation {
+                        instance: UnresolvedInstance {
                             list_expander: Some(ListExpanderType::Cross),
                             template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                                 prefix: "ex".to_string(),
                                 name: "SomeAnnotationTemplate".to_string(),
                             }),
                             argument_list: vec![
-                                Argument {
+                                UnresolvedArgument {
                                     list_expand: false,
-                                    term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                         value: "asdf".to_string(),
                                         language: None,
                                         data_type_iri: Some(ResolvesToNamedNode::NamedNode(NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#string"))),
 
                                     }))),
                                 },
-                                Argument {
+                                UnresolvedArgument {
                                     list_expand: false,
-                                    term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                         value: "asdf".to_string(),
                                         language: None,
                                         data_type_iri: Some(ResolvesToNamedNode::NamedNode(NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#string"))),
 
                                     }))),
                                 },
-                                Argument {
+                                UnresolvedArgument {
                                     list_expand: false,
-                                    term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                         value: "asdf".to_string(),
                                         language: None,
                                         data_type_iri: Some(ResolvesToNamedNode::NamedNode(NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#string"))),
@@ -1011,42 +1012,42 @@ fn test_spec_example_4() {
                             ],
                         },
                     },
-                    Annotation {
-                        instance: Instance {
+                    UnresolvedAnnotation {
+                        instance: UnresolvedInstance {
                             list_expander: None,
                             template_name: ResolvesToNamedNode::NamedNode(NamedNode::new_unchecked("http://asdf" )),
                             argument_list: vec![
-                                Argument {
+                                UnresolvedArgument {
                                     list_expand: false,
-                                    term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                         value: "asdf".to_string(),
                                         language: None,
                                         data_type_iri: Some(ResolvesToNamedNode::NamedNode(NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#string"))),
                                     }))),
                                 },
-                                Argument {
+                                UnresolvedArgument {
                                     list_expand: false,
-                                    term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                         value: "asdf".to_string(),
                                         language: None,
                                         data_type_iri: Some(ResolvesToNamedNode::NamedNode(NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#string"))),
                                     }))),
                                 },
-                                Argument {
+                                UnresolvedArgument {
                                     list_expand: true,
-                                    term: StottrTerm::ConstantTerm(ConstantTerm::ConstantList(vec![
-                                        ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::ConstantList(vec![
+                                        UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                             value: "A".to_string(),
                                             language: None,
                                             data_type_iri: Some(ResolvesToNamedNode::NamedNode(NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#string"))),
 
                                         })),
-                                        ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                                        UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                             value: "B".to_string(),
                                             language: None,
                                             data_type_iri: Some(ResolvesToNamedNode::NamedNode(NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#string"))),
                                         })),
-                                        ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                                        UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                             value: "C".to_string(),
                                             language: None,
                                             data_type_iri: Some(ResolvesToNamedNode::NamedNode(NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#string"))),
@@ -1059,57 +1060,57 @@ fn test_spec_example_4() {
                 ]),
             },
             pattern_list: vec![
-                Instance {
+                UnresolvedInstance {
                     list_expander: Some(ListExpanderType::Cross),
                     template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                         prefix: "ex".to_string(),
                         name: "Template1".to_string(),
                     }),
                     argument_list: vec![
-                        Argument {
+                        UnresolvedArgument {
                             list_expand: false,
-                            term: StottrTerm::Variable(StottrVariable { name: "pizza".to_string() }),
+                            term: UnresolvedStottrTerm::Variable(StottrVariable { name: "pizza".to_string() }),
                         },
-                        Argument {
+                        UnresolvedArgument {
                             list_expand: true,
-                            term: StottrTerm::Variable(StottrVariable { name: "toppings".to_string() }),
+                            term: UnresolvedStottrTerm::Variable(StottrVariable { name: "toppings".to_string() }),
                         },
                     ],
                 },
-                Instance {
+                UnresolvedInstance {
                     list_expander: None,
                     template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                         prefix: "ex".to_string(),
                         name: "Template2".to_string(),
                     }),
                     argument_list: vec![
-                        Argument {
+                        UnresolvedArgument {
                             list_expand: false,
-                            term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                            term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                 value: "1".to_string(),
                                 language: None,
                                 data_type_iri: Some(ResolvesToNamedNode::NamedNode(NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#integer"))),
                             }))),
                         },
-                        Argument {
+                        UnresolvedArgument {
                             list_expand: false,
-                            term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                            term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                 value: "2".to_string(),
                                 language: None,
                                 data_type_iri: Some(ResolvesToNamedNode::NamedNode(NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#integer"))),
                             }))),
                         },
-                        Argument {
+                        UnresolvedArgument {
                             list_expand: false,
-                            term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                            term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                 value: "4".to_string(),
                                 language: None,
                                 data_type_iri: Some(ResolvesToNamedNode::NamedNode(NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#integer"))),
                             }))),
                         },
-                        Argument {
+                        UnresolvedArgument {
                             list_expand: false,
-                            term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                            term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                 value: "5".to_string(),
                                 language: None,
                                 data_type_iri: Some(ResolvesToNamedNode::NamedNode(NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#integer"))),
@@ -1117,12 +1118,12 @@ fn test_spec_example_4() {
                         },
                     ],
                 },
-                Instance {
+                UnresolvedInstance {
                     list_expander: None,
                     template_name: ResolvesToNamedNode::NamedNode(NamedNode::new_unchecked("http://Template2.com")),
-                    argument_list: vec![Argument {
+                    argument_list: vec![UnresolvedArgument {
                         list_expand: false,
-                        term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                        term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                             value: "asdf".to_string(),
                             language: None,
                             data_type_iri: Some(ResolvesToNamedNode::PrefixedName(PrefixedName {
@@ -1132,16 +1133,16 @@ fn test_spec_example_4() {
                         }))),
                     }],
                 },
-                Instance {
+                UnresolvedInstance {
                     list_expander: Some(ListExpanderType::ZipMax),
                     template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                         prefix: "ex".to_string(),
                         name: "Template4".to_string(),
                     }),
                     argument_list: vec![
-                        Argument {
+                        UnresolvedArgument {
                             list_expand: false,
-                            term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                            term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                 value: "asdf".to_string(),
                                 language: None,
                                 data_type_iri: Some(ResolvesToNamedNode::PrefixedName(PrefixedName {
@@ -1150,19 +1151,19 @@ fn test_spec_example_4() {
                                 })),
                             }))),
                         },
-                        Argument {
+                        UnresolvedArgument {
                             list_expand: false,
-                            term: StottrTerm::Variable(StottrVariable { name: "pizza".to_string() }),
+                            term: UnresolvedStottrTerm::Variable(StottrVariable { name: "pizza".to_string() }),
                         },
-                        Argument {
+                        UnresolvedArgument {
                             list_expand: true,
-                            term: StottrTerm::ConstantTerm(ConstantTerm::ConstantList(vec![
-                                ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                            term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::ConstantList(vec![
+                                UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                     value: "a".to_string(),
                                     language: None,
                                     data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::STRING.into_owned())),
                                 })),
-                                ConstantTerm::Constant(ConstantLiteral::Literal(StottrLiteral {
+                                UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                     value: "B".to_string(),
                                     language: None,
                                     data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::STRING.into_owned())),
@@ -1171,36 +1172,36 @@ fn test_spec_example_4() {
                         },
                     ],
                 },
-                Instance {
+                UnresolvedInstance {
                     list_expander: Some(ListExpanderType::ZipMax),
                     template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
                         prefix: "ex".to_string(),
                         name: "Template4".to_string(),
                     }),
                     argument_list: vec![
-                        Argument {
+                        UnresolvedArgument {
                             list_expand: false,
-                            term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::BlankNode(BlankNode::new_unchecked(
+                            term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::BlankNode(BlankNode::new_unchecked(
                                 "AnonymousBlankNode",
                             )))),
                         },
-                        Argument {
+                        UnresolvedArgument {
                             list_expand: false,
-                            term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::BlankNode(BlankNode::new_unchecked(
+                            term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::BlankNode(BlankNode::new_unchecked(
                                 "AnonymousBlankNode",
                             )))),
                         },
-                        Argument {
+                        UnresolvedArgument {
                             list_expand: false,
-                            term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::BlankNode(BlankNode::new_unchecked(
+                            term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::BlankNode(BlankNode::new_unchecked(
                                 "AnonymousBlankNode",
                             )))),
                         },
-                        Argument {
+                        UnresolvedArgument {
                             list_expand: true,
-                            term: StottrTerm::ConstantTerm(ConstantTerm::ConstantList(vec![
-                                ConstantTerm::Constant(ConstantLiteral::BlankNode(BlankNode::new_unchecked("AnonymousBlankNode"))),
-                                ConstantTerm::Constant(ConstantLiteral::BlankNode(BlankNode::new_unchecked("AnonymousBlankNode"))),
+                            term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::ConstantList(vec![
+                                UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::BlankNode(BlankNode::new_unchecked("AnonymousBlankNode"))),
+                                UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::BlankNode(BlankNode::new_unchecked("AnonymousBlankNode"))),
                             ])),
                         },
                     ],

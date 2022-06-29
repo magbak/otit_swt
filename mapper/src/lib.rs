@@ -7,6 +7,9 @@ use mimalloc::MiMalloc;
 static GLOBAL: MiMalloc = MiMalloc;
 
 pub mod parser;
-pub mod ast;
+pub mod parsing_ast;
 mod templates;
 mod mapping;
+pub mod ast;
+mod resolver;
+mod type_inference;

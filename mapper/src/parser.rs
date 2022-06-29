@@ -1,9 +1,9 @@
 extern crate nom;
 
-use crate::ast::{
-    Annotation, Argument, BaseTemplate, ConstantLiteral, ConstantTerm, DefaultValue, Directive,
-    Instance, ListExpanderType, PType, Parameter, Prefix, PrefixedName, ResolvesToNamedNode,
-    Signature, Statement, StottrDocument, StottrLiteral, StottrTerm, StottrVariable, Template,
+use crate::parsing_ast::{
+    UnresolvedAnnotation, UnresolvedArgument, UnresolvedBaseTemplate, UnresolvedConstantLiteral, UnresolvedConstantTerm, UnresolvedDefaultValue,
+    UnresolvedInstance, UnresolvedPType, UnresolvedParameter, PrefixedName, ResolvesToNamedNode,
+    UnresolvedSignature, UnresolvedStatement, UnresolvedStottrDocument, UnresolvedStottrLiteral, UnresolvedStottrTerm, UnresolvedTemplate,
 };
 use nom::branch::alt;
 use nom::bytes::complete::{escaped, is_not, tag};
@@ -17,13 +17,14 @@ use oxrdf::{BlankNode, NamedNode};
 
 #[cfg(test)]
 use nom::Finish;
+use crate::ast::{Directive, ListExpanderType, Prefix, StottrVariable};
 
 enum DirectiveStatement {
     Directive(Directive),
-    Statement(Statement),
+    Statement(UnresolvedStatement),
 }
 
-pub fn stottr_doc(s: &str) -> IResult<&str, StottrDocument> {
+pub fn stottr_doc(s: &str) -> IResult<&str, UnresolvedStottrDocument> {
     let (s, parts) = many0(tuple((
         multispace0,
         alt((directive_as_union, statement_as_union)),
@@ -43,7 +44,7 @@ pub fn stottr_doc(s: &str) -> IResult<&str, StottrDocument> {
     }
     Ok((
         s,
-        StottrDocument {
+        UnresolvedStottrDocument {
             directives,
             statements,
         },
@@ -55,7 +56,7 @@ fn statement_as_union(s: &str) -> IResult<&str, DirectiveStatement> {
     Ok((s, DirectiveStatement::Statement(statement)))
 }
 
-fn statement(s: &str) -> IResult<&str, Statement> {
+fn statement(s: &str) -> IResult<&str, UnresolvedStatement> {
     let (s, (statement, _, _)) = tuple((
         alt((
             template_as_statement,
@@ -69,12 +70,12 @@ fn statement(s: &str) -> IResult<&str, Statement> {
     Ok((s, statement))
 }
 
-fn signature_as_statement(s: &str) -> IResult<&str, Statement> {
+fn signature_as_statement(s: &str) -> IResult<&str, UnresolvedStatement> {
     let (s, sign) = signature(s)?;
-    Ok((s, Statement::Signature(sign)))
+    Ok((s, UnresolvedStatement::Signature(sign)))
 }
 
-fn signature(s: &str) -> IResult<&str, Signature> {
+fn signature(s: &str) -> IResult<&str, UnresolvedSignature> {
     let (s, (template_name, _, _, _, parameter_list, _, _, _, annotation_list)) = tuple((
         template_name,
         multispace0,
@@ -88,7 +89,7 @@ fn signature(s: &str) -> IResult<&str, Signature> {
     ))(s)?;
     Ok((
         s,
-        Signature {
+        UnresolvedSignature {
             template_name,
             parameter_list,
             annotation_list,
@@ -96,28 +97,28 @@ fn signature(s: &str) -> IResult<&str, Signature> {
     ))
 }
 
-fn annotation_list(a: &str) -> IResult<&str, Vec<Annotation>> {
+fn annotation_list(a: &str) -> IResult<&str, Vec<UnresolvedAnnotation>> {
     let (a, li) = separated_list1(tag(","), annotation)(a)?;
     Ok((a, li))
 }
 
-fn annotation(a: &str) -> IResult<&str, Annotation> {
+fn annotation(a: &str) -> IResult<&str, UnresolvedAnnotation> {
     let (a, (_, _, _, instance, _)) =
         tuple((multispace0, tag("@@"), multispace0, instance, multispace0))(a)?;
-    Ok((a, Annotation { instance }))
+    Ok((a, UnresolvedAnnotation { instance }))
 }
 
-fn template_as_statement(t: &str) -> IResult<&str, Statement> {
+fn template_as_statement(t: &str) -> IResult<&str, UnresolvedStatement> {
     let (t, template) = template(t)?;
-    Ok((t, Statement::Template(template)))
+    Ok((t, UnresolvedStatement::Template(template)))
 }
 
-fn template(t: &str) -> IResult<&str, Template> {
+fn template(t: &str) -> IResult<&str, UnresolvedTemplate> {
     let (t, (signature, _, _, _, pattern_list)) =
         tuple((signature, multispace0, tag("::"), multispace0, pattern_list))(t)?;
     Ok((
         t,
-        Template {
+        UnresolvedTemplate {
             signature,
             pattern_list,
         },
@@ -129,23 +130,23 @@ fn template_name(t: &str) -> IResult<&str, ResolvesToNamedNode> {
     Ok((t, tn))
 }
 
-fn base_template_as_statement(b: &str) -> IResult<&str, Statement> {
+fn base_template_as_statement(b: &str) -> IResult<&str, UnresolvedStatement> {
     let (b, t) = base_template(b)?;
-    Ok((b, Statement::BaseTemplate(t)))
+    Ok((b, UnresolvedStatement::BaseTemplate(t)))
 }
 
-fn base_template(b: &str) -> IResult<&str, BaseTemplate> {
+fn base_template(b: &str) -> IResult<&str, UnresolvedBaseTemplate> {
     let (b, (signature, _, _, _, _)) =
         tuple((signature, multispace0, tag("::"), multispace0, tag("BASE")))(b)?;
-    Ok((b, BaseTemplate { signature }))
+    Ok((b, UnresolvedBaseTemplate { signature }))
 }
 
-fn instance_as_statement(i: &str) -> IResult<&str, Statement> {
+fn instance_as_statement(i: &str) -> IResult<&str, UnresolvedStatement> {
     let (i, instance) = instance(i)?;
-    Ok((i, Statement::Instance(instance)))
+    Ok((i, UnresolvedStatement::Instance(instance)))
 }
 
-fn instance(i: &str) -> IResult<&str, Instance> {
+fn instance(i: &str) -> IResult<&str, UnresolvedInstance> {
     let (i, (_, expander, template_name, _, argument_list, _)) = tuple((
         multispace0,
         opt(tuple((list_expander, multispace0, tag("|"), multispace0))),
@@ -160,7 +161,7 @@ fn instance(i: &str) -> IResult<&str, Instance> {
     }
     Ok((
         i,
-        Instance {
+        UnresolvedInstance {
             list_expander: exp,
             template_name,
             argument_list,
@@ -174,44 +175,44 @@ fn list_expander(l: &str) -> IResult<&str, ListExpanderType> {
     Ok((l, expander_type))
 }
 
-fn argument_list(a: &str) -> IResult<&str, Vec<Argument>> {
+fn argument_list(a: &str) -> IResult<&str, Vec<UnresolvedArgument>> {
     let (a, (_, l, _)) = tuple((tag("("), separated_list0(tag(","), argument), tag(")")))(a)?;
     Ok((a, l))
 }
 
-fn argument(a: &str) -> IResult<&str, Argument> {
+fn argument(a: &str) -> IResult<&str, UnresolvedArgument> {
     let (a, (_, list_expand, term, _)) =
         tuple((multispace0, opt(list_expand), term, multispace0))(a)?;
     Ok((
         a,
-        Argument {
+        UnresolvedArgument {
             list_expand: list_expand.is_some(),
             term,
         },
     ))
 }
 
-fn term(t: &str) -> IResult<&str, StottrTerm> {
+fn term(t: &str) -> IResult<&str, UnresolvedStottrTerm> {
     let (t, term) = alt((variable_as_term, constant_term_as_term, list_as_term))(t)?;
     Ok((t, term))
 }
 
-fn variable_as_term(v: &str) -> IResult<&str, StottrTerm> {
+fn variable_as_term(v: &str) -> IResult<&str, UnresolvedStottrTerm> {
     let (v, var) = variable(v)?;
-    Ok((v, StottrTerm::Variable(var)))
+    Ok((v, UnresolvedStottrTerm::Variable(var)))
 }
 
-fn constant_term_as_term(c: &str) -> IResult<&str, StottrTerm> {
+fn constant_term_as_term(c: &str) -> IResult<&str, UnresolvedStottrTerm> {
     let (c, con) = constant_term(c)?;
-    Ok((c, StottrTerm::ConstantTerm(con)))
+    Ok((c, UnresolvedStottrTerm::ConstantTerm(con)))
 }
 
-fn list_as_term(l: &str) -> IResult<&str, StottrTerm> {
+fn list_as_term(l: &str) -> IResult<&str, UnresolvedStottrTerm> {
     let (l, li) = list(l)?;
-    Ok((l, StottrTerm::List(li)))
+    Ok((l, UnresolvedStottrTerm::List(li)))
 }
 
-fn list(l: &str) -> IResult<&str, Vec<StottrTerm>> {
+fn list(l: &str) -> IResult<&str, Vec<UnresolvedStottrTerm>> {
     let (l, (_, li, _)) = tuple((tag("("), separated_list0(tag(","), term), tag(")")))(l)?;
     Ok((l, li))
 }
@@ -221,12 +222,12 @@ fn list_expand(l: &str) -> IResult<&str, &str> {
     Ok((l, expand))
 }
 
-fn pattern_list(p: &str) -> IResult<&str, Vec<Instance>> {
+fn pattern_list(p: &str) -> IResult<&str, Vec<UnresolvedInstance>> {
     let (p, (_, ilist, _)) = tuple((tag("{"), separated_list0(tag(","), instance), tag("}")))(p)?;
     Ok((p, ilist))
 }
 
-fn parameter(p: &str) -> IResult<&str, Parameter> {
+fn parameter(p: &str) -> IResult<&str, UnresolvedParameter> {
     let path1 = tuple((
         multispace0,
         opt(alt((tag("?"), tag("!?")))),
@@ -264,7 +265,7 @@ fn parameter(p: &str) -> IResult<&str, Parameter> {
 
     Ok((
         p,
-        Parameter {
+        UnresolvedParameter {
             optional,
             non_blank,
             ptype,
@@ -274,29 +275,29 @@ fn parameter(p: &str) -> IResult<&str, Parameter> {
     ))
 }
 
-fn ptype(p: &str) -> IResult<&str, PType> {
+fn ptype(p: &str) -> IResult<&str, UnresolvedPType> {
     let (p, t) = alt((list_type, ne_list_type, lub_type, basic_type))(p)?;
     Ok((p, t))
 }
 
-fn list_type(l: &str) -> IResult<&str, PType> {
+fn list_type(l: &str) -> IResult<&str, UnresolvedPType> {
     let (l, (_, t, _)) = tuple((tag("List<"), ptype, tag(">")))(l)?;
-    Ok((l, PType::ListType(Box::new(t))))
+    Ok((l, UnresolvedPType::ListType(Box::new(t))))
 }
 
-fn ne_list_type(l: &str) -> IResult<&str, PType> {
+fn ne_list_type(l: &str) -> IResult<&str, UnresolvedPType> {
     let (l, (_, t, _)) = tuple((tag("NEList<"), ptype, tag(">")))(l)?;
-    Ok((l, PType::NEListType(Box::new(t))))
+    Ok((l, UnresolvedPType::NEListType(Box::new(t))))
 }
 
-fn lub_type(l: &str) -> IResult<&str, PType> {
+fn lub_type(l: &str) -> IResult<&str, UnresolvedPType> {
     let (l, (_, t, _)) = tuple((tag("LUB<"), basic_type, tag(">")))(l)?;
-    Ok((l, PType::LUBType(Box::new(t))))
+    Ok((l, UnresolvedPType::LUBType(Box::new(t))))
 }
 
-fn basic_type(b: &str) -> IResult<&str, PType> {
+fn basic_type(b: &str) -> IResult<&str, UnresolvedPType> {
     let (b, t) = prefixed_name(b)?;
-    Ok((b, PType::BasicType(t)))
+    Ok((b, UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(t))))
 }
 
 fn variable(v: &str) -> IResult<&str, StottrVariable> {
@@ -304,12 +305,12 @@ fn variable(v: &str) -> IResult<&str, StottrVariable> {
     Ok((v, StottrVariable { name }))
 }
 
-fn default_value(d: &str) -> IResult<&str, DefaultValue> {
+fn default_value(d: &str) -> IResult<&str, UnresolvedDefaultValue> {
     let (d, (_, _, constant_term)) = tuple((tag("="), multispace0, constant_term))(d)?;
-    Ok((d, DefaultValue { constant_term }))
+    Ok((d, UnresolvedDefaultValue { constant_term }))
 }
 
-fn constant_term(c: &str) -> IResult<&str, ConstantTerm> {
+fn constant_term(c: &str) -> IResult<&str, UnresolvedConstantTerm> {
     let (c, (_, t, _)) = tuple((
         multispace0,
         alt((constant_term_list, constant_literal_as_term)),
@@ -318,7 +319,7 @@ fn constant_term(c: &str) -> IResult<&str, ConstantTerm> {
     Ok((c, t))
 }
 
-fn constant_term_list(c: &str) -> IResult<&str, ConstantTerm> {
+fn constant_term_list(c: &str) -> IResult<&str, UnresolvedConstantTerm> {
     let (c, (_, _, li, _, _)) = tuple((
         tag("("),
         multispace0,
@@ -326,15 +327,15 @@ fn constant_term_list(c: &str) -> IResult<&str, ConstantTerm> {
         multispace0,
         tag(")"),
     ))(c)?;
-    Ok((c, ConstantTerm::ConstantList(li)))
+    Ok((c, UnresolvedConstantTerm::ConstantList(li)))
 }
 
-fn constant_literal_as_term(c: &str) -> IResult<&str, ConstantTerm> {
+fn constant_literal_as_term(c: &str) -> IResult<&str, UnresolvedConstantTerm> {
     let (c, lit) = constant_literal(c)?;
-    Ok((c, ConstantTerm::Constant(lit)))
+    Ok((c, UnresolvedConstantTerm::Constant(lit)))
 }
 
-fn constant_literal(c: &str) -> IResult<&str, ConstantLiteral> {
+fn constant_literal(c: &str) -> IResult<&str, UnresolvedConstantLiteral> {
     let (c, t) = alt((
         iri_as_constant_literal,
         blank_node_as_constant_literal,
@@ -344,24 +345,24 @@ fn constant_literal(c: &str) -> IResult<&str, ConstantLiteral> {
     Ok((c, t))
 }
 
-fn none_as_constant_literal(n: &str) -> IResult<&str, ConstantLiteral> {
+fn none_as_constant_literal(n: &str) -> IResult<&str, UnresolvedConstantLiteral> {
     let (n, _) = tag("none")(n)?;
-    Ok((n, ConstantLiteral::None))
+    Ok((n, UnresolvedConstantLiteral::None))
 }
 
-fn literal_as_constant_literal(l: &str) -> IResult<&str, ConstantLiteral> {
+fn literal_as_constant_literal(l: &str) -> IResult<&str, UnresolvedConstantLiteral> {
     let (l, lit) = literal(l)?;
-    Ok((l, ConstantLiteral::Literal(lit)))
+    Ok((l, UnresolvedConstantLiteral::Literal(lit)))
 }
 
-fn iri_as_constant_literal(i: &str) -> IResult<&str, ConstantLiteral> {
+fn iri_as_constant_literal(i: &str) -> IResult<&str, UnresolvedConstantLiteral> {
     let (i, iri) = iri(i)?;
-    Ok((i, ConstantLiteral::IRI(iri)))
+    Ok((i, UnresolvedConstantLiteral::IRI(iri)))
 }
 
-fn blank_node_as_constant_literal(b: &str) -> IResult<&str, ConstantLiteral> {
+fn blank_node_as_constant_literal(b: &str) -> IResult<&str, UnresolvedConstantLiteral> {
     let (b, blank) = blank_node(b)?;
-    Ok((b, ConstantLiteral::BlankNode(blank)))
+    Ok((b, UnresolvedConstantLiteral::BlankNode(blank)))
 }
 
 fn blank_node(b: &str) -> IResult<&str, BlankNode> {
@@ -393,16 +394,16 @@ fn blank_node_label(b: &str) -> IResult<&str, String> {
     Ok((b, out))
 }
 
-fn literal(l: &str) -> IResult<&str, StottrLiteral> {
+fn literal(l: &str) -> IResult<&str, UnresolvedStottrLiteral> {
     let (l, lit) = alt((rdf_literal, numeric_literal, boolean_literal))(l)?;
     Ok((l, lit))
 }
 
-fn boolean_literal(b: &str) -> IResult<&str, StottrLiteral> {
+fn boolean_literal(b: &str) -> IResult<&str, UnresolvedStottrLiteral> {
     let (b, value) = alt((tag("true"), tag("false")))(b)?;
     Ok((
         b,
-        StottrLiteral {
+        UnresolvedStottrLiteral {
             value: value.to_string(),
             language: None,
             data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::BOOLEAN.into_owned())),
@@ -410,12 +411,12 @@ fn boolean_literal(b: &str) -> IResult<&str, StottrLiteral> {
     ))
 }
 
-fn numeric_literal(n: &str) -> IResult<&str, StottrLiteral> {
+fn numeric_literal(n: &str) -> IResult<&str, UnresolvedStottrLiteral> {
     let (n, numeric) = alt((turtle_double, turtle_decimal, turtle_integer))(n)?;
     Ok((n, numeric))
 }
 
-fn turtle_integer(i: &str) -> IResult<&str, StottrLiteral> {
+fn turtle_integer(i: &str) -> IResult<&str, UnresolvedStottrLiteral> {
     let (i, (plus_minus, digits)) = tuple((opt(one_of("+-")), digit1))(i)?;
     let mut value = digits.to_string();
     if let Some(pm) = plus_minus {
@@ -424,7 +425,7 @@ fn turtle_integer(i: &str) -> IResult<&str, StottrLiteral> {
 
     Ok((
         i,
-        StottrLiteral {
+        UnresolvedStottrLiteral {
             value,
             language: None,
             data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::INTEGER.into_owned())),
@@ -432,7 +433,7 @@ fn turtle_integer(i: &str) -> IResult<&str, StottrLiteral> {
     ))
 }
 
-fn turtle_decimal(i: &str) -> IResult<&str, StottrLiteral> {
+fn turtle_decimal(i: &str) -> IResult<&str, UnresolvedStottrLiteral> {
     let (i, (plus_minus, before, period, after)) =
         tuple((opt(one_of("+-")), digit0, char('.'), digit1))(i)?;
     let mut value = before.to_string();
@@ -444,7 +445,7 @@ fn turtle_decimal(i: &str) -> IResult<&str, StottrLiteral> {
 
     Ok((
         i,
-        StottrLiteral {
+        UnresolvedStottrLiteral {
             value,
             language: None,
             data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::DECIMAL.into_owned())),
@@ -452,11 +453,11 @@ fn turtle_decimal(i: &str) -> IResult<&str, StottrLiteral> {
     ))
 }
 
-fn turtle_double(i: &str) -> IResult<&str, StottrLiteral> {
+fn turtle_double(i: &str) -> IResult<&str, UnresolvedStottrLiteral> {
     let (i, value) = alt((turtle_double1, turtle_double2, turtle_double3))(i)?;
     Ok((
         i,
-        StottrLiteral {
+        UnresolvedStottrLiteral {
             value,
             language: None,
             data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::DOUBLE.into_owned())),
@@ -511,16 +512,16 @@ fn exponent(e: &str) -> IResult<&str, String> {
     Ok((e, value))
 }
 
-fn rdf_literal(r: &str) -> IResult<&str, StottrLiteral> {
+fn rdf_literal(r: &str) -> IResult<&str, UnresolvedStottrLiteral> {
     let (r, lit) = alt((rdf_literal_lang_tag, rdf_literal_iri, rdf_literal_string))(r)?;
     Ok((r, lit))
 }
 
-fn rdf_literal_lang_tag(r: &str) -> IResult<&str, StottrLiteral> {
+fn rdf_literal_lang_tag(r: &str) -> IResult<&str, UnresolvedStottrLiteral> {
     let (r, (value, language)) = tuple((string, lang_tag))(r)?;
     Ok((
         r,
-        StottrLiteral {
+        UnresolvedStottrLiteral {
             value: value.to_string(),
             language: Some(language),
             data_type_iri: None,
@@ -528,11 +529,11 @@ fn rdf_literal_lang_tag(r: &str) -> IResult<&str, StottrLiteral> {
     ))
 }
 
-fn rdf_literal_iri(r: &str) -> IResult<&str, StottrLiteral> {
+fn rdf_literal_iri(r: &str) -> IResult<&str, UnresolvedStottrLiteral> {
     let (r, (value, _, datatype_iri)) = tuple((string, tag("^^"), iri))(r)?;
     Ok((
         r,
-        StottrLiteral {
+        UnresolvedStottrLiteral {
             value: value.to_string(),
             language: None,
             data_type_iri: Some(datatype_iri),
@@ -540,11 +541,11 @@ fn rdf_literal_iri(r: &str) -> IResult<&str, StottrLiteral> {
     ))
 }
 
-fn rdf_literal_string(r: &str) -> IResult<&str, StottrLiteral> {
+fn rdf_literal_string(r: &str) -> IResult<&str, UnresolvedStottrLiteral> {
     let (r, value) = string(r)?;
     Ok((
         r,
-        StottrLiteral {
+        UnresolvedStottrLiteral {
             value: value.to_string(),
             language: None,
             data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::STRING.into_owned())),
@@ -665,12 +666,12 @@ fn base_as_directive(b: &str) -> IResult<&str, Directive> {
 
 fn sparql_prefix_as_directive(s: &str) -> IResult<&str, Directive> {
     let (s, prefix) = sparql_prefix(s)?;
-    Ok((s, Directive::SparqlPrefix(prefix)))
+    Ok((s, Directive::Prefix(prefix))) //No distinction here between sparql and other prefixes
 }
 
 fn sparql_base_as_directive(s: &str) -> IResult<&str, Directive> {
     let (s, b) = sparql_base(s)?;
-    Ok((s, Directive::SparqlBase(b)))
+    Ok((s, Directive::Base(b))) //No distinction between sparql and other base
 }
 
 fn sparql_base(s: &str) -> IResult<&str, NamedNode> {
@@ -910,31 +911,31 @@ fn test_argument_bad_escape_behavior() {
 fn test_instance() {
     let s = "ottr:Triple (_:person, foaf:Person, ?var)";
     let (r, i) = instance(s).finish().expect("Ok");
-    let expected = Instance {
+    let expected = UnresolvedInstance {
         list_expander: None,
         template_name: ResolvesToNamedNode::PrefixedName(PrefixedName {
             prefix: "ottr".to_string(),
             name: "Triple".to_string(),
         }),
         argument_list: vec![
-            Argument {
+            UnresolvedArgument {
                 list_expand: false,
-                term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::BlankNode(
+                term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::BlankNode(
                     BlankNode::new_unchecked("person"),
                 ))),
             },
-            Argument {
+            UnresolvedArgument {
                 list_expand: false,
-                term: StottrTerm::ConstantTerm(ConstantTerm::Constant(ConstantLiteral::IRI(
+                term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::IRI(
                     ResolvesToNamedNode::PrefixedName(PrefixedName {
                         prefix: "foaf".to_string(),
                         name: "Person".to_string(),
                     }),
                 ))),
             },
-            Argument {
+            UnresolvedArgument {
                 list_expand: false,
-                term: StottrTerm::Variable(StottrVariable {
+                term: UnresolvedStottrTerm::Variable(StottrVariable {
                     name: "var".to_string(),
                 }),
             },

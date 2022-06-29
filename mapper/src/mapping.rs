@@ -1,14 +1,13 @@
 use std::collections::{HashMap, HashSet};
-use nom::Parser;
 use oxrdf::{NamedNode, Variable};
-use polars::prelude::{BooleanChunked, col, DataFrame, DataType, GetOutput, IntoLazy, lit, Series};
+use polars::prelude::{BooleanChunked, DataFrame, DataType, Series};
 use polars::toggle_string_cache;
-use crate::ast::{PType, Signature};
-use crate::templates::Templates;
+use crate::templates::{TemplateDataset, TemplateLibrary};
 use polars::export::rayon::iter::ParallelIterator;
+use crate::ast::{PType, Signature};
 
 pub struct Mapping {
-    templates: Templates,
+    template_library: TemplateLibrary,
     triples: DataFrame
 }
 
@@ -43,13 +42,13 @@ pub struct MappedColumn {
 }
 
 impl Mapping {
-    pub fn new(templates:&Templates) {
+    pub fn new(template_dataset:&TemplateDataset) {
         toggle_string_cache(true);
     }
 
     pub fn instantiate(&mut self, name:&NamedNode, df:&DataFrame) -> Result<MappingReport, MappingError> {
         self.validate_dataframe(df)?;
-        if let Some(template) = self.templates.get(name) {
+        if let Some(template) = self.template_library.get(name) {
             let column_mapping = find_valid_column_mapping(&template.signature, df)?;
 
         } else {
@@ -106,7 +105,7 @@ fn find_valid_column_mapping(signature:&Signature, df:&DataFrame) -> Result<Hash
                 validate_non_blank_parameter(df, variable_name)?;
             }
             if let Some(t) = &parameter.ptype {
-                validate_data_type(df, t, variable_name)?;
+                validate_column_data_type(df, t, variable_name)?;
             }
         }
     }
@@ -115,21 +114,28 @@ fn find_valid_column_mapping(signature:&Signature, df:&DataFrame) -> Result<Hash
     Ok(map)
 }
 
-fn validate_data_type(df: &DataFrame, ptype: &PType, column_name: &str) -> Result<(),MappingError> {
+fn validate_column_data_type(df: &DataFrame, ptype: &PType, column_name: &str) -> Result<(),MappingError> {
     let mut current_ptype = ptype;
     let mut current_column_data_type = df.column(column_name).unwrap().dtype();
     let mut validated = false;
     while !validated {
-        let current_ptype = match current_ptype {
-            PType::BasicType(tn) => {
+        if validate_data_type(current_column_data_type, current_ptype) {
 
-            }
-            PType::LUBType(_) => {}
-            PType::ListType(_) => {}
-            PType::NEListType(_) => {}
-        };
+        } else {
+
+        }
     }
     Ok(())
+}
+
+fn validate_data_type(dtype:&DataType, ptype:&PType) -> bool {
+    match ptype {
+        PType::BasicType(b) => {}
+        PType::LUBType(_) => {}
+        PType::ListType(_) => {}
+        PType::NEListType(_) => {}
+    }
+    false
 }
 
 fn validate_non_optional_parameter(df: &DataFrame, column_name:&str) -> Result<(), MappingError> {
