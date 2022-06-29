@@ -18,7 +18,7 @@ pub enum TypingErrorType {
 }
 
 impl TemplateDataset {
-    pub fn new(mut documents: Vec<StottrDocument>) -> TemplateDataset {
+    pub fn new(mut documents: Vec<StottrDocument>) -> Result<TemplateDataset,TypingError> {
         let mut templates = vec![];
         let mut ground_instances = vec![];
         for d in &mut documents {
@@ -33,10 +33,13 @@ impl TemplateDataset {
                 }
             }
         }
-        TemplateDataset {
+        let mut td = TemplateDataset {
             templates,
             ground_instances,
-        }
+        };
+        //Todo: variable safe, no cycles, referential integrity, no duplicates, well founded
+        td.infer_types()?;
+        Ok(td)
     }
 
     pub fn get(&self, named_node: &NamedNode) -> Option<Template> {
@@ -91,18 +94,19 @@ fn infer_template_types(
                             if let Some(other_ptype) = &other_parameter.ptype {
                                 if argument.list_expand {
                                     if !other_parameter.optional {
-                                        changed = lub_update(
+                                        changed = lub_update(&template.signature.template_name, v,
                                             my_parameter,
                                             &PType::NEListType(Box::new(other_ptype.clone())),
                                         )?;
                                     } else {
                                         changed = lub_update(
+                                            &template.signature.template_name, v,
                                             my_parameter,
                                             &PType::ListType(Box::new(other_ptype.clone())),
                                         )?;
                                     }
                                 } else {
-                                    changed = lub_update(my_parameter, other_ptype)?;
+                                    changed = lub_update(&template.signature.template_name, v,  my_parameter, other_ptype)?;
                                 }
                             }
                         }
@@ -116,6 +120,42 @@ fn infer_template_types(
     Ok(changed)
 }
 
-fn lub_update(my_parameter: &mut Parameter, right: &PType) -> Result<bool, TypingError> {
-    Ok(true)
+fn lub_update(template_name: &NamedNode, variable: &StottrVariable, my_parameter: &mut Parameter, right: &PType) -> Result<bool, TypingError> {
+    if my_parameter.ptype.is_none() {
+        my_parameter.ptype = Some(right.clone());
+        Ok(true)
+    } else {
+        if my_parameter.ptype.as_ref().unwrap() != right {
+            let ptype = lub(template_name, variable, my_parameter.ptype.as_ref().unwrap(), right)?;
+            if my_parameter.ptype.as_ref().unwrap() != &ptype {
+                my_parameter.ptype = Some(ptype);
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        } else {
+            Ok(false)
+        }
+    }
+}
+
+fn lub(template_name: &NamedNode, variable: &StottrVariable, left:&PType, right:&PType) -> Result<PType, TypingError> {
+    if left == right {
+        return Ok(left.clone());
+    } else {
+        if let PType::NEListType(left_inner) = left {
+            if let PType::ListType(right_inner) = right {
+                return Ok(PType::NEListType(Box::new(lub(template_name, variable,left_inner, right_inner)?)));
+            } else if let PType::NEListType(right_inner) = right {
+                return Ok(PType::NEListType(Box::new(lub(template_name, variable,left_inner, right_inner)?)));
+            }
+        } else if let PType::ListType(left_inner) = left {
+            if let PType::NEListType(right_inner) = right {
+                return Ok(PType::NEListType(Box::new(lub(template_name, variable,left_inner, right_inner)?)));
+            } else if let PType::ListType(right_inner) = right {
+                return Ok(PType::NEListType(Box::new(lub(template_name, variable,left_inner, right_inner)?)));
+            }
+        }
+    }
+    Err(TypingError{kind:TypingErrorType::IncompatibleTypes(template_name.clone(), variable.clone(), left.clone(), right.clone())})
 }
