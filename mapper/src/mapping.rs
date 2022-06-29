@@ -2,12 +2,12 @@ use std::collections::{HashMap, HashSet};
 use oxrdf::{NamedNode, Variable};
 use polars::prelude::{BooleanChunked, DataFrame, DataType, Series};
 use polars::toggle_string_cache;
-use crate::templates::{TemplateDataset, TemplateLibrary};
+use crate::templates::{TemplateDataset};
 use polars::export::rayon::iter::ParallelIterator;
 use crate::ast::{PType, Signature};
 
 pub struct Mapping {
-    template_library: TemplateLibrary,
+    template_dataset :TemplateDataset,
     triples: DataFrame
 }
 
@@ -48,7 +48,7 @@ impl Mapping {
 
     pub fn instantiate(&mut self, name:&NamedNode, df:&DataFrame) -> Result<MappingReport, MappingError> {
         self.validate_dataframe(df)?;
-        if let Some(template) = self.template_library.get(name) {
+        if let Some(template) = self.template_dataset.get(name) {
             let column_mapping = find_valid_column_mapping(&template.signature, df)?;
 
         } else {

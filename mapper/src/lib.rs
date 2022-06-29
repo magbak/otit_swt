@@ -12,4 +12,4 @@ mod templates;
 mod mapping;
 pub mod ast;
 mod resolver;
-mod type_inference;
+mod validation;
