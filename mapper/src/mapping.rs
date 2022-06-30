@@ -94,7 +94,9 @@ impl Mapping {
     ) -> Result<LazyFrame, MappingError> {
         //At this point, the lf should have columns with names appropriate for the template to be instantiated (named_node).
         if let Some(template) = self.template_dataset.get(name) {
+            println!("node: {}", name);
             if template.signature.template_name.as_str() == OTTR_TRIPLE {
+                println!("Ottr triple!");
                 Ok(lf)
             } else {
                 let mut lfs = vec![];
@@ -231,6 +233,7 @@ fn create_remapped_lazy_frame(
     let mut new_map = HashMap::new();
     let mut existing = vec![];
     let mut new = vec![];
+    let mut expressions = vec![];
     for (original, target) in instance
         .argument_list
         .iter()
@@ -246,7 +249,9 @@ fn create_remapped_lazy_frame(
                 );
             }
             StottrTerm::ConstantTerm(ct) => {
-                todo!()
+                let (expr, mapped_column) = constant_to_lazy_expression(ct);
+                expressions.push(expr.alias(&target.stottr_variable.name));
+                new_map.insert(target.stottr_variable.name.clone(), mapped_column);
             }
             StottrTerm::List(_) => {}
         }
@@ -255,6 +260,9 @@ fn create_remapped_lazy_frame(
     let mut new_column_expressions: Vec<Expr> = new.into_iter().map(|x| col(&x)).collect();
     new_column_expressions.push(col("Key"));
     lf = lf.select(new_column_expressions.as_slice());
+    for e in expressions {
+        lf = lf.with_column(e);
+    }
     Ok((lf, new_map))
 }
 
@@ -395,7 +403,7 @@ fn constant_to_lazy_expression(constant_term: &ConstantTerm) -> (Expr, MappedCol
     match constant_term {
         ConstantTerm::Constant(c) => match c {
             ConstantLiteral::IRI(iri) => (
-                Expr::Literal(LiteralValue::Utf8(iri.to_string())),
+                Expr::Literal(LiteralValue::Utf8(iri.as_str().to_string())),
                 MappedColumn::PrimitiveColumn(PrimitiveColumn {
                     polars_datatype: DataType::Categorical(None),
                     rdf_node_type: RDFNodeType::IRI,

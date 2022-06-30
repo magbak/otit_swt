@@ -58,7 +58,7 @@ impl TemplateDataset {
         let ottr_triple_object =Parameter{
                 optional: false,
                 non_blank: false,
-                ptype: Some(PType::BasicType(xsd::ANY_URI.into_owned())),
+                ptype: None,
                 stottr_variable: StottrVariable { name: "object".to_string() },
                 default_value: None
             };

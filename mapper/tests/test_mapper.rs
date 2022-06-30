@@ -33,6 +33,6 @@ fn test_mapper_easy_case() {
 
 
     let mut mapping = Mapping::new(&template_dataset);
-    let report = mapping.expand(&NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"), df);
+    let report = mapping.expand(&NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"), df).expect("");
 
 }
