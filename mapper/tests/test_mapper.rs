@@ -1,21 +1,34 @@
+use std::fs::File;
+use std::path::PathBuf;
 use nom::Finish;
 use oxrdf::NamedNode;
 use polars::frame::DataFrame;
+use rstest::*;
 use polars::series::Series;
 use mapper::mapping::Mapping;
 use mapper::parser::stottr_doc;
 use mapper::resolver::resolve_document;
 use mapper::templates::TemplateDataset;
 
-#[test]
-fn test_mapper_easy_case() {
+#[fixture]
+fn testdata_path() -> PathBuf {
+    let manidir = env!("CARGO_MANIFEST_DIR");
+    let mut testdata_path = PathBuf::new();
+    testdata_path.push(manidir);
+    testdata_path.push("tests");
+    testdata_path.push("mapper_testdata");
+    testdata_path
+}
+
+#[rstest]
+fn test_mapper_easy_case(testdata_path:PathBuf) {
     let t_str = r#"
     @prefix ex:<http://example.net/ns#>.
 
     ex:ExampleTemplate [?myVar1 , ?myVar2]
       :: {
-        ottr:Triple(ex:anObject, ex:hasNumber, ?myVar1) ,
-        ottr:Triple(ex:anObject, ex:hasOtherNumber, ?myVar2)
+        ottr:Triple(ex:anObject, ex:hasNumberString, ?myVar1) ,
+        ottr:Triple(ex:anObject, ex:hasOtherNumberString, ?myVar2)
       } .
     "#;
     let (_,doc) = stottr_doc(t_str).finish().expect("Ok");
@@ -31,8 +44,10 @@ fn test_mapper_easy_case() {
     let series = [k, v1, v2];
     let df = DataFrame::from_iter(series);
 
-
     let mut mapping = Mapping::new(&template_dataset);
     let report = mapping.expand(&NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"), df).expect("");
-
+    let mut file_path = testdata_path.clone();
+    file_path.push("out.ttl");
+    let mut file = File::create(file_path.as_path()).expect("could not open file");
+    mapping.write_n_triples(&mut file);
 }

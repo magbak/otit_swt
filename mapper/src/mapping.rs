@@ -9,14 +9,19 @@ use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
 use polars::export::rayon::iter::ParallelIterator;
 use polars::lazy::prelude::{as_struct, col, concat, Expr, LiteralValue};
-use polars::prelude::{BooleanChunked, DataFrame, DataType, Field, IntoLazy, LazyFrame, Series};
+use polars::prelude::{BooleanChunked, ChunkAnyValue, ChunkApply, ChunkVar, concat_str, DataFrame, DataType, Field, IntoLazy, LazyFrame, lit, PolarsError, Series, StrConcat, Utf8NameSpaceImpl};
 use polars::toggle_string_cache;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
+use std::io::Write;
+use polars::datatypes::CategoricalType;
+use polars::io::SerWriter;
+use polars::prelude::CsvWriter;
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
-    object_property_triples: DataFrame,
-    data_property_triples: DataFrame,
+    object_property_triples: Option<DataFrame>,
+    data_property_triples: Option<DataFrame>,
 }
 
 #[derive(Debug)]
@@ -63,12 +68,43 @@ enum MappedColumn {
 
 impl Mapping {
     pub fn new(template_dataset: &TemplateDataset) -> Mapping {
-        toggle_string_cache(true);
+        let cat = DataType::Categorical(None);
+        let object_property_dataframe = DataFrame::new(vec![
+            Series::new_empty("Key", &cat),
+            Series::new_empty("subject", &cat),
+            Series::new_empty("verb", &cat),
+            Series::new_empty("object", &cat),
+        ]).unwrap();
+        let data_property_dataframe = DataFrame::new(vec![
+            Series::new_empty("Key", &cat),
+            Series::new_empty("subject", &cat),
+            Series::new_empty("verb", &cat),
+            Series::new_empty("object", &DataType::Utf8),
+        ]).unwrap();
+
         Mapping {
             template_dataset: template_dataset.clone(),
-            object_property_triples: Default::default(),
-            data_property_triples: Default::default(),
+            object_property_triples: Some(object_property_dataframe),
+            data_property_triples: Some(data_property_dataframe),
         }
+    }
+
+    pub fn write_n_triples(&self, buffer: &mut dyn Write) -> Result<(), PolarsError>{
+        let braces_expr = |colname| {
+            concat_str([
+            Expr::Literal(LiteralValue::Utf8("<".to_string())),col(colname),
+            Expr::Literal(LiteralValue::Utf8(">".to_string()))], "")
+        };
+
+        let subject_expr = braces_expr("subject");
+        let verb_expr = braces_expr("verb");
+        let object_expr = braces_expr("object");
+        let triple_expr = concat_str([subject_expr, verb_expr, object_expr, Expr::Literal(LiteralValue::Utf8(".".to_string()))], " ");
+        let mut new_df = self.object_property_triples.as_ref().unwrap().clone().lazy().select(&[triple_expr.alias("")]).collect().expect("Ok");
+
+        let mut nt_writer = CsvWriter::new(buffer);
+        nt_writer.finish(&mut new_df)?;
+        Ok(())
     }
 
     pub fn expand(
@@ -76,30 +112,34 @@ impl Mapping {
         name: &NamedNode,
         mut df: DataFrame,
     ) -> Result<MappingReport, MappingError> {
-        self.validate_dataframe(&df)?;
+        self.validate_dataframe(&mut df)?;
         println!("{}", name);
         let target_template = self.template_dataset.get(name).unwrap();
         let columns =
             find_validate_and_prepare_dataframe_columns(&target_template.signature, &mut df)?;
-        let lf = self._expand(name, df.lazy(), columns)?;
-        println!("{}", lf.collect().expect("DF collect problem"));
+        let mut result_vec = vec![];
+        self._expand(name, df.lazy(), columns, &mut result_vec)?;
+        self.process_results(result_vec);
+
         Ok(MappingReport {})
     }
 
     fn _expand(
         &self,
         name: &NamedNode,
-        lf: LazyFrame,
+        mut lf: LazyFrame,
         columns: HashMap<String, MappedColumn>,
-    ) -> Result<LazyFrame, MappingError> {
+        new_lfs_columns: &mut Vec<(LazyFrame, HashMap<String, MappedColumn>)>
+    ) -> Result<(), MappingError> {
         //At this point, the lf should have columns with names appropriate for the template to be instantiated (named_node).
         if let Some(template) = self.template_dataset.get(name) {
             println!("node: {}", name);
             if template.signature.template_name.as_str() == OTTR_TRIPLE {
                 println!("Ottr triple!");
-                Ok(lf)
+                lf = lf.select(&[col("Key"), col("subject"), col("verb"), col("object")]);
+                new_lfs_columns.push((lf, columns));
+                Ok(())
             } else {
-                let mut lfs = vec![];
                 for i in &template.pattern_list {
                     let target_template = self.template_dataset.get(&i.template_name).unwrap();
                     let (instance_lf, instance_columns) = create_remapped_lazy_frame(
@@ -108,9 +148,9 @@ impl Mapping {
                         lf.clone(),
                         &columns,
                     )?;
-                    lfs.push(self._expand(&i.template_name, instance_lf, instance_columns)?);
+                    self._expand(&i.template_name, instance_lf, instance_columns, new_lfs_columns)?;
                 }
-                Ok(concat(lfs, false).expect("Concat problem"))
+                Ok(())
             }
         } else {
             Err(MappingError {
@@ -119,38 +159,22 @@ impl Mapping {
         }
     }
 
-    fn validate_dataframe(&self, df: &DataFrame) -> Result<(), MappingError> {
+    fn validate_dataframe(&mut self, df: &mut DataFrame) -> Result<(), MappingError> {
         if !df.get_column_names().contains(&"Key") {
             return Err(MappingError {
                 kind: MappingErrorType::MissingKeyColumn,
             });
         }
         if self
-            .object_property_triples
+            .object_property_triples.as_ref().unwrap()
             .get_column_names()
             .contains(&"Key")
         {
-            let existing_key_datatype = self.object_property_triples.column("Key").unwrap().dtype();
-            if !(existing_key_datatype == &DataType::Utf8
-                || existing_key_datatype == &DataType::Categorical(None)
-                || existing_key_datatype == &DataType::UInt32
-                || existing_key_datatype == &DataType::UInt64)
+            let key_datatype = df.column("Key").unwrap().dtype().clone();
+            if  key_datatype != DataType::Utf8
             {
                 return Err(MappingError {
-                    kind: MappingErrorType::InvalidKeyColumnDataType(existing_key_datatype.clone()),
-                });
-            }
-
-            let new_key_datatype = df.column("Key").unwrap().dtype();
-            if !(new_key_datatype == &DataType::Utf8
-                && existing_key_datatype == &DataType::Categorical(None))
-                && new_key_datatype != existing_key_datatype
-            {
-                return Err(MappingError {
-                    kind: MappingErrorType::KeyColumnDatatypeMismatch(
-                        new_key_datatype.clone(),
-                        existing_key_datatype.clone(),
-                    ),
+                    kind: MappingErrorType::InvalidKeyColumnDataType(key_datatype.clone()),
                 });
             }
             if df.column("Key").unwrap().is_duplicated().unwrap().any() {
@@ -162,8 +186,14 @@ impl Mapping {
                     ),
                 });
             }
-            let existing_keys = self.object_property_triples.column("Key").unwrap();
-            let overlapping_keys = df.column("Key").unwrap().is_in(existing_keys).unwrap();
+            toggle_string_cache(true);
+            let df_keys = df.column("Key").unwrap().cast(&DataType::Categorical(None)).unwrap();
+            let existing_keys = self.object_property_triples.as_mut().unwrap().column("Key").unwrap().cast(&DataType::Utf8).unwrap().cast(&DataType::Categorical(None)).unwrap();
+            let overlapping_keys = df_keys.is_in(&existing_keys).unwrap();
+            toggle_string_cache(false);
+
+            df.with_column(df.column("Key").unwrap().cast(&DataType::Categorical(None)).unwrap()).unwrap();
+
             if overlapping_keys.any() {
                 return Err(MappingError {
                     kind: MappingErrorType::KeyColumnOverlapsExisting(
@@ -177,6 +207,30 @@ impl Mapping {
             }
         }
         Ok(())
+    }
+    fn process_results(&mut self, result_vec: Vec<(LazyFrame, HashMap<String, MappedColumn>)>) {
+        let mut object_properties = vec![];
+        let mut data_properties = vec![];
+        for (lf, columns) in result_vec {
+            let df = lf.collect().expect("Collect problem");
+            match columns.get("object").unwrap() {
+                MappedColumn::PrimitiveColumn(c) => {
+                    match c.rdf_node_type {
+                        RDFNodeType::IRI => {object_properties.push(df.lazy());}
+                        RDFNodeType::BlankNode => {}
+                        RDFNodeType::Literal => {data_properties.push(df.lazy());}
+                        RDFNodeType::None => {}
+                    }
+                }
+            }
+        }
+        let existing_object_properties = self.object_property_triples.take().unwrap();
+        object_properties.push(existing_object_properties.lazy());
+        self.object_property_triples = Some(concat(object_properties, true).unwrap().collect().expect("Collect after concat problem"));
+
+        let existing_data_properties = self.data_property_triples.take().unwrap();
+        data_properties.push(existing_data_properties.lazy());
+        self.data_property_triples = Some(concat(data_properties, true).unwrap().collect().expect("Collect after concat problem"));
     }
 }
 
@@ -306,7 +360,7 @@ fn infer_validate_and_prepare_column_data_type(
                 todo!()
             }
         }
-    } else {
+    } else { // No ptype!
         if column_data_type == DataType::Utf8 {
             warn!(
                 "Could not infer type for column {}, assuming it is an IRI-column.",
@@ -403,7 +457,7 @@ fn constant_to_lazy_expression(constant_term: &ConstantTerm) -> (Expr, MappedCol
     match constant_term {
         ConstantTerm::Constant(c) => match c {
             ConstantLiteral::IRI(iri) => (
-                Expr::Literal(LiteralValue::Utf8(iri.as_str().to_string())),
+                Expr::Literal(LiteralValue::Utf8(iri.as_str().to_string())).cast(DataType::Categorical(None)),
                 MappedColumn::PrimitiveColumn(PrimitiveColumn {
                     polars_datatype: DataType::Categorical(None),
                     rdf_node_type: RDFNodeType::IRI,

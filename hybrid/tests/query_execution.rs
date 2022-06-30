@@ -603,7 +603,7 @@ async fn test_pushdown_groupby_exists_something_hybrid_query(
         .expect("Sort error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
-    // let writer = CsvWriter::new(file);
+    let writer = CsvWriter::new(file);
     // writer.finish(&mut df).expect("writeok");
     // println!("{}", df);
 }
