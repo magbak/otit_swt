@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
-use oxrdf::{NamedNode, Variable};
+use oxrdf::{NamedNode};
 use polars::prelude::{BooleanChunked, DataFrame, DataType, IntoLazy, LazyFrame, Series};
 use polars::toggle_string_cache;
 use crate::templates::{TemplateDataset};
 use polars::export::rayon::iter::ParallelIterator;
-use crate::ast::{Instance, ListExpanderType, PType, Signature};
+use polars::lazy::prelude::concat;
+use crate::ast::{Argument, Instance, ListExpanderType, PType, Signature, StottrTerm};
 use crate::constants::OTTR_TRIPLE;
 
 pub struct Mapping {
@@ -21,27 +22,24 @@ pub enum MappingErrorType {
     NonOptionalColumnHasNull(String, Series),
     InvalidKeyColumnDataType(DataType),
     NonBlankColumnHasBlankNode(String, Series),
-    MissingParameterColumn(String)
+    MissingParameterColumn(String),
+    ContainsIrrelevantColumns(Vec<String>)
 }
 
 pub struct MappingError {
     kind: MappingErrorType
 }
 
-pub enum ColumnKind {
-    PrimitiveColumn,
-    ReferenceColumn
-}
-
 pub struct MappingReport {
 
 }
 
+#[derive(Clone)]
 struct PrimitiveColumn {
     datatype: DataType,
-
 }
 
+#[derive(Clone)]
 enum MappedColumn {
     PrimitiveColumn(PrimitiveColumn)
 }
@@ -52,32 +50,33 @@ impl Mapping {
 
     }
 
-    pub fn expand(&mut self, name:&NamedNode, df:&DataFrame) -> Result<MappingReport, MappingError> {
-        self.validate_dataframe(df)?;
-        self._expand(name, df.lazy());
+    pub fn expand(&mut self, name:&NamedNode, df:DataFrame) -> Result<MappingReport, MappingError> {
+        self.validate_dataframe(&df)?;
+        let target_template = self.template_dataset.get(name).unwrap();
+        let columns = find_and_validate_dataframe_columns(&target_template.signature, &df)?;
+        self._expand(name, df.lazy(), columns);
         Ok(MappingReport{})
     }
 
-    fn _expand(&self, name:&NamedNode, lf:LazyFrame, list_expander:Option<ListExpanderType>, columns: HashMap<String, DataType>) -> Result<DataFrame, MappingError> {
+    fn _expand(&self, name:&NamedNode, lf:LazyFrame, columns: HashMap<String, MappedColumn>) -> Result<LazyFrame, MappingError> {
         //At this point, the lf should have columns with names appropriate for the template to be instantiated (named_node).
         if let Some(template) = self.template_dataset.get(name) {
             if template.signature.template_name.as_str() == OTTR_TRIPLE {
-                return Ok(lf.collect().expect("DataFrame collect problem"))
+                Ok(lf)
             } else {
-                let mut dfs = vec![];
-                for i in template.pattern_list {
-                    let (instance_lf, instance_columns) = create_remapped_lazy_frame(instance, signature, lf.clone(), columns.clone())?;
-                        dfs.push(self._expand(&i.template_name, instance_lf, instance_columns))
+                let mut lfs = vec![];
+                for i in &template.pattern_list {
+                    let target_template = self.template_dataset.get(&i.template_name).unwrap();
+                    let (instance_lf, instance_columns) = create_remapped_lazy_frame(i, &target_template.signature, lf.clone(), &columns)?;
+                        lfs.push(self._expand(&i.template_name, instance_lf, instance_columns)?);
                 }
+                Ok(concat(lfs, false).expect("Concat problem"))
             }
         } else {
-            return Err(MappingError{kind:MappingErrorType::TemplateNotFound})
+            Err(MappingError{kind:MappingErrorType::TemplateNotFound})
         }
-        Ok()
 
     }
-
-
 
     fn validate_dataframe(&self, df:&DataFrame) -> Result<(), MappingError>{
         if !df.get_column_names().contains(&"Key") {
@@ -108,16 +107,18 @@ impl Mapping {
 }
 }
 
-fn find_and_validate_dataframe_columns(signature:&Signature, df:DataFrame) -> Result<Vec<MappedColumn>, MappingError> {
-    let mut columns = vec![];
+fn find_and_validate_dataframe_columns(signature:&Signature, df:&DataFrame) -> Result<HashMap<String, MappedColumn>, MappingError> {
+    let mut df_columns = HashSet::new();
+    df_columns.extend(df.get_column_names().into_iter());
+    let removed = df_columns.remove("Key");
+    assert!(removed);
+
+    let mut map = HashMap::new();
     for parameter in &signature.parameter_list {
         let variable_name = &parameter.stottr_variable.name;
         if df_columns.contains(variable_name.as_str()) {
-            columns.push(MappedColumn{
-                kind: ColumnKind::LiteralColumn,
-                variable: (),
-                column_name: "".to_string()
-            })
+            map.insert(variable_name.to_string(), MappedColumn::PrimitiveColumn(PrimitiveColumn {datatype:df.column(variable_name).unwrap().dtype().clone()}));
+            df_columns.remove(variable_name.as_str());
             if !parameter.optional {
                 validate_non_optional_parameter(&df, variable_name)?;
             }
@@ -128,20 +129,33 @@ fn find_and_validate_dataframe_columns(signature:&Signature, df:DataFrame) -> Re
                 validate_column_data_type(&df, t, variable_name)?;
             }
         } else {
-            Err(MappingError{kind:MappingErrorType::MissingParameterColumn(variable_name.to_string())})
+            return Err(MappingError{kind:MappingErrorType::MissingParameterColumn(variable_name.to_string())})
         }
     }
-    Ok(())
+    if !df_columns.is_empty() {
+        return Err(MappingError{kind:MappingErrorType::ContainsIrrelevantColumns(df_columns.iter().map(|x|x.to_string()).collect())})
+    }
+    Ok(map)
 }
 
-fn create_remapped_lazy_frame(instance:&Instance, signature:&Signature, lf:LazyFrame, columns:HashMap<String, DataType>) -> Result<(LazyFrame, HashMap<String, DataType>), MappingError> {
-    let mut df_columns = HashSet::new();
-    df_columns.extend(df.get_column_names().into_iter());
-    let removed = df_columns.remove("Key");
-    assert!(removed);
+fn create_remapped_lazy_frame(instance:&Instance, signature:&Signature, mut lf:LazyFrame, columns:&HashMap<String, MappedColumn>) -> Result<(LazyFrame, HashMap<String, MappedColumn>), MappingError> {
+    let mut new_map = HashMap::new();
+    let mut existing = vec![];
+    let mut new = vec![];
+    for (original,target) in instance.argument_list.iter().zip(signature.parameter_list.iter()) {
+        match &original.term {
+            StottrTerm::Variable(v) => {
+                existing.push(v.name.clone());
+                new.push(target.stottr_variable.name.clone());
+                new_map.insert(target.stottr_variable.name.clone(), columns.get(&v.name).unwrap().clone());
+            }
+            StottrTerm::ConstantTerm(_) => {}
+            StottrTerm::List(_) => {}
+        }
 
-    let map = HashMap::new();
-    Ok(map)
+    }
+    lf = lf.rename(existing.as_slice(), new.as_slice());
+    Ok((lf, new_map))
 }
 
 fn validate_column_data_type(df: &DataFrame, ptype: &PType, column_name: &str) -> Result<(),MappingError> {
