@@ -32,7 +32,7 @@ pub enum MappingErrorType {
     MissingParameterColumn(String),
     ContainsIrrelevantColumns(Vec<String>),
     CouldNotInferStottrDatatypeForColumn(String, DataType),
-    ColumnDataTypeMismatch(String, DataType, PType)
+    ColumnDataTypeMismatch(String, DataType, PType),
 }
 
 #[derive(Debug)]
@@ -276,7 +276,13 @@ fn infer_validate_and_prepare_column_data_type(
                             rdf_node_type: RDFNodeType::IRI,
                         }
                     } else {
-                        return Err(MappingError{kind:MappingErrorType::ColumnDataTypeMismatch(column_name.to_string(), column_data_type, ptype.clone())});
+                        return Err(MappingError {
+                            kind: MappingErrorType::ColumnDataTypeMismatch(
+                                column_name.to_string(),
+                                column_data_type,
+                                ptype.clone(),
+                            ),
+                        });
                     }
                 } else {
                     todo!()
