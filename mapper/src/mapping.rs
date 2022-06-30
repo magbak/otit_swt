@@ -20,26 +20,30 @@ pub enum MappingErrorType {
     KeyColumnOverlapsExisting(Series),
     NonOptionalColumnHasNull(String, Series),
     InvalidKeyColumnDataType(DataType),
-    NonBlankColumnHasBlankNode(String, Series)
+    NonBlankColumnHasBlankNode(String, Series),
+    MissingParameterColumn(String)
 }
 
 pub struct MappingError {
     kind: MappingErrorType
 }
 
+pub enum ColumnKind {
+    PrimitiveColumn,
+    ReferenceColumn
+}
+
 pub struct MappingReport {
 
 }
 
-pub enum ColumnKind {
-    LiteralColumn,
-    PathColumn
+struct PrimitiveColumn {
+    datatype: DataType,
+
 }
 
-pub struct MappedColumn {
-    kind: ColumnKind,
-    variable: Variable,
-    column_name: String,
+enum MappedColumn {
+    PrimitiveColumn(PrimitiveColumn)
 }
 
 impl Mapping {
@@ -104,27 +108,37 @@ impl Mapping {
 }
 }
 
+fn find_and_validate_dataframe_columns(signature:&Signature, df:DataFrame) -> Result<Vec<MappedColumn>, MappingError> {
+    let mut columns = vec![];
+    for parameter in &signature.parameter_list {
+        let variable_name = &parameter.stottr_variable.name;
+        if df_columns.contains(variable_name.as_str()) {
+            columns.push(MappedColumn{
+                kind: ColumnKind::LiteralColumn,
+                variable: (),
+                column_name: "".to_string()
+            })
+            if !parameter.optional {
+                validate_non_optional_parameter(&df, variable_name)?;
+            }
+            if parameter.non_blank { //TODO handle blanks;
+                validate_non_blank_parameter(&df, variable_name)?;
+            }
+            if let Some(t) = &parameter.ptype {
+                validate_column_data_type(&df, t, variable_name)?;
+            }
+        } else {
+            Err(MappingError{kind:MappingErrorType::MissingParameterColumn(variable_name.to_string())})
+        }
+    }
+    Ok(())
+}
 
 fn create_remapped_lazy_frame(instance:&Instance, signature:&Signature, lf:LazyFrame, columns:HashMap<String, DataType>) -> Result<(LazyFrame, HashMap<String, DataType>), MappingError> {
     let mut df_columns = HashSet::new();
     df_columns.extend(df.get_column_names().into_iter());
     let removed = df_columns.remove("Key");
     assert!(removed);
-
-    for parameter in &signature.parameter_list {
-        let variable_name = &parameter.stottr_variable.name;
-        if df_columns.contains(variable_name.as_str()) {
-            if !parameter.optional {
-                validate_non_optional_parameter(f, variable_name)?;
-            }
-            if parameter.non_blank { //TODO handle blanks;
-                validate_non_blank_parameter(df, variable_name)?;
-            }
-            if let Some(t) = &parameter.ptype {
-                validate_column_data_type(df, t, variable_name)?;
-            }
-        }
-    }
 
     let map = HashMap::new();
     Ok(map)
