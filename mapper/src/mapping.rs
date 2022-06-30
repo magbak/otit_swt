@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use oxrdf::{NamedNode, Variable};
-use polars::prelude::{BooleanChunked, DataFrame, DataType, Series};
+use polars::prelude::{BooleanChunked, DataFrame, DataType, IntoLazy, LazyFrame, Series};
 use polars::toggle_string_cache;
 use crate::templates::{TemplateDataset};
 use polars::export::rayon::iter::ParallelIterator;
-use crate::ast::{PType, Signature};
+use crate::ast::{Instance, ListExpanderType, PType, Signature};
+use crate::constants::OTTR_TRIPLE;
 
 pub struct Mapping {
     template_dataset :TemplateDataset,
@@ -44,19 +45,34 @@ pub struct MappedColumn {
 impl Mapping {
     pub fn new(template_dataset:&TemplateDataset) {
         toggle_string_cache(true);
+
     }
 
-    pub fn instantiate(&mut self, name:&NamedNode, df:&DataFrame) -> Result<MappingReport, MappingError> {
+    pub fn expand(&mut self, name:&NamedNode, df:&DataFrame) -> Result<MappingReport, MappingError> {
         self.validate_dataframe(df)?;
-        if let Some(template) = self.template_dataset.get(name) {
-            let column_mapping = find_valid_column_mapping(&template.signature, df)?;
+        self._expand(name, df.lazy());
+        Ok(MappingReport{})
+    }
 
+    fn _expand(&self, name:&NamedNode, lf:LazyFrame, list_expander:Option<ListExpanderType>, columns: HashMap<String, DataType>) -> Result<DataFrame, MappingError> {
+        //At this point, the lf should have columns with names appropriate for the template to be instantiated (named_node).
+        if let Some(template) = self.template_dataset.get(name) {
+            if template.signature.template_name.as_str() == OTTR_TRIPLE {
+                return Ok(lf.collect().expect("DataFrame collect problem"))
+            } else {
+                let mut dfs = vec![];
+                for i in template.pattern_list {
+                    let (instance_lf, instance_columns) = create_remapped_lazy_frame(instance, signature, lf.clone(), columns.clone())?;
+                        dfs.push(self._expand(&i.template_name, instance_lf, instance_columns))
+                }
+            }
         } else {
             return Err(MappingError{kind:MappingErrorType::TemplateNotFound})
         }
-        Ok(MappingReport{})
+        Ok()
 
     }
+
 
 
     fn validate_dataframe(&self, df:&DataFrame) -> Result<(), MappingError>{
@@ -89,7 +105,7 @@ impl Mapping {
 }
 
 
-fn find_valid_column_mapping(signature:&Signature, df:&DataFrame) -> Result<HashMap<String, MappedColumn>, MappingError> {
+fn create_remapped_lazy_frame(instance:&Instance, signature:&Signature, lf:LazyFrame, columns:HashMap<String, DataType>) -> Result<(LazyFrame, HashMap<String, DataType>), MappingError> {
     let mut df_columns = HashSet::new();
     df_columns.extend(df.get_column_names().into_iter());
     let removed = df_columns.remove("Key");
@@ -99,7 +115,7 @@ fn find_valid_column_mapping(signature:&Signature, df:&DataFrame) -> Result<Hash
         let variable_name = &parameter.stottr_variable.name;
         if df_columns.contains(variable_name.as_str()) {
             if !parameter.optional {
-                validate_non_optional_parameter(df, variable_name)?;
+                validate_non_optional_parameter(f, variable_name)?;
             }
             if parameter.non_blank { //TODO handle blanks;
                 validate_non_blank_parameter(df, variable_name)?;
@@ -128,6 +144,7 @@ fn validate_column_data_type(df: &DataFrame, ptype: &PType, column_name: &str) -
     Ok(())
 }
 
+//TODO: Implement this stuff
 fn validate_data_type(dtype:&DataType, ptype:&PType) -> bool {
     match ptype {
         PType::BasicType(b) => {}
@@ -135,7 +152,7 @@ fn validate_data_type(dtype:&DataType, ptype:&PType) -> bool {
         PType::ListType(_) => {}
         PType::NEListType(_) => {}
     }
-    false
+    true
 }
 
 fn validate_non_optional_parameter(df: &DataFrame, column_name:&str) -> Result<(), MappingError> {

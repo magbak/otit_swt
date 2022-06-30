@@ -1,0 +1,1 @@
+pub const OTTR_TRIPLE:&str = "http://ns.ottr.xyz/0.4/Triple";

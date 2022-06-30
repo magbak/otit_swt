@@ -12,4 +12,4 @@ mod templates;
 mod mapping;
 pub mod ast;
 mod resolver;
-mod validation;
+mod constants;

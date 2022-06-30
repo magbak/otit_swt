@@ -38,6 +38,7 @@ impl TemplateDataset {
             ground_instances,
         };
         //Todo: variable safe, no cycles, referential integrity, no duplicates, well founded
+        //Check ground instances also!!
         td.infer_types()?;
         Ok(td)
     }
@@ -139,6 +140,7 @@ fn lub_update(template_name: &NamedNode, variable: &StottrVariable, my_parameter
     }
 }
 
+//TODO: LUB ptype...
 fn lub(template_name: &NamedNode, variable: &StottrVariable, left:&PType, right:&PType) -> Result<PType, TypingError> {
     if left == right {
         return Ok(left.clone());
@@ -153,7 +155,7 @@ fn lub(template_name: &NamedNode, variable: &StottrVariable, left:&PType, right:
             if let PType::NEListType(right_inner) = right {
                 return Ok(PType::NEListType(Box::new(lub(template_name, variable,left_inner, right_inner)?)));
             } else if let PType::ListType(right_inner) = right {
-                return Ok(PType::NEListType(Box::new(lub(template_name, variable,left_inner, right_inner)?)));
+                return Ok(PType::ListType(Box::new(lub(template_name, variable,left_inner, right_inner)?)));
             }
         }
     }
