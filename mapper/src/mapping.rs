@@ -8,7 +8,7 @@ use log::warn;
 use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
 use polars::export::rayon::iter::ParallelIterator;
-use polars::lazy::prelude::{as_struct, concat, Expr, LiteralValue};
+use polars::lazy::prelude::{as_struct, col, concat, Expr, LiteralValue};
 use polars::prelude::{BooleanChunked, DataFrame, DataType, Field, IntoLazy, LazyFrame, Series};
 use polars::toggle_string_cache;
 use std::collections::{HashMap, HashSet};
@@ -19,6 +19,7 @@ pub struct Mapping {
     data_property_triples: DataFrame,
 }
 
+#[derive(Debug)]
 pub enum MappingErrorType {
     TemplateNotFound,
     MissingKeyColumn,
@@ -31,15 +32,17 @@ pub enum MappingErrorType {
     MissingParameterColumn(String),
     ContainsIrrelevantColumns(Vec<String>),
     CouldNotInferStottrDatatypeForColumn(String, DataType),
+    ColumnDataTypeMismatch(String, DataType, PType)
 }
 
+#[derive(Debug)]
 pub struct MappingError {
     kind: MappingErrorType,
 }
 
 pub struct MappingReport {}
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 enum RDFNodeType {
     IRI,
     BlankNode,
@@ -47,20 +50,25 @@ enum RDFNodeType {
     None,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct PrimitiveColumn {
     polars_datatype: DataType,
     rdf_node_type: RDFNodeType,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum MappedColumn {
     PrimitiveColumn(PrimitiveColumn),
 }
 
 impl Mapping {
-    pub fn new(template_dataset: &TemplateDataset) {
+    pub fn new(template_dataset: &TemplateDataset) -> Mapping {
         toggle_string_cache(true);
+        Mapping {
+            template_dataset: template_dataset.clone(),
+            object_property_triples: Default::default(),
+            data_property_triples: Default::default(),
+        }
     }
 
     pub fn expand(
@@ -69,10 +77,12 @@ impl Mapping {
         mut df: DataFrame,
     ) -> Result<MappingReport, MappingError> {
         self.validate_dataframe(&df)?;
+        println!("{}", name);
         let target_template = self.template_dataset.get(name).unwrap();
         let columns =
             find_validate_and_prepare_dataframe_columns(&target_template.signature, &mut df)?;
         let lf = self._expand(name, df.lazy(), columns)?;
+        println!("{}", lf.collect().expect("DF collect problem"));
         Ok(MappingReport {})
     }
 
@@ -113,22 +123,22 @@ impl Mapping {
                 kind: MappingErrorType::MissingKeyColumn,
             });
         }
-        let existing_key_datatype = self.object_property_triples.column("Key").unwrap().dtype();
-        if !(existing_key_datatype == &DataType::Utf8
-            || existing_key_datatype == &DataType::Categorical(None)
-            || existing_key_datatype == &DataType::UInt32
-            || existing_key_datatype == &DataType::UInt64)
-        {
-            return Err(MappingError {
-                kind: MappingErrorType::InvalidKeyColumnDataType(existing_key_datatype.clone()),
-            });
-        }
-
         if self
             .object_property_triples
             .get_column_names()
             .contains(&"Key")
         {
+            let existing_key_datatype = self.object_property_triples.column("Key").unwrap().dtype();
+            if !(existing_key_datatype == &DataType::Utf8
+                || existing_key_datatype == &DataType::Categorical(None)
+                || existing_key_datatype == &DataType::UInt32
+                || existing_key_datatype == &DataType::UInt64)
+            {
+                return Err(MappingError {
+                    kind: MappingErrorType::InvalidKeyColumnDataType(existing_key_datatype.clone()),
+                });
+            }
+
             let new_key_datatype = df.column("Key").unwrap().dtype();
             if !(new_key_datatype == &DataType::Utf8
                 && existing_key_datatype == &DataType::Categorical(None))
@@ -173,7 +183,7 @@ fn find_validate_and_prepare_dataframe_columns(
     df: &mut DataFrame,
 ) -> Result<HashMap<String, MappedColumn>, MappingError> {
     let mut df_columns = HashSet::new();
-    df_columns.extend(df.get_column_names().into_iter().map(|x|x.to_string()));
+    df_columns.extend(df.get_column_names().into_iter().map(|x| x.to_string()));
     let removed = df_columns.remove("Key");
     assert!(removed);
 
@@ -242,6 +252,9 @@ fn create_remapped_lazy_frame(
         }
     }
     lf = lf.rename(existing.as_slice(), new.as_slice());
+    let mut new_column_expressions: Vec<Expr> = new.into_iter().map(|x| col(&x)).collect();
+    new_column_expressions.push(col("Key"));
+    lf = lf.select(new_column_expressions.as_slice());
     Ok((lf, new_map))
 }
 
@@ -250,10 +263,24 @@ fn infer_validate_and_prepare_column_data_type(
     parameter: &Parameter,
     column_name: &str,
 ) -> Result<PrimitiveColumn, MappingError> {
+    let column_data_type = dataframe.column(column_name).unwrap().dtype().clone();
     Ok(if let Some(ptype) = &parameter.ptype {
         match ptype {
             PType::BasicType(bt) => {
-                todo!()
+                if xsd::ANY_URI.as_str() == bt.as_str() {
+                    if column_data_type == DataType::Utf8 {
+                        convert_utf8_to_categorical(dataframe, column_name);
+                        PrimitiveColumn {
+                            //TODO: make a mapping..
+                            polars_datatype: DataType::Categorical(None),
+                            rdf_node_type: RDFNodeType::IRI,
+                        }
+                    } else {
+                        return Err(MappingError{kind:MappingErrorType::ColumnDataTypeMismatch(column_name.to_string(), column_data_type, ptype.clone())});
+                    }
+                } else {
+                    todo!()
+                }
             }
             PType::LUBType(_) => {
                 todo!()
@@ -266,22 +293,15 @@ fn infer_validate_and_prepare_column_data_type(
             }
         }
     } else {
-        let column_data_type = dataframe.column(column_name).unwrap().dtype().clone();
         if column_data_type == DataType::Utf8 {
             warn!(
                 "Could not infer type for column {}, assuming it is an IRI-column.",
                 column_name
             );
-            let categorical_type = DataType::Categorical(None);
-            dataframe.with_column(
-                dataframe
-                    .column(column_name)
-                    .unwrap()
-                    .cast(&categorical_type)
-                    .unwrap(),
-            ).unwrap();
+            convert_utf8_to_categorical(dataframe, column_name);
             PrimitiveColumn {
-                polars_datatype: categorical_type,
+                //TODO: make a mapping..
+                polars_datatype: DataType::Categorical(None),
                 rdf_node_type: RDFNodeType::IRI,
             }
         } else if column_data_type == DataType::Null {
@@ -304,6 +324,18 @@ fn infer_validate_and_prepare_column_data_type(
             });
         }
     })
+}
+
+fn convert_utf8_to_categorical(dataframe: &mut DataFrame, column_name: &str) {
+    dataframe
+        .with_column(
+            dataframe
+                .column(column_name)
+                .unwrap()
+                .cast(&DataType::Categorical(None))
+                .unwrap(),
+        )
+        .unwrap();
 }
 
 fn validate_non_optional_parameter(df: &DataFrame, column_name: &str) -> Result<(), MappingError> {

@@ -14,6 +14,7 @@ use oxrdf::{IriParseError, NamedNode};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
+use crate::constants::{OTTR_PREFIX, OTTR_PREFIX_URI};
 
 #[derive(Debug)]
 pub struct ResolutionError {
@@ -35,7 +36,7 @@ impl Display for ResolutionError {
 
 impl Error for ResolutionError {}
 
-fn resolve_document(
+pub fn resolve_document(
     unresolved_document: UnresolvedStottrDocument,
 ) -> Result<StottrDocument, ResolutionError> {
     let directives = unresolved_document.directives.clone();
@@ -267,6 +268,16 @@ fn resolve(
         ResolvesToNamedNode::PrefixedName(pn) => {
             if let Some(nn) = prefix_map.get(&pn.prefix) {
                 let new_node_result = NamedNode::new(format!("{}{}", nn.as_str(), &pn.name));
+                match new_node_result {
+                    Ok(new_node) => new_node,
+                    Err(err) => {
+                        return Err(ResolutionError {
+                            kind: ResolutionErrorType::BadCompositeIRIError(err),
+                        })
+                    }
+                }
+            } else if pn.prefix.as_str() == OTTR_PREFIX {
+                let new_node_result = NamedNode::new(format!("{}{}", OTTR_PREFIX_URI, &pn.name));
                 match new_node_result {
                     Ok(new_node) => new_node,
                     Err(err) => {

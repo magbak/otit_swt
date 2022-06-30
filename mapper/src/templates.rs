@@ -1,17 +1,20 @@
-use crate::ast::{
-    Instance, PType, Parameter, Statement, StottrDocument, StottrTerm, StottrVariable, Template,
-};
+use crate::ast::{Instance, PType, Parameter, Statement, StottrDocument, StottrTerm, StottrVariable, Template, Signature};
 use oxrdf::NamedNode;
+use oxrdf::vocab::xsd;
+use crate::constants::OTTR_TRIPLE;
 
+#[derive(Clone)]
 pub struct TemplateDataset {
     pub templates: Vec<Template>,
     pub ground_instances: Vec<Instance>,
 }
 
+#[derive(Debug)]
 pub struct TypingError {
     pub kind: TypingErrorType,
 }
 
+#[derive(Debug)]
 pub enum TypingErrorType {
     InconsistentNumberOfArguments(NamedNode, NamedNode, usize, usize),
     IncompatibleTypes(NamedNode, StottrVariable, PType, PType),
@@ -37,13 +40,48 @@ impl TemplateDataset {
             templates,
             ground_instances,
         };
+        //TODO: Put in function, check not exists and consistent...
+        let ottr_triple_subject =Parameter{
+                optional: false,
+                non_blank: false,
+                ptype: Some(PType::BasicType(xsd::ANY_URI.into_owned())),
+                stottr_variable: StottrVariable { name: "subject".to_string() },
+                default_value: None
+            };
+        let ottr_triple_verb =Parameter{
+                optional: false,
+                non_blank: false,
+                ptype: Some(PType::BasicType(xsd::ANY_URI.into_owned())),
+                stottr_variable: StottrVariable { name: "verb".to_string() },
+                default_value: None
+            };
+        let ottr_triple_object =Parameter{
+                optional: false,
+                non_blank: false,
+                ptype: Some(PType::BasicType(xsd::ANY_URI.into_owned())),
+                stottr_variable: StottrVariable { name: "object".to_string() },
+                default_value: None
+            };
+
+
+        let ottr_template = Template { signature: Signature {
+            template_name: NamedNode::new_unchecked(OTTR_TRIPLE),
+            parameter_list: vec![ottr_triple_subject, ottr_triple_verb, ottr_triple_object],
+            annotation_list: None
+        }, pattern_list: vec![] };
+        td.templates.push(ottr_template);
         //Todo: variable safe, no cycles, referential integrity, no duplicates, well founded
         //Check ground instances also!!
         td.infer_types()?;
         Ok(td)
     }
 
-    pub fn get(&self, named_node: &NamedNode) -> Option<Template> {
+    pub fn get(&self, named_node: &NamedNode) -> Option<&Template> {
+        for t in &self.templates {
+            if &t.signature.template_name == named_node {
+                return Some(t);
+            }
+        }
         None
     }
 

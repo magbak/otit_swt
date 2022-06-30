@@ -8,8 +8,8 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 pub mod parser;
 pub mod parsing_ast;
-mod templates;
-mod mapping;
+pub mod templates;
+pub mod mapping;
 pub mod ast;
-mod resolver;
+pub mod resolver;
 mod constants;
