@@ -20,12 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use rayon::prelude::*;
 use std::io::Write;
 use polars::error::PolarsError;
 use polars::export::rayon::iter::{IntoParallelIterator, ParallelIterator};
 use polars::export::rayon::prelude::ParallelExtend;
-use polars::prelude::{AnyValue, DataFrame, Series, TimeUnit};
+use polars::prelude::{AnyValue, DataFrame, Series};
 use polars::series::SeriesIter;
 use polars_core::POOL;
 use polars_utils::contention_pool::LowContentionPool;

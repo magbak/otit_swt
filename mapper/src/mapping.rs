@@ -1,5 +1,5 @@
 use crate::ast::{
-    Argument, ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Parameter,
+    ConstantLiteral, ConstantTerm, Instance, PType, Parameter,
     Signature, StottrTerm,
 };
 use crate::constants::OTTR_TRIPLE;
@@ -7,20 +7,17 @@ use crate::templates::TemplateDataset;
 use log::warn;
 use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
-use polars::datatypes::CategoricalType;
 use polars::export::rayon::iter::ParallelIterator;
 use polars::io::SerWriter;
 use polars::lazy::prelude::{as_struct, col, concat, Expr, LiteralValue};
-use polars::prelude::{cols, CsvWriter, IntoSeries, NamedFrom, NoEq, StructChunked, Utf8Chunked};
+use polars::prelude::{IntoSeries, NoEq, StructChunked};
 use polars::prelude::{
-    concat_str, lit, AnyValue, BooleanChunked, ChunkAnyValue, ChunkApply, ChunkVar, DataFrame,
-    DataType, Field, IntoLazy, LazyFrame, PolarsError, Series, StrConcat, Utf8NameSpaceImpl,
-};
+    concat_str, AnyValue, BooleanChunked, DataFrame,
+    DataType, Field, IntoLazy, LazyFrame, PolarsError, Series};
 use polars::toggle_string_cache;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::io::Write;
-use uuid::Uuid;
 use crate::ntriples_write::write_ntriples;
 
 pub struct Mapping {

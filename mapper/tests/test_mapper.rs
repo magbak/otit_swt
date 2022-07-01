@@ -1,9 +1,10 @@
+#[cfg(test)]
+mod utils;
+
 use std::fs::File;
-use std::io::BufReader;
 use std::path::PathBuf;
-use std::str::FromStr;
 use nom::Finish;
-use oxrdf::{BlankNode, NamedNode, Subject, Term, Triple};
+use oxrdf::{NamedNode};
 use polars::frame::DataFrame;
 use rstest::*;
 use polars::series::Series;
@@ -11,9 +12,7 @@ use mapper::mapping::Mapping;
 use mapper::parser::stottr_doc;
 use mapper::resolver::resolve_document;
 use mapper::templates::TemplateDataset;
-use rio_api::parser::TriplesParser;
-use rio_turtle::TurtleError;
-
+use crate::utils::triples_from_file;
 
 #[fixture]
 fn testdata_path() -> PathBuf {
@@ -51,29 +50,16 @@ fn test_mapper_easy_case(testdata_path:PathBuf) {
 
     let mut mapping = Mapping::new(&template_dataset);
     let report = mapping.expand(&NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"), df).expect("");
-    let mut file_path = testdata_path.clone();
-    file_path.push("easy_case.ttl");
-    // let mut file = File::create(file_path.as_path()).expect("could not open file");
-    // mapping.write_n_triples(&mut file);
-    let mut file = File::open(file_path.as_path()).expect("Could not open file");
-    let mut reader = BufReader::new(file);
-    let mut triples = vec![];
+    let mut actual_file_path = testdata_path.clone();
+    actual_file_path.push("actual_easy_case.ttl");
+    let mut actual_file = File::create(actual_file_path.as_path()).expect("could not open file");
+    mapping.write_n_triples(&mut actual_file).unwrap();
+    let actual_file = File::open(actual_file_path.as_path()).expect("Could not open file");
+    let actual_triples = triples_from_file(actual_file);
 
-    rio_turtle::NTriplesParser::new(&mut reader).parse_all(&mut |x| {
-        let subject = match x.subject {
-             rio_api::model::Subject::NamedNode(nn) => {Subject::NamedNode(NamedNode::new_unchecked(nn.to_string()))}
-             rio_api::model::Subject::BlankNode(bn) => {Subject::BlankNode(BlankNode::new_unchecked(bn.to_string()))}
-             rio_api::model::Subject::Triple(_) => {panic!("Not supported")}
-        };
-        let predicate = NamedNode::new_unchecked(x.predicate.to_string());
-        let object = Term::from_str(&x.object.to_string()).unwrap();
-        let t = Triple {
-            subject,
-            predicate,
-            object
-        };
-        triples.push(t);
-        Ok(()) as Result<(), TurtleError>
-    }).expect("No problems");
-    println!("{:?}", triples);
+    let mut expected_file_path = testdata_path.clone();
+    expected_file_path.push("expected_easy_case.ttl");
+    let expected_file = File::open(expected_file_path.as_path()).expect("Could not open file");
+    let expected_triples = triples_from_file(expected_file);
+    assert_eq!(expected_triples, actual_triples);
 }

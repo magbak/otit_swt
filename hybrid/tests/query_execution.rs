@@ -9,7 +9,7 @@ use hybrid::orchestrator::execute_hybrid_query;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::static_sparql::execute_sparql_query;
 use oxrdf::{NamedNode, Term, Variable};
-use polars::prelude::{CsvReader, CsvWriter, SerReader, SerWriter};
+use polars::prelude::{CsvReader, SerReader};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::StatusCode;
 use rstest::*;
@@ -21,7 +21,7 @@ use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
 use std::time::Duration;
-use log::{debug, SetLoggerError};
+use log::{debug};
 use tokio::time::sleep;
 
 pub mod in_memory_timeseries;
@@ -160,7 +160,7 @@ fn time_series_database(testdata_path: PathBuf) -> InMemoryTimeseriesDatabase {
         file_path.push(t.to_string() + ".csv");
 
         let file = File::open(file_path.as_path()).expect("could not open file");
-        let mut df = CsvReader::new(file)
+        let df = CsvReader::new(file)
             .infer_schema(None)
             .has_header(true)
             .with_parse_dates(true)
@@ -282,7 +282,7 @@ async fn test_simple_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime && ?v < 200) .
     }
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -333,7 +333,7 @@ async fn test_complex_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:55"^^xsd:dateTime && ?v1 < ?v2) .
     }
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -377,7 +377,7 @@ async fn test_pushdown_group_by_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime) .
     } GROUP BY ?w
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w"], vec![false])
@@ -431,7 +431,7 @@ async fn test_pushdown_group_by_second_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime)
     } GROUP BY ?w ?year ?month ?day ?hour ?minute ?second
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w", "sum_v"], vec![false])
@@ -486,7 +486,7 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
     } GROUP BY ?w ?year ?month ?day ?hour ?minute ?second_5
     HAVING (SUM(?v) > 199)
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w", "sum_v"], vec![false])
@@ -535,7 +535,7 @@ async fn test_pushdown_group_by_concat_agg_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime)
     } GROUP BY ?w ?seconds_5
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w", "seconds_5"], vec![false])
@@ -584,7 +584,7 @@ async fn test_pushdown_groupby_exists_something_hybrid_query(
         FILTER EXISTS {SELECT ?w WHERE {?w types:hasSomething ?smth}}
     } GROUP BY ?w ?seconds_3
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w", "seconds_3"], vec![false])
@@ -603,7 +603,7 @@ async fn test_pushdown_groupby_exists_something_hybrid_query(
         .expect("Sort error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
-    let writer = CsvWriter::new(file);
+    // let writer = CsvWriter::new(file);
     // writer.finish(&mut df).expect("writeok");
     // println!("{}", df);
 }
@@ -633,7 +633,7 @@ async fn test_pushdown_groupby_exists_timeseries_value_hybrid_query(
             FILTER(?v > 300)}}
     }
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w"], vec![false])
@@ -685,7 +685,7 @@ async fn test_pushdown_groupby_exists_aggregated_timeseries_value_hybrid_query(
             }
     }
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w"], vec![false])
@@ -738,7 +738,7 @@ async fn test_pushdown_groupby_not_exists_aggregated_timeseries_value_hybrid_que
             }
     }
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w"], vec![false])
@@ -782,7 +782,7 @@ async fn test_path_group_by_query(
         GROUP BY ?w
         ORDER BY ASC(?max_v)
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -825,7 +825,7 @@ async fn test_optional_clause_query(
         }
     }
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -869,7 +869,7 @@ async fn test_minus_query(
         }
     }
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error").sort(&["w", "v"], vec![false]).expect("Sort error");
     let mut file_path = testdata_path.clone();
@@ -910,7 +910,7 @@ async fn test_in_expression_query(
         FILTER(?v IN ((300+4), (304-3), 307))
     }
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -952,7 +952,7 @@ async fn test_values_query(
         FILTER(?v = ?v2)
     }
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -992,7 +992,7 @@ async fn test_if_query(
         ?dp quarry:hasValue ?v .
     }
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w", "v_with_min"], vec![false]).expect("Sort problem");
@@ -1035,7 +1035,7 @@ async fn test_distinct_query(
         ?dp quarry:hasValue ?v .
     }
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -1083,7 +1083,7 @@ async fn test_union_query(
         }
     }
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error").sort(&["w", "v"], vec![false]).expect("Sort problem");
 
@@ -1133,7 +1133,7 @@ async fn test_coalesce_query(
         }
     }
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error").sort(&["s1", "s2", "v1", "v2", "t"], vec![false]).expect("Sort problem");
 
