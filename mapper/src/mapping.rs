@@ -7,16 +7,21 @@ use crate::templates::TemplateDataset;
 use log::warn;
 use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
+use polars::datatypes::CategoricalType;
 use polars::export::rayon::iter::ParallelIterator;
+use polars::io::SerWriter;
 use polars::lazy::prelude::{as_struct, col, concat, Expr, LiteralValue};
-use polars::prelude::{BooleanChunked, ChunkAnyValue, ChunkApply, ChunkVar, concat_str, DataFrame, DataType, Field, IntoLazy, LazyFrame, lit, PolarsError, Series, StrConcat, Utf8NameSpaceImpl};
+use polars::prelude::{cols, CsvWriter, IntoSeries, NamedFrom, NoEq, StructChunked, Utf8Chunked};
+use polars::prelude::{
+    concat_str, lit, AnyValue, BooleanChunked, ChunkAnyValue, ChunkApply, ChunkVar, DataFrame,
+    DataType, Field, IntoLazy, LazyFrame, PolarsError, Series, StrConcat, Utf8NameSpaceImpl,
+};
 use polars::toggle_string_cache;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::io::Write;
-use polars::datatypes::CategoricalType;
-use polars::io::SerWriter;
-use polars::prelude::CsvWriter;
+use uuid::Uuid;
+use crate::ntriples_write::write_ntriples;
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
@@ -74,13 +79,15 @@ impl Mapping {
             Series::new_empty("subject", &cat),
             Series::new_empty("verb", &cat),
             Series::new_empty("object", &cat),
-        ]).unwrap();
+        ])
+        .unwrap();
         let data_property_dataframe = DataFrame::new(vec![
             Series::new_empty("Key", &cat),
             Series::new_empty("subject", &cat),
             Series::new_empty("verb", &cat),
-            Series::new_empty("object", &DataType::Utf8),
-        ]).unwrap();
+            Series::new_empty("object", &DataType::Struct(literal_struct_fields())),
+        ])
+        .unwrap();
 
         Mapping {
             template_dataset: template_dataset.clone(),
@@ -89,21 +96,76 @@ impl Mapping {
         }
     }
 
-    pub fn write_n_triples(&self, buffer: &mut dyn Write) -> Result<(), PolarsError>{
-        let braces_expr = |colname| {
-            concat_str([
-            Expr::Literal(LiteralValue::Utf8("<".to_string())),col(colname),
-            Expr::Literal(LiteralValue::Utf8(">".to_string()))], "")
+    pub fn write_n_triples(&self, buffer: &mut dyn Write) -> Result<(), PolarsError> {
+        //TODO: Refactor all of this stuff.. obviously poorly thought out..
+        let constant_utf8_series = |s, n| {
+            Expr::Literal(LiteralValue::Series(NoEq::new(Series::new_empty("lbrace",&DataType::Utf8).extend_constant(AnyValue::Utf8(s), n).unwrap())))
         };
+        let braces_expr = |colname, n| {
+            concat_str(
+                [constant_utf8_series("<", n),
+                    col(colname),
+                    constant_utf8_series(">", n),
+                ],
+                "",
+            )
+        };
+        let n_object_property_triples = self.object_property_triples.as_ref().unwrap().height();
+        let subject_expr = braces_expr("subject", n_object_property_triples);
+        let verb_expr = braces_expr("verb",n_object_property_triples);
+        let object_expr = braces_expr("object", n_object_property_triples);
+        let triple_expr = concat_str(
+            [
+                subject_expr,
+                verb_expr,
+                object_expr,
+                constant_utf8_series(".", n_object_property_triples),
+            ],
+            " ",
+        );
+        let objects_df = self
+            .object_property_triples
+            .as_ref()
+            .unwrap()
+            .clone()
+            .lazy()
+            .select(&[triple_expr.alias("")])
+            .collect()
+            .expect("Ok");
 
-        let subject_expr = braces_expr("subject");
-        let verb_expr = braces_expr("verb");
-        let object_expr = braces_expr("object");
-        let triple_expr = concat_str([subject_expr, verb_expr, object_expr, Expr::Literal(LiteralValue::Utf8(".".to_string()))], " ");
-        let mut new_df = self.object_property_triples.as_ref().unwrap().clone().lazy().select(&[triple_expr.alias("")]).collect().expect("Ok");
-
-        let mut nt_writer = CsvWriter::new(buffer);
-        nt_writer.finish(&mut new_df)?;
+        let n_data_property_triples = self.data_property_triples.as_ref().unwrap().height();
+        let data_subject_expr = braces_expr("subject", n_data_property_triples);
+        let data_verb_expr = braces_expr("verb",n_data_property_triples);
+        let data_object_expr = concat_str([
+                                         constant_utf8_series("\"", n_data_property_triples),
+                                         col("object").struct_().field_by_name("lexical_form"),
+                                         constant_utf8_series("\"", n_data_property_triples),
+                                         constant_utf8_series("^^", n_data_property_triples),
+                                         constant_utf8_series("<", n_data_property_triples),
+                                         col("object").struct_().field_by_name("datatype_iri"),
+                                         constant_utf8_series(">", n_data_property_triples),
+                                     ], "");
+        let data_triple_expr = concat_str(
+            [
+                data_subject_expr,
+                data_verb_expr,
+                data_object_expr,
+                constant_utf8_series(".", n_data_property_triples),
+            ],
+            " ",
+        );
+        let data_df = self
+            .data_property_triples
+            .as_ref()
+            .unwrap()
+            .clone()
+            .lazy()
+            .select(&[data_triple_expr.alias("")])
+            .collect()
+            .expect("Ok");
+        let mut out_df = concat([objects_df.lazy(), data_df.lazy()], true).unwrap().collect().unwrap();
+        out_df.as_single_chunk_par();
+        write_ntriples(buffer, &out_df, 1024).unwrap();
         Ok(())
     }
 
@@ -115,7 +177,7 @@ impl Mapping {
         self.validate_dataframe(&mut df)?;
         println!("{}", name);
         let target_template = self.template_dataset.get(name).unwrap();
-        let columns =
+        let columns=
             find_validate_and_prepare_dataframe_columns(&target_template.signature, &mut df)?;
         let mut result_vec = vec![];
         self._expand(name, df.lazy(), columns, &mut result_vec)?;
@@ -129,7 +191,7 @@ impl Mapping {
         name: &NamedNode,
         mut lf: LazyFrame,
         columns: HashMap<String, MappedColumn>,
-        new_lfs_columns: &mut Vec<(LazyFrame, HashMap<String, MappedColumn>)>
+        new_lfs_columns: &mut Vec<(LazyFrame, HashMap<String, MappedColumn>)>,
     ) -> Result<(), MappingError> {
         //At this point, the lf should have columns with names appropriate for the template to be instantiated (named_node).
         if let Some(template) = self.template_dataset.get(name) {
@@ -148,7 +210,12 @@ impl Mapping {
                         lf.clone(),
                         &columns,
                     )?;
-                    self._expand(&i.template_name, instance_lf, instance_columns, new_lfs_columns)?;
+                    self._expand(
+                        &i.template_name,
+                        instance_lf,
+                        instance_columns,
+                        new_lfs_columns,
+                    )?;
                 }
                 Ok(())
             }
@@ -166,13 +233,14 @@ impl Mapping {
             });
         }
         if self
-            .object_property_triples.as_ref().unwrap()
+            .object_property_triples
+            .as_ref()
+            .unwrap()
             .get_column_names()
             .contains(&"Key")
         {
             let key_datatype = df.column("Key").unwrap().dtype().clone();
-            if  key_datatype != DataType::Utf8
-            {
+            if key_datatype != DataType::Utf8 {
                 return Err(MappingError {
                     kind: MappingErrorType::InvalidKeyColumnDataType(key_datatype.clone()),
                 });
@@ -187,12 +255,31 @@ impl Mapping {
                 });
             }
             toggle_string_cache(true);
-            let df_keys = df.column("Key").unwrap().cast(&DataType::Categorical(None)).unwrap();
-            let existing_keys = self.object_property_triples.as_mut().unwrap().column("Key").unwrap().cast(&DataType::Utf8).unwrap().cast(&DataType::Categorical(None)).unwrap();
+            let df_keys = df
+                .column("Key")
+                .unwrap()
+                .cast(&DataType::Categorical(None))
+                .unwrap();
+            let existing_keys = self
+                .object_property_triples
+                .as_mut()
+                .unwrap()
+                .column("Key")
+                .unwrap()
+                .cast(&DataType::Utf8)
+                .unwrap()
+                .cast(&DataType::Categorical(None))
+                .unwrap();
             let overlapping_keys = df_keys.is_in(&existing_keys).unwrap();
             toggle_string_cache(false);
 
-            df.with_column(df.column("Key").unwrap().cast(&DataType::Categorical(None)).unwrap()).unwrap();
+            df.with_column(
+                df.column("Key")
+                    .unwrap()
+                    .cast(&DataType::Categorical(None))
+                    .unwrap(),
+            )
+            .unwrap();
 
             if overlapping_keys.any() {
                 return Err(MappingError {
@@ -214,23 +301,35 @@ impl Mapping {
         for (lf, columns) in result_vec {
             let df = lf.collect().expect("Collect problem");
             match columns.get("object").unwrap() {
-                MappedColumn::PrimitiveColumn(c) => {
-                    match c.rdf_node_type {
-                        RDFNodeType::IRI => {object_properties.push(df.lazy());}
-                        RDFNodeType::BlankNode => {}
-                        RDFNodeType::Literal => {data_properties.push(df.lazy());}
-                        RDFNodeType::None => {}
+                MappedColumn::PrimitiveColumn(c) => match c.rdf_node_type {
+                    RDFNodeType::IRI => {
+                        object_properties.push(df.lazy());
                     }
-                }
+                    RDFNodeType::BlankNode => {}
+                    RDFNodeType::Literal => {
+                        data_properties.push(df.lazy());
+                    }
+                    RDFNodeType::None => {}
+                },
             }
         }
         let existing_object_properties = self.object_property_triples.take().unwrap();
         object_properties.push(existing_object_properties.lazy());
-        self.object_property_triples = Some(concat(object_properties, true).unwrap().collect().expect("Collect after concat problem"));
+        self.object_property_triples = Some(
+            concat(object_properties, true)
+                .unwrap()
+                .collect()
+                .expect("Collect after concat problem"),
+        );
 
         let existing_data_properties = self.data_property_triples.take().unwrap();
         data_properties.push(existing_data_properties.lazy());
-        self.data_property_triples = Some(concat(data_properties, true).unwrap().collect().expect("Collect after concat problem"));
+        self.data_property_triples = Some(
+            concat(data_properties, true)
+                .unwrap()
+                .collect()
+                .expect("Collect after concat problem"),
+        );
     }
 }
 
@@ -255,7 +354,7 @@ fn find_validate_and_prepare_dataframe_columns(
                 //TODO handle blanks;
                 validate_non_blank_parameter(&df, variable_name)?;
             }
-            let column_data_type =
+            let column_data_type=
                 infer_validate_and_prepare_column_data_type(df, &parameter, variable_name)?;
 
             map.insert(
@@ -326,7 +425,7 @@ fn infer_validate_and_prepare_column_data_type(
     column_name: &str,
 ) -> Result<PrimitiveColumn, MappingError> {
     let column_data_type = dataframe.column(column_name).unwrap().dtype().clone();
-    Ok(if let Some(ptype) = &parameter.ptype {
+    let out_column = if let Some(ptype) = &parameter.ptype {
         match ptype {
             PType::BasicType(bt) => {
                 if xsd::ANY_URI.as_str() == bt.as_str() {
@@ -360,7 +459,8 @@ fn infer_validate_and_prepare_column_data_type(
                 todo!()
             }
         }
-    } else { // No ptype!
+    } else {
+        // No ptype!
         if column_data_type == DataType::Utf8 {
             warn!(
                 "Could not infer type for column {}, assuming it is an IRI-column.",
@@ -378,7 +478,7 @@ fn infer_validate_and_prepare_column_data_type(
                 rdf_node_type: RDFNodeType::None,
             }
         } else if column_data_type == DataType::Int32 {
-            //TODO: dataframe.with_column(dataframe.column(column_name).unwrap())
+            convert_column_to_value_struct(dataframe, column_name, &xsd::INTEGER.into_owned());
             PrimitiveColumn {
                 polars_datatype: DataType::Int32,
                 rdf_node_type: RDFNodeType::Literal,
@@ -391,7 +491,32 @@ fn infer_validate_and_prepare_column_data_type(
                 ),
             });
         }
-    })
+    };
+    Ok(out_column)
+}
+
+fn convert_column_to_value_struct(
+    dataframe: &mut DataFrame,
+    column_name: &str,
+    swt_data_type: &NamedNode,
+) {
+    let mut value_series = dataframe.column(column_name).unwrap().cast(&DataType::Utf8).unwrap();
+    value_series.rename("lexical_form");
+    //TODO: Allow language to be set perhaps as an argument
+    let language_series = Series::full_null(
+            &"language_tag",
+            dataframe.height(),
+            &DataType::Utf8,
+        ).cast(&DataType::Categorical(None)).unwrap();
+    let data_type_series = Series::new_empty("datatype_iri", &DataType::Utf8)
+                .extend_constant(AnyValue::Utf8(swt_data_type.as_str()), dataframe.height())
+                .unwrap()
+                .cast(&DataType::Categorical(None))
+                .unwrap();
+    let st = StructChunked::new(column_name, &[value_series, language_series, data_type_series]).unwrap();
+    let struct_value_series = st.into_series();
+
+    dataframe.with_column(struct_value_series).unwrap();
 }
 
 fn convert_utf8_to_categorical(dataframe: &mut DataFrame, column_name: &str) {
@@ -448,7 +573,7 @@ fn validate_non_blank_parameter(df: &DataFrame, column_name: &str) -> Result<(),
 fn literal_struct_fields() -> Vec<Field> {
     vec![
         Field::new("lexical_form", DataType::Utf8),
-        Field::new("language_tag", DataType::Utf8),
+        Field::new("language_tag", DataType::Categorical(None)),
         Field::new("datatype_iri", DataType::Categorical(None)),
     ]
 }
@@ -457,7 +582,8 @@ fn constant_to_lazy_expression(constant_term: &ConstantTerm) -> (Expr, MappedCol
     match constant_term {
         ConstantTerm::Constant(c) => match c {
             ConstantLiteral::IRI(iri) => (
-                Expr::Literal(LiteralValue::Utf8(iri.as_str().to_string())).cast(DataType::Categorical(None)),
+                Expr::Literal(LiteralValue::Utf8(iri.as_str().to_string()))
+                    .cast(DataType::Categorical(None)),
                 MappedColumn::PrimitiveColumn(PrimitiveColumn {
                     polars_datatype: DataType::Categorical(None),
                     rdf_node_type: RDFNodeType::IRI,

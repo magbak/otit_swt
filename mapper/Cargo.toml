@@ -8,11 +8,19 @@ edition = "2021"
 [dependencies]
 nom={version="7.1.1", features=["alloc"]}
 oxrdf = "0.1.0"
-polars = {version="0.22.8", features=["lazy", "concat_str", "dtype-categorical", "is_in", "strings", "dtype-struct", "list"] }
+polars = {version="0.22.8", features=["lazy", "concat_str", "dtype-categorical", "is_in", "strings", "dtype-struct", "list", "horizontal_concat"] }
 unic-char-range = "0.9.0"
 mimalloc = { version = "*", default-features = false }
 log="0.4.14"
 rio_turtle = "0.7.1"
+uuid = {version="1.1.2", features = [
+    "v4",                # Lets you generate random UUIDs
+    "fast-rng",          # Use a faster (but still sufficiently random) RNG
+    "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
+]}
+rayon = "1.5.3"
+polars-utils = "0.22.7"
+polars-core = "0.22.7"
 
 [dev-dependencies]
 rstest = "0.14.0"

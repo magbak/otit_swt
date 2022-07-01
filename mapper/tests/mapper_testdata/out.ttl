@@ -1,0 +1,4 @@
+<http://example.net/ns#anObject> <http://example.net/ns#hasNumberString> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<http://example.net/ns#anObject> <http://example.net/ns#hasNumberString> "2"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<http://example.net/ns#anObject> <http://example.net/ns#hasNumberString> "3"^^<http://www.w3.org/2001/XMLSchema#integer> .
+<http://example.net/ns#anObject> <http://example.net/ns#hasNumberString> "4"^^<http://www.w3.org/2001/XMLSchema#integer> .

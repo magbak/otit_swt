@@ -1,5 +1,6 @@
 #[cfg(test)]
 #[macro_use] extern crate unic_char_range;
+extern crate core;
 
 use mimalloc::MiMalloc;
 
@@ -13,3 +14,4 @@ pub mod mapping;
 pub mod ast;
 pub mod resolver;
 mod constants;
+mod ntriples_write;
