@@ -7,7 +7,7 @@ use crate::ntriples_write::write_ntriples;
 use crate::templates::TemplateDataset;
 use log::warn;
 use oxrdf::vocab::xsd;
-use oxrdf::{Literal, NamedNode, Subject, Term, Triple};
+use oxrdf::{BlankNode, Literal, NamedNode, Subject, Term, Triple};
 use polars::export::rayon::iter::ParallelIterator;
 use polars::lazy::prelude::{as_struct, col, concat, Expr, LiteralValue};
 use polars::prelude::{
@@ -72,18 +72,18 @@ enum MappedColumn {
 
 impl Mapping {
     pub fn new(template_dataset: &TemplateDataset) -> Mapping {
-        let cat = DataType::Categorical(None);
+        let utf8 = DataType::Utf8;
         let object_property_dataframe = DataFrame::new(vec![
-            Series::new_empty("Key", &cat),
-            Series::new_empty("subject", &cat),
-            Series::new_empty("verb", &cat),
-            Series::new_empty("object", &cat),
+            Series::new_empty("Key", &utf8),
+            Series::new_empty("subject", &utf8),
+            Series::new_empty("verb", &utf8),
+            Series::new_empty("object", &utf8),
         ])
         .unwrap();
         let data_property_dataframe = DataFrame::new(vec![
-            Series::new_empty("Key", &cat),
-            Series::new_empty("subject", &cat),
-            Series::new_empty("verb", &cat),
+            Series::new_empty("Key", &utf8),
+            Series::new_empty("subject", &utf8),
+            Series::new_empty("verb", &utf8),
             Series::new_empty("object", &DataType::Struct(literal_struct_fields())),
         ])
         .unwrap();
@@ -205,20 +205,21 @@ impl Mapping {
                 let mut verb_iterator = object_property_triples.column("verb").unwrap().iter();
                 let mut object_iterator = object_property_triples.column("object").unwrap().iter();
 
-                for i in 0..object_property_triples.height() {
+                for _ in 0..object_property_triples.height() {
                     let s = subject_iterator.next().unwrap();
                     let v = verb_iterator.next().unwrap();
                     let o = object_iterator.next().unwrap();
-                    if let AnyValue::Categorical(u_s, r_s) = s {
-                        if let AnyValue::Categorical(u_v, r_v) = v {
-                            if let AnyValue::Categorical(u_o, r_o) = o {
-                                let subject = NamedNode::new_unchecked(r_s.get(u_s));
-                                let verb = NamedNode::new_unchecked(r_v.get(u_v));
-                                let object = NamedNode::new_unchecked(r_o.get(u_o));
+
+                    if let AnyValue::Utf8(subject) = s {
+                        if let AnyValue::Utf8(verb) = v {
+                            if let AnyValue::Utf8(object) = o {
+                                let subject = subject_from_str(subject);
+                                let verb = NamedNode::new_unchecked(verb);
+                                let object = object_term_from_str(object);
                                 let t = Triple::new(
-                                    Subject::NamedNode(subject),
+                                    subject,
                                     verb,
-                                    Term::NamedNode(object),
+                                    object,
                                 );
                                 triples.push(t);
                             } else {
@@ -255,23 +256,24 @@ impl Mapping {
                 let mut lexical_iterator = lexical_form_series.iter();
                 let mut datatype_iterator = datatype_series.iter();
 
-                for i in 0..data_property_triples.height() {
+                for _ in 0..data_property_triples.height() {
                     let s = subject_iterator.next().unwrap();
                     let v = verb_iterator.next().unwrap();
                     let l = lexical_iterator.next().unwrap();
                     let d = datatype_iterator.next().unwrap();
 
-                    if let AnyValue::Categorical(u_s, r_s) = s {
-                        if let AnyValue::Categorical(u_v, r_v) = v {
+                    //TODO: Fix for when subject might be blank node.
+                    if let AnyValue::Utf8(subject) = s {
+                        if let AnyValue::Utf8(verb) = v {
                             if let AnyValue::Utf8(value) = l {
-                                if let AnyValue::Categorical(u_d, r_d) = d {
-                                    let subject = NamedNode::new_unchecked(r_s.get(u_s));
-                                    let verb = NamedNode::new_unchecked(r_v.get(u_v));
+                                if let AnyValue::Utf8(datatype) = d {
+                                    let subject = subject_from_str(subject);
+                                    let verb = NamedNode::new_unchecked(verb);
                                     let object = Term::Literal(Literal::new_typed_literal(
                                         value,
-                                        NamedNode::new_unchecked(r_d.get(u_d)),
+                                        NamedNode::new_unchecked(datatype),
                                     ));
-                                    let t = Triple::new(Subject::NamedNode(subject), verb, object);
+                                    let t = Triple::new(subject, verb, object);
                                     triples.push(t);
                                 } else {
                                     panic!("Should never happen")
@@ -318,7 +320,7 @@ impl Mapping {
         if let Some(template) = self.template_dataset.get(name) {
             if template.signature.template_name.as_str() == OTTR_TRIPLE {
                 lf = lf.select(&[col("Key"), col("subject"), col("verb"), col("object")]);
-                new_lfs_columns.push((lf, columns));
+                new_lfs_columns.push((lf.collect().unwrap().lazy(), columns));
                 Ok(())
             } else {
                 for i in &template.pattern_list {
@@ -385,20 +387,10 @@ impl Mapping {
                 .unwrap()
                 .column("Key")
                 .unwrap()
-                .cast(&DataType::Utf8)
-                .unwrap()
                 .cast(&DataType::Categorical(None))
                 .unwrap();
             let overlapping_keys = df_keys.is_in(&existing_keys).unwrap();
             toggle_string_cache(false);
-
-            df.with_column(
-                df.column("Key")
-                    .unwrap()
-                    .cast(&DataType::Categorical(None))
-                    .unwrap(),
-            )
-            .unwrap();
 
             if overlapping_keys.any() {
                 return Err(MappingError {
@@ -550,10 +542,8 @@ fn infer_validate_and_prepare_column_data_type(
             PType::BasicType(bt) => {
                 if xsd::ANY_URI.as_str() == bt.as_str() {
                     if column_data_type == DataType::Utf8 {
-                        convert_utf8_to_categorical(dataframe, column_name);
                         PrimitiveColumn {
-                            //TODO: make a mapping..
-                            polars_datatype: DataType::Categorical(None),
+                            polars_datatype: DataType::Utf8,
                             rdf_node_type: RDFNodeType::IRI,
                         }
                     } else {
@@ -658,13 +648,9 @@ fn convert_column_to_value_struct(
         .unwrap();
     value_series.rename("lexical_form");
     //TODO: Allow language to be set perhaps as an argument
-    let language_series = Series::full_null(&"language_tag", dataframe.height(), &DataType::Utf8)
-        .cast(&DataType::Categorical(None))
-        .unwrap();
+    let language_series = Series::full_null(&"language_tag", dataframe.height(), &DataType::Utf8);
     let data_type_series = Series::new_empty("datatype_iri", &DataType::Utf8)
         .extend_constant(AnyValue::Utf8(swt_data_type.as_str()), dataframe.height())
-        .unwrap()
-        .cast(&DataType::Categorical(None))
         .unwrap();
     let st = StructChunked::new(
         column_name,
@@ -730,8 +716,8 @@ fn validate_non_blank_parameter(df: &DataFrame, column_name: &str) -> Result<(),
 fn literal_struct_fields() -> Vec<Field> {
     vec![
         Field::new("lexical_form", DataType::Utf8),
-        Field::new("language_tag", DataType::Categorical(None)),
-        Field::new("datatype_iri", DataType::Categorical(None)),
+        Field::new("language_tag", DataType::Utf8),
+        Field::new("datatype_iri", DataType::Utf8),
     ]
 }
 
@@ -739,17 +725,16 @@ fn constant_to_lazy_expression(constant_term: &ConstantTerm) -> (Expr, MappedCol
     match constant_term {
         ConstantTerm::Constant(c) => match c {
             ConstantLiteral::IRI(iri) => (
-                Expr::Literal(LiteralValue::Utf8(iri.as_str().to_string()))
-                    .cast(DataType::Categorical(None)),
+                Expr::Literal(LiteralValue::Utf8(iri.as_str().to_string())),
                 MappedColumn::PrimitiveColumn(PrimitiveColumn {
-                    polars_datatype: DataType::Categorical(None),
+                    polars_datatype: DataType::Utf8,
                     rdf_node_type: RDFNodeType::IRI,
                 }),
             ),
             ConstantLiteral::BlankNode(bn) => (
                 Expr::Literal(LiteralValue::Utf8(bn.to_string())),
                 MappedColumn::PrimitiveColumn(PrimitiveColumn {
-                    polars_datatype: DataType::Categorical(None),
+                    polars_datatype: DataType::Utf8,
                     rdf_node_type: RDFNodeType::BlankNode,
                 }),
             ),
@@ -765,8 +750,7 @@ fn constant_to_lazy_expression(constant_term: &ConstantTerm) -> (Expr, MappedCol
                         LiteralValue::Utf8(dt.as_str().to_string())
                     } else {
                         panic!("literal in invalid state")
-                    })
-                    .cast(DataType::Categorical(None)),
+                    }),
                 ]);
                 (
                     struct_expr,
@@ -788,4 +772,24 @@ fn constant_to_lazy_expression(constant_term: &ConstantTerm) -> (Expr, MappedCol
             todo!()
         }
     }
+}
+
+fn subject_from_str(s:&str) -> Subject {
+    if is_blank_node(s) {
+        Subject::BlankNode(BlankNode::new_unchecked(s))
+    } else {
+        Subject::NamedNode(NamedNode::new_unchecked(s))
+    }
+}
+
+fn object_term_from_str(s:&str) -> Term {
+    if is_blank_node(s) {
+        Term::BlankNode(BlankNode::new_unchecked(s))
+    } else {
+        Term::NamedNode(NamedNode::new_unchecked(s))
+    }
+}
+
+fn is_blank_node(s:&str) -> bool {
+    s.starts_with("_:")
 }
