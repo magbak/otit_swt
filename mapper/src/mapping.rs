@@ -1,24 +1,25 @@
 use crate::ast::{
-    ConstantLiteral, ConstantTerm, Instance, PType, Parameter,
-    Signature, StottrTerm,
+    ConstantLiteral, ConstantTerm, Instance, PType, Parameter, Signature, StottrTerm,
 };
 use crate::constants::OTTR_TRIPLE;
+use crate::ntriples_write::write_ntriples;
 use crate::templates::TemplateDataset;
 use log::warn;
 use oxrdf::vocab::xsd;
-use oxrdf::NamedNode;
+use oxrdf::{Literal, NamedNode, Subject, Term, Triple};
 use polars::export::rayon::iter::ParallelIterator;
-use polars::io::SerWriter;
 use polars::lazy::prelude::{as_struct, col, concat, Expr, LiteralValue};
-use polars::prelude::{IntoSeries, NoEq, StructChunked};
 use polars::prelude::{
-    concat_str, AnyValue, BooleanChunked, DataFrame,
-    DataType, Field, IntoLazy, LazyFrame, PolarsError, Series};
+    concat_str, AnyValue, BooleanChunked, DataFrame, DataType, Field, IntoLazy, LazyFrame,
+    PolarsError, Series,
+};
+use polars::prelude::{IntoSeries, NoEq, StructChunked};
 use polars::toggle_string_cache;
 use std::collections::{HashMap, HashSet};
+use std::error::Error;
 use std::fmt::Debug;
 use std::io::Write;
-use crate::ntriples_write::write_ntriples;
+use std::path::Path;
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
@@ -93,14 +94,24 @@ impl Mapping {
         }
     }
 
+    pub fn from_folder<P: AsRef<Path>>(path: P) -> Result<Mapping, Box<dyn Error>>{
+        let dataset = TemplateDataset::from_folder(path)?;
+        Ok(Mapping::new(&dataset))
+    }
+
     pub fn write_n_triples(&self, buffer: &mut dyn Write) -> Result<(), PolarsError> {
         //TODO: Refactor all of this stuff.. obviously poorly thought out..
         let constant_utf8_series = |s, n| {
-            Expr::Literal(LiteralValue::Series(NoEq::new(Series::new_empty("lbrace",&DataType::Utf8).extend_constant(AnyValue::Utf8(s), n).unwrap())))
+            Expr::Literal(LiteralValue::Series(NoEq::new(
+                Series::new_empty("lbrace", &DataType::Utf8)
+                    .extend_constant(AnyValue::Utf8(s), n)
+                    .unwrap(),
+            )))
         };
         let braces_expr = |colname, n| {
             concat_str(
-                [constant_utf8_series("<", n),
+                [
+                    constant_utf8_series("<", n),
                     col(colname),
                     constant_utf8_series(">", n),
                 ],
@@ -109,7 +120,7 @@ impl Mapping {
         };
         let n_object_property_triples = self.object_property_triples.as_ref().unwrap().height();
         let subject_expr = braces_expr("subject", n_object_property_triples);
-        let verb_expr = braces_expr("verb",n_object_property_triples);
+        let verb_expr = braces_expr("verb", n_object_property_triples);
         let object_expr = braces_expr("object", n_object_property_triples);
         let triple_expr = concat_str(
             [
@@ -132,16 +143,19 @@ impl Mapping {
 
         let n_data_property_triples = self.data_property_triples.as_ref().unwrap().height();
         let data_subject_expr = braces_expr("subject", n_data_property_triples);
-        let data_verb_expr = braces_expr("verb",n_data_property_triples);
-        let data_object_expr = concat_str([
-                                         constant_utf8_series("\"", n_data_property_triples),
-                                         col("object").struct_().field_by_name("lexical_form"),
-                                         constant_utf8_series("\"", n_data_property_triples),
-                                         constant_utf8_series("^^", n_data_property_triples),
-                                         constant_utf8_series("<", n_data_property_triples),
-                                         col("object").struct_().field_by_name("datatype_iri"),
-                                         constant_utf8_series(">", n_data_property_triples),
-                                     ], "");
+        let data_verb_expr = braces_expr("verb", n_data_property_triples);
+        let data_object_expr = concat_str(
+            [
+                constant_utf8_series("\"", n_data_property_triples),
+                col("object").struct_().field_by_name("lexical_form"),
+                constant_utf8_series("\"", n_data_property_triples),
+                constant_utf8_series("^^", n_data_property_triples),
+                constant_utf8_series("<", n_data_property_triples),
+                col("object").struct_().field_by_name("datatype_iri"),
+                constant_utf8_series(">", n_data_property_triples),
+            ],
+            "",
+        );
         let data_triple_expr = concat_str(
             [
                 data_subject_expr,
@@ -160,10 +174,112 @@ impl Mapping {
             .select(&[data_triple_expr.alias("")])
             .collect()
             .expect("Ok");
-        let mut out_df = concat([objects_df.lazy(), data_df.lazy()], true).unwrap().collect().unwrap();
+        let mut out_df = concat([objects_df.lazy(), data_df.lazy()], true)
+            .unwrap()
+            .collect()
+            .unwrap();
         out_df.as_single_chunk_par();
         write_ntriples(buffer, &out_df, 1024).unwrap();
         Ok(())
+    }
+
+    pub fn to_triples(&self) -> Vec<Triple> {
+        let mut triples = vec![];
+        let subject_iterator = self
+            .object_property_triples
+            .as_ref()
+            .unwrap()
+            .column("subject")
+            .unwrap()
+            .iter();
+        let verb_iterator = self
+            .object_property_triples
+            .as_ref()
+            .unwrap()
+            .column("verb")
+            .unwrap()
+            .iter();
+        let object_iterator = self
+            .object_property_triples
+            .as_ref()
+            .unwrap()
+            .column("object")
+            .unwrap()
+            .iter();
+
+        for (s, (v, o)) in subject_iterator.zip(verb_iterator.zip(object_iterator)) {
+            if let AnyValue::Categorical(u_s, r_s) = s {
+                if let AnyValue::Categorical(u_v, r_v) = v {
+                    if let AnyValue::Categorical(u_o, r_o) = o {
+                        let subject = NamedNode::new_unchecked(r_s.get(u_s));
+                        let verb = NamedNode::new_unchecked(r_v.get(u_v));
+                        let object = NamedNode::new_unchecked(r_o.get(u_o));
+                        let t =
+                            Triple::new(Subject::NamedNode(subject), verb, Term::NamedNode(object));
+                        triples.push(t);
+                    } else {
+                        panic!("Should never happen")
+                    }
+                } else {
+                    panic!("Should also never happen")
+                }
+            } else {
+                panic!("Also never")
+            }
+        }
+
+        let subject_iterator = self
+            .data_property_triples
+            .as_ref()
+            .unwrap()
+            .column("subject")
+            .unwrap()
+            .iter();
+        let verb_iterator = self
+            .data_property_triples
+            .as_ref()
+            .unwrap()
+            .column("verb")
+            .unwrap()
+            .iter();
+        let object_iterator = self
+            .data_property_triples
+            .as_ref()
+            .unwrap()
+            .column("object")
+            .unwrap()
+            .iter();
+
+        for (s, (v, o)) in subject_iterator.zip(verb_iterator.zip(object_iterator)) {
+            if let AnyValue::Categorical(u_s, r_s) = s {
+                if let AnyValue::Categorical(u_v, r_v) = v {
+                    if let AnyValue::Struct(u_o, r_o) = o {
+                        let subject = NamedNode::new_unchecked(r_s.get(u_s));
+                        let verb = NamedNode::new_unchecked(r_v.get(u_v));
+                        if let AnyValue::Utf8(value) = u_o.get(0).unwrap() {
+                            //todo add language tag.
+                            if let AnyValue::Utf8(datatype) = u_o.get(2).unwrap() {
+                                let object =
+                                    Term::Literal(Literal::new_typed_literal(*value, NamedNode::new_unchecked(*datatype)));
+                                let t = Triple::new(Subject::NamedNode(subject), verb, object);
+                                triples.push(t);
+                            } else {
+                                panic!("Should never happen")
+                            }
+                        } else {
+                            panic!("Should never happen")
+                        }
+                    } else {
+                        panic!("Should never happen")
+                    }
+                } else {
+                    panic!("Should also never happen")
+                }
+            } else {
+                panic!("Also never")
+            }
+        }
+        triples
     }
 
     pub fn expand(
@@ -172,9 +288,8 @@ impl Mapping {
         mut df: DataFrame,
     ) -> Result<MappingReport, MappingError> {
         self.validate_dataframe(&mut df)?;
-        println!("{}", name);
         let target_template = self.template_dataset.get(name).unwrap();
-        let columns=
+        let columns =
             find_validate_and_prepare_dataframe_columns(&target_template.signature, &mut df)?;
         let mut result_vec = vec![];
         self._expand(name, df.lazy(), columns, &mut result_vec)?;
@@ -192,9 +307,7 @@ impl Mapping {
     ) -> Result<(), MappingError> {
         //At this point, the lf should have columns with names appropriate for the template to be instantiated (named_node).
         if let Some(template) = self.template_dataset.get(name) {
-            println!("node: {}", name);
             if template.signature.template_name.as_str() == OTTR_TRIPLE {
-                println!("Ottr triple!");
                 lf = lf.select(&[col("Key"), col("subject"), col("verb"), col("object")]);
                 new_lfs_columns.push((lf, columns));
                 Ok(())
@@ -292,6 +405,7 @@ impl Mapping {
         }
         Ok(())
     }
+
     fn process_results(&mut self, result_vec: Vec<(LazyFrame, HashMap<String, MappedColumn>)>) {
         let mut object_properties = vec![];
         let mut data_properties = vec![];
@@ -351,7 +465,7 @@ fn find_validate_and_prepare_dataframe_columns(
                 //TODO handle blanks;
                 validate_non_blank_parameter(&df, variable_name)?;
             }
-            let column_data_type=
+            let column_data_type =
                 infer_validate_and_prepare_column_data_type(df, &parameter, variable_name)?;
 
             map.insert(
@@ -497,20 +611,26 @@ fn convert_column_to_value_struct(
     column_name: &str,
     swt_data_type: &NamedNode,
 ) {
-    let mut value_series = dataframe.column(column_name).unwrap().cast(&DataType::Utf8).unwrap();
+    let mut value_series = dataframe
+        .column(column_name)
+        .unwrap()
+        .cast(&DataType::Utf8)
+        .unwrap();
     value_series.rename("lexical_form");
     //TODO: Allow language to be set perhaps as an argument
-    let language_series = Series::full_null(
-            &"language_tag",
-            dataframe.height(),
-            &DataType::Utf8,
-        ).cast(&DataType::Categorical(None)).unwrap();
+    let language_series = Series::full_null(&"language_tag", dataframe.height(), &DataType::Utf8)
+        .cast(&DataType::Categorical(None))
+        .unwrap();
     let data_type_series = Series::new_empty("datatype_iri", &DataType::Utf8)
-                .extend_constant(AnyValue::Utf8(swt_data_type.as_str()), dataframe.height())
-                .unwrap()
-                .cast(&DataType::Categorical(None))
-                .unwrap();
-    let st = StructChunked::new(column_name, &[value_series, language_series, data_type_series]).unwrap();
+        .extend_constant(AnyValue::Utf8(swt_data_type.as_str()), dataframe.height())
+        .unwrap()
+        .cast(&DataType::Categorical(None))
+        .unwrap();
+    let st = StructChunked::new(
+        column_name,
+        &[value_series, language_series, data_type_series],
+    )
+    .unwrap();
     let struct_value_series = st.into_series();
 
     dataframe.with_column(struct_value_series).unwrap();

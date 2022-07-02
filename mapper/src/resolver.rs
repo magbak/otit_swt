@@ -36,7 +36,7 @@ impl Display for ResolutionError {
 
 impl Error for ResolutionError {}
 
-pub fn resolve_document(
+pub(crate) fn resolve_document(
     unresolved_document: UnresolvedStottrDocument,
 ) -> Result<StottrDocument, ResolutionError> {
     let directives = unresolved_document.directives.clone();

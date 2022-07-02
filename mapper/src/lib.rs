@@ -15,3 +15,4 @@ pub mod ast;
 pub mod resolver;
 mod constants;
 mod ntriples_write;
+pub mod document;

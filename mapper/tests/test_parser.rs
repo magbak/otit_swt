@@ -3,8 +3,7 @@ use mapper::parsing_ast::{
     UnresolvedPType, UnresolvedParameter, PrefixedName, ResolvesToNamedNode, UnresolvedSignature,
     UnresolvedStatement, UnresolvedStottrDocument, UnresolvedStottrLiteral, UnresolvedStottrTerm, UnresolvedTemplate,
 };
-use mapper::parser::stottr_doc;
-use nom::Finish;
+use mapper::parser::{whole_stottr_doc};
 use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, NamedNode};
 use mapper::ast::{Directive, ListExpanderType, Prefix, StottrVariable};
@@ -20,8 +19,8 @@ fn test_easy_template() {
         } .
     "#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -101,8 +100,7 @@ fn test_spec_modifiers_1() {
     ex:NamedPizza [ ??pizza  ] .
     "#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -136,8 +134,8 @@ fn test_spec_modifiers_2() {
     ex:NamedPizza [ !?pizza  ] .
     "#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -171,8 +169,8 @@ fn test_spec_modifiers_3() {
     ex:NamedPizza [ ?!?pizza  ] .
     "#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -206,8 +204,8 @@ fn test_spec_modifiers_4() {
     ex:NamedPizza [ !??pizza  ] .
     "#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -241,8 +239,8 @@ fn test_spec_type_1() {
     ex:NamedPizza [ owl:Class ?pizza ].
     "#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -279,8 +277,8 @@ fn test_spec_type_2() {
     ex:NamedPizza [ ? owl:Class ?pizza ].
     "#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -317,8 +315,8 @@ fn test_spec_type_3() {
     ex:NamedPizza [ ?! owl:Class ?pizza ].
     "#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -353,8 +351,8 @@ fn test_spec_default_value_1() {
     @prefix p:<http://example.net/pizzas#>.
     ex:NamedPizza[ owl:Class ?pizza = p:pizza] ."#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -402,8 +400,8 @@ fn test_spec_default_value_2() {
     @prefix p:<http://example.net/pizzas#>.
     ex:NamedPizza[ owl:Class ?pizza = 2] ."#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -454,8 +452,8 @@ fn test_spec_default_value_3() {
     @prefix p:<http://example.net/pizzas#>.
     ex:NamedPizza[ owl:Class ?pizza = "asdf"] ."#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -506,8 +504,8 @@ fn test_spec_more_parameters() {
     @prefix p:<http://example.net/pizzas#>.
     ex:NamedPizza [  ?pizza ,  ?country  ,  ?toppings ] ."#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -565,8 +563,8 @@ fn test_spec_lists() {
     @prefix p:<http://example.net/pizzas#>.
     ex:NamedPizza [  ?pizza = "asdf" ,  ?country = ("asdf", "asdf") ,  ?toppings = ((())) ] ."#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -665,8 +663,8 @@ fn test_spec_more_complex_types() {
       NEList<List<List<owl:Class>>> ?toppings
     ] ."#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -742,8 +740,8 @@ fn test_spec_example_1() {
     @prefix p:<http://example.net/pizzas#>.
     ex:template [ ] :: { ex:template((ex:template)) } ."#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -793,8 +791,8 @@ fn test_spec_example_2() {
     @prefix p:<http://example.net/pizzas#>.
     ex:template [?!?var ] :: { ex:template((((ex:template)))) } ."#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -854,8 +852,8 @@ fn test_spec_example_3() {
     @prefix p:<http://example.net/pizzas#>.
     ex:template [ ] :: { ex:template(( ex:template )) } ."#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -917,8 +915,8 @@ fn test_spec_example_4() {
          zipMax | ex:Template4 ([], [], [], ++([], []))
       } ."#;
 
-    let (s, doc) = stottr_doc(stottr).finish().expect("Ok");
-    assert_eq!("", s);
+    let doc = whole_stottr_doc(stottr).expect("Ok");
+    
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {

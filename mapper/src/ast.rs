@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use oxrdf::{BlankNode, NamedNode};
 
 #[derive(PartialEq, Debug, Clone)]
@@ -46,6 +47,28 @@ pub enum PType {
     LUBType(Box<PType>),
     ListType(Box<PType>),
     NEListType(Box<PType>),
+}
+
+impl Display for PType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PType::BasicType(nn) => {
+                write!(f, "BasicType({})", nn)
+            }
+            PType::LUBType(lt) => {
+                let s = lt.to_string();
+                write!(f, "LUBType({})", s)
+            }
+            PType::ListType(lt) => {
+                let s = lt.to_string();
+                write!(f, "ListType({})", s)
+            }
+            PType::NEListType(lt) => {
+                let s = lt.to_string();
+                write!(f, "NEListType({})", s)
+            }
+        }
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]

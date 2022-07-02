@@ -1,5 +1,7 @@
 extern crate nom;
 
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 use crate::parsing_ast::{
     UnresolvedAnnotation, UnresolvedArgument, UnresolvedBaseTemplate, UnresolvedConstantLiteral, UnresolvedConstantTerm, UnresolvedDefaultValue,
     UnresolvedInstance, UnresolvedPType, UnresolvedParameter, PrefixedName, ResolvesToNamedNode,
@@ -14,17 +16,55 @@ use nom::sequence::tuple;
 use nom::IResult;
 use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, NamedNode};
-
-#[cfg(test)]
 use nom::Finish;
-use crate::ast::{Directive, ListExpanderType, Prefix, StottrVariable};
+use crate::ast::Directive;
+use crate::ast::{ListExpanderType, Prefix, StottrVariable};
 
 enum DirectiveStatement {
     Directive(Directive),
     Statement(UnresolvedStatement),
 }
 
-pub fn stottr_doc(s: &str) -> IResult<&str, UnresolvedStottrDocument> {
+#[derive(Debug)]
+pub enum ParsingErrorKind {
+    CouldNotParseEverything(String),
+    NomParserError(String)
+}
+
+#[derive(Debug)]
+pub struct ParsingError {
+    kind: ParsingErrorKind,
+}
+
+impl Display for ParsingError {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        match &self.kind {
+            ParsingErrorKind::CouldNotParseEverything(s) => {
+                write!(f, "Could not parse entire string as sttotr document, rest: {}", s)
+            }
+            ParsingErrorKind::NomParserError(s) => {write!(f, "Nom parser error with code {}", s)}
+        }
+    }
+}
+
+
+impl Error for ParsingError {
+}
+
+pub fn whole_stottr_doc(s:&str) -> Result<UnresolvedStottrDocument, Box<dyn Error>> {
+    let result = stottr_doc(s).finish();
+    match result {
+        Ok((rest, doc) ) => {if rest != "" {
+        Err(Box::new(ParsingError{kind:ParsingErrorKind::CouldNotParseEverything(rest.to_string())}))
+    } else {
+        Ok(doc)
+    }}
+        Err(e) => {Err(Box::new(ParsingError{kind:ParsingErrorKind::NomParserError(format!("{:?}", e.code))}))}
+    }
+
+}
+
+pub(crate) fn stottr_doc(s: &str) -> IResult<&str, UnresolvedStottrDocument> {
     let (s, parts) = many0(tuple((
         multispace0,
         alt((directive_as_union, statement_as_union)),
@@ -990,7 +1030,7 @@ fn test_static_create_pn_chars_base() {
         .chain(range_l)
         .chain(range_m)
         .collect();
-    println!("{}", all_chars);
+    //println!("{}", all_chars);
 }
 
 #[test]
@@ -1000,7 +1040,7 @@ fn test_create_pn_chars() {
     let range_b = chars!('\u{203F}'..='\u{2040}').iter();
     let mut chars_string: String = range_a.chain(range_b).collect();
     chars_string.push('\u{00B7}');
-    println!("{}", chars_string);
+    //println!("{}", chars_string);
 }
 
 #[test]
@@ -1009,5 +1049,5 @@ fn test_create_iri_ref() {
     let mut notin: String = chars!('\u{0000}'..='\u{0020}').iter().collect();
     let rest = "<>\"{}|^`\\";
     notin += rest;
-    println!("{}", notin);
+    //println!("{}", notin);
 }

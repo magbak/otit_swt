@@ -1,13 +1,14 @@
+use std::error::Error;
+use std::fmt::{Display, Formatter};
+use std::fs::read_dir;
+use std::path::Path;
 use crate::ast::{Instance, PType, Parameter, Statement, StottrDocument, StottrTerm, StottrVariable, Template, Signature};
 use oxrdf::NamedNode;
 use oxrdf::vocab::xsd;
 use crate::constants::OTTR_TRIPLE;
+use crate::document::stottr_from_file;
 
-#[derive(Clone)]
-pub struct TemplateDataset {
-    pub templates: Vec<Template>,
-    pub ground_instances: Vec<Instance>,
-}
+
 
 #[derive(Debug)]
 pub struct TypingError {
@@ -16,8 +17,31 @@ pub struct TypingError {
 
 #[derive(Debug)]
 pub enum TypingErrorType {
-    InconsistentNumberOfArguments(NamedNode, NamedNode, usize, usize),
-    IncompatibleTypes(NamedNode, StottrVariable, PType, PType),
+    InconsistentNumberOfArguments(String, String, usize, usize),
+    IncompatibleTypes(String, StottrVariable, String, String),
+}
+
+impl Display for TypingError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.kind {
+            TypingErrorType::InconsistentNumberOfArguments(calling, template, given, expected) => {
+                write!(f, "Template {} called {} with {} arguments, but expected {}", calling, template, given, expected)
+            }
+            TypingErrorType::IncompatibleTypes(nn, var, given, expected) => {
+                write!(f, "Template {} variable {} was given argument of type {:?} but expected {:?}", nn, var.name, given, expected)
+            }
+        }
+    }
+}
+
+impl Error for TypingError {
+
+}
+
+#[derive(Clone)]
+pub struct TemplateDataset {
+    pub templates: Vec<Template>,
+    pub ground_instances: Vec<Instance>,
 }
 
 impl TemplateDataset {
@@ -76,6 +100,24 @@ impl TemplateDataset {
         Ok(td)
     }
 
+    pub fn from_folder<P: AsRef<Path>>(path: P) -> Result<TemplateDataset, Box<dyn Error + 'static>> {
+        let mut docs = vec![];
+        let files_result = read_dir(path)?;
+        for f in files_result {
+            let f = f?;
+            if let Some(e) = f.path().extension() {
+                if let Some(s) = e.to_str() {
+                    let extension = s.to_lowercase();
+                    if "stottr" == &extension {
+                        let doc = stottr_from_file(f.path())?;
+                        docs.push(doc);
+                    }
+                }
+            }
+        }
+        Ok(TemplateDataset::new(docs)?)
+    }
+
     pub fn get(&self, named_node: &NamedNode) -> Option<&Template> {
         for t in &self.templates {
             if &t.signature.template_name == named_node {
@@ -114,8 +156,8 @@ fn infer_template_types(
         if i.argument_list.len() != other.signature.parameter_list.len() {
             return Err(TypingError {
                 kind: TypingErrorType::InconsistentNumberOfArguments(
-                    template.signature.template_name.clone(),
-                    other.signature.template_name.clone(),
+                    template.signature.template_name.as_str().to_string(),
+                    other.signature.template_name.as_str().to_string(),
                     i.argument_list.len(),
                     other.signature.parameter_list.len(),
                 ),
@@ -197,5 +239,5 @@ fn lub(template_name: &NamedNode, variable: &StottrVariable, left:&PType, right:
             }
         }
     }
-    Err(TypingError{kind:TypingErrorType::IncompatibleTypes(template_name.clone(), variable.clone(), left.clone(), right.clone())})
+    Err(TypingError{kind:TypingErrorType::IncompatibleTypes(template_name.as_str().to_string(), variable.clone(), left.to_string(), right.to_string())})
 }
