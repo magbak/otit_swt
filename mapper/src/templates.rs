@@ -6,7 +6,7 @@ use crate::ast::{Instance, PType, Parameter, Statement, StottrDocument, StottrTe
 use oxrdf::NamedNode;
 use oxrdf::vocab::xsd;
 use crate::constants::OTTR_TRIPLE;
-use crate::document::stottr_from_file;
+use crate::document::document_from_file;
 
 
 
@@ -109,7 +109,7 @@ impl TemplateDataset {
                 if let Some(s) = e.to_str() {
                     let extension = s.to_lowercase();
                     if "stottr" == &extension {
-                        let doc = stottr_from_file(f.path())?;
+                        let doc = document_from_file(f.path())?;
                         docs.push(doc);
                     }
                 }

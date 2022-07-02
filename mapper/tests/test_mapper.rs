@@ -10,7 +10,7 @@ use polars::series::Series;
 use rstest::*;
 use std::fs::File;
 use std::path::PathBuf;
-use mapper::document::parse_stottr;
+use mapper::document::document_from_str;
 
 #[fixture]
 fn testdata_path() -> PathBuf {
@@ -33,7 +33,7 @@ fn test_mapper_easy_case(testdata_path: PathBuf) {
         ottr:Triple(ex:anObject, ex:hasOtherNumberString, ?myVar2)
       } .
     "#;
-    let doc = parse_stottr(t_str).expect("Resolution problem");
+    let doc = document_from_str(t_str).expect("Resolution problem");
     let template_dataset = TemplateDataset::new(vec![doc]).expect("Dataset problem");
 
     let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);

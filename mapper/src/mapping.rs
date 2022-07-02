@@ -20,6 +20,8 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::io::Write;
 use std::path::Path;
+use crate::document::document_from_str;
+use crate::parser::{stottr_doc, whole_stottr_doc};
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
@@ -97,6 +99,13 @@ impl Mapping {
     pub fn from_folder<P: AsRef<Path>>(path: P) -> Result<Mapping, Box<dyn Error>>{
         let dataset = TemplateDataset::from_folder(path)?;
         Ok(Mapping::new(&dataset))
+    }
+
+    pub fn from_str(s:&str) -> Result<Mapping, Box<dyn Error>> {
+        let doc = document_from_str(s.into())?;
+        let dataset = TemplateDataset::new(vec![doc])?;
+        Ok(Mapping::new(&dataset))
+
     }
 
     pub fn write_n_triples(&self, buffer: &mut dyn Write) -> Result<(), PolarsError> {
