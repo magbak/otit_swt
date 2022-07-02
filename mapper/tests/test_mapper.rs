@@ -12,6 +12,9 @@ use rstest::*;
 use std::collections::HashSet;
 use std::fs::File;
 use std::path::PathBuf;
+use polars::export::arrow::array::PrimitiveArray;
+use polars_core::datatypes::DataType;
+use polars_core::prelude::{NamedFrom, UInt16Chunked, UInt8Chunked};
 
 #[fixture]
 fn testdata_path() -> PathBuf {
@@ -129,4 +132,150 @@ ex:Nested [?myVar] :: {
             )),
         },
     ]);
+    assert_eq!(expected_triples_set, actual_triples_set);
+}
+
+// ?Date
+// ?Datetime_sec_tz
+// ?Time
+// ?Duration_sec
+// ?Categorical
+// ?List_Utf8
+
+#[rstest]
+fn test_derived_datatypes() {
+    let stottr = r#"
+@prefix ex:<http://example.net/ns#>.
+ex:ExampleTemplate [
+?Boolean,
+?UInt32,
+?UInt64,
+?Int32,
+?Int64,
+?Float32,
+?Float64,
+?Utf8
+] :: {
+    ottr:Triple(ex:anObject, ex:hasVal, ?Boolean),
+    ottr:Triple(ex:anObject, ex:hasVal, ?UInt32),
+    ottr:Triple(ex:anObject, ex:hasVal, ?UInt64),
+    ottr:Triple(ex:anObject, ex:hasVal, ?Int32),
+    ottr:Triple(ex:anObject, ex:hasVal, ?Int64),
+    ottr:Triple(ex:anObject, ex:hasVal, ?Float32),
+    ottr:Triple(ex:anObject, ex:hasVal, ?Float64),
+    ottr:Triple(ex:anObject, ex:hasVal, ?Utf8)
+  } .
+"#;
+    let mut mapping = Mapping::from_str(&stottr).unwrap();
+    let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
+    k.rename("Key");
+    let mut boolean = Series::from_iter(&[true, false]);
+    boolean.rename("Boolean");
+    let mut uint32 = Series::from_iter(&[5u32, 6u32]);
+    uint32.rename("UInt32");
+    let mut uint64 = Series::from_iter(&[7u64, 8u64]);
+    uint64.rename("UInt64");
+    let mut int32 = Series::from_iter(&[-13i32, -14i32]);
+    int32.rename("Int32");
+    let mut int64 = Series::from_iter(&[-15i64, -16i64]);
+    int64.rename("Int64");
+    let mut float32 = Series::from_iter(&[17.18f32, 19.20f32]);
+    float32.rename("Float32");
+    let mut float64 = Series::from_iter(&[21.22f64, 23.24f64]);
+    float64.rename("Float64");
+    let mut utf8 = Series::from_iter(["abcde", "fghij"]);
+    utf8.rename("Utf8");
+
+
+    let series = [k, boolean, uint32, uint64, int32, int64, float32, float64, utf8];
+    let df = DataFrame::from_iter(series);
+    let report = mapping
+        .expand(
+            &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
+            df,
+        )
+        .unwrap();
+    let triples = mapping.to_triples();
+    //println!("{:?}", triples);
+    let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
+    let expected_triples_set = HashSet::from([
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasVal"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "true",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#boolean"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasVal"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "false",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#boolean"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasVal"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "true",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#boolean"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasVal"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "false",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#boolean"),
+            )),
+        },Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasVal"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "true",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#boolean"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasVal"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "false",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#boolean"),
+            )),
+        },Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasVal"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "true",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#boolean"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasVal"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "false",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#boolean"),
+            )),
+        },Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasVal"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "true",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#boolean"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasVal"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "false",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#boolean"),
+            )),
+        },
+    ]);
+    assert_eq!(expected_triples_set, actual_triples_set);
 }

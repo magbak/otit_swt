@@ -583,24 +583,55 @@ fn infer_validate_and_prepare_column_data_type(
         // No ptype!
         if column_data_type == DataType::Utf8 {
             warn!(
-                "Could not infer type for column {}, assuming it is an IRI-column.",
+                "Could not infer type for column {}, assuming it is a String column",
                 column_name
             );
-            convert_utf8_to_categorical(dataframe, column_name);
+            convert_column_to_value_struct(dataframe, column_name, &xsd::STRING.into_owned());
             PrimitiveColumn {
                 //TODO: make a mapping..
-                polars_datatype: DataType::Categorical(None),
-                rdf_node_type: RDFNodeType::IRI,
+                polars_datatype: DataType::Utf8,
+                rdf_node_type: RDFNodeType::Literal,
             }
-        } else if column_data_type == DataType::Null {
+        } else if column_data_type == DataType::Boolean {
+            convert_column_to_value_struct(dataframe, column_name, &xsd::BOOLEAN.into_owned());
             PrimitiveColumn {
-                polars_datatype: DataType::Null,
-                rdf_node_type: RDFNodeType::None,
+                polars_datatype: DataType::Boolean,
+                rdf_node_type: RDFNodeType::Literal,
             }
         } else if column_data_type == DataType::Int32 {
-            convert_column_to_value_struct(dataframe, column_name, &xsd::INTEGER.into_owned());
+            convert_column_to_value_struct(dataframe, column_name, &xsd::INT.into_owned());
             PrimitiveColumn {
                 polars_datatype: DataType::Int32,
+                rdf_node_type: RDFNodeType::Literal,
+            }
+        } else if column_data_type == DataType::Int64 {
+            convert_column_to_value_struct(dataframe, column_name, &xsd::LONG.into_owned());
+            PrimitiveColumn {
+                polars_datatype: DataType::Int64,
+                rdf_node_type: RDFNodeType::Literal,
+            }
+        } else if column_data_type == DataType::UInt32 {
+            convert_column_to_value_struct(dataframe, column_name, &xsd::UNSIGNED_INT.into_owned());
+            PrimitiveColumn {
+                polars_datatype: DataType::UInt32,
+                rdf_node_type: RDFNodeType::Literal,
+            }
+        } else if column_data_type == DataType::UInt64 {
+            convert_column_to_value_struct(dataframe, column_name, &xsd::UNSIGNED_LONG.into_owned());
+            PrimitiveColumn {
+                polars_datatype: DataType::UInt64,
+                rdf_node_type: RDFNodeType::Literal,
+            }
+        } else if column_data_type == DataType::Float32 {
+            convert_column_to_value_struct(dataframe, column_name, &xsd::FLOAT.into_owned());
+            PrimitiveColumn {
+                polars_datatype: DataType::Float32,
+                rdf_node_type: RDFNodeType::Literal,
+            }
+        } else if column_data_type == DataType::Float64 {
+            convert_column_to_value_struct(dataframe, column_name, &xsd::DOUBLE.into_owned());
+            PrimitiveColumn {
+                polars_datatype: DataType::Float64,
                 rdf_node_type: RDFNodeType::Literal,
             }
         } else {
