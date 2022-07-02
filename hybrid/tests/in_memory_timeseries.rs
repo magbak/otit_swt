@@ -46,7 +46,7 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
                 panic!("Missing frame");
             }
         }
-        let mut out_lf = concat(lfs, false)?;
+        let mut out_lf = concat(lfs, true)?;
         if let Some(grouping) = &tsq.grouping {
             //Important to do iteration in reversed direction for nested functions
             for (v,expression) in grouping.timeseries_funcs.iter().rev() {

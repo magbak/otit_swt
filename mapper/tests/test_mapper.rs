@@ -1,16 +1,17 @@
+extern crate core;
+
 #[cfg(test)]
 mod utils;
 
 use crate::utils::triples_from_file;
 use mapper::mapping::Mapping;
-use mapper::templates::TemplateDataset;
-use oxrdf::NamedNode;
+use oxrdf::{Literal, NamedNode, Subject, Term, Triple};
 use polars::frame::DataFrame;
 use polars::series::Series;
 use rstest::*;
+use std::collections::HashSet;
 use std::fs::File;
 use std::path::PathBuf;
-use mapper::document::document_from_str;
 
 #[fixture]
 fn testdata_path() -> PathBuf {
@@ -33,8 +34,6 @@ fn test_mapper_easy_case(testdata_path: PathBuf) {
         ottr:Triple(ex:anObject, ex:hasOtherNumberString, ?myVar2)
       } .
     "#;
-    let doc = document_from_str(t_str).expect("Resolution problem");
-    let template_dataset = TemplateDataset::new(vec![doc]).expect("Dataset problem");
 
     let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
     k.rename("Key");
@@ -45,7 +44,7 @@ fn test_mapper_easy_case(testdata_path: PathBuf) {
     let series = [k, v1, v2];
     let df = DataFrame::from_iter(series);
 
-    let mut mapping = Mapping::new(&template_dataset);
+    let mut mapping = Mapping::from_str(&t_str).unwrap();
     let report = mapping
         .expand(
             &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
@@ -77,6 +76,57 @@ ex:ExampleTemplate [?myVar1 , ?myVar2] :: {
 ex:Nested [?myVar] :: {
     ottr:Triple(ex:anObject, ex:hasNumber, ?myVar)
 } .
-}"#;
-
+"#;
+    let mut mapping = Mapping::from_str(&stottr).unwrap();
+    let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
+    k.rename("Key");
+    let mut v1 = Series::from_iter(&[1, 2i32]);
+    v1.rename("myVar1");
+    let mut v2 = Series::from_iter(&[3, 4i32]);
+    v2.rename("myVar2");
+    let series = [k, v1, v2];
+    let df = DataFrame::from_iter(series);
+    let report = mapping
+        .expand(
+            &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
+            df,
+        )
+        .unwrap();
+    let triples = mapping.to_triples();
+    //println!("{:?}", triples);
+    let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
+    let expected_triples_set = HashSet::from([
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumber"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "1",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#integer"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumber"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "2",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#integer"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumber"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "3",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#integer"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumber"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "4",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#integer"),
+            )),
+        },
+    ]);
 }

@@ -2,6 +2,7 @@ use crate::ast::{
     ConstantLiteral, ConstantTerm, Instance, PType, Parameter, Signature, StottrTerm,
 };
 use crate::constants::OTTR_TRIPLE;
+use crate::document::document_from_str;
 use crate::ntriples_write::write_ntriples;
 use crate::templates::TemplateDataset;
 use log::warn;
@@ -20,8 +21,6 @@ use std::error::Error;
 use std::fmt::Debug;
 use std::io::Write;
 use std::path::Path;
-use crate::document::document_from_str;
-use crate::parser::{stottr_doc, whole_stottr_doc};
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
@@ -96,7 +95,7 @@ impl Mapping {
         }
     }
 
-    pub fn from_folder<P: AsRef<Path>>(path: P) -> Result<Mapping, Box<dyn Error>>{
+    pub fn from_folder<P: AsRef<Path>>(path: P) -> Result<Mapping, Box<dyn Error>> {
         let dataset = TemplateDataset::from_folder(path)?;
         Ok(Mapping::new(&dataset))
     }
@@ -106,11 +105,10 @@ impl Mapping {
         Ok(Mapping::new(&dataset))
     }
 
-    pub fn from_str(s:&str) -> Result<Mapping, Box<dyn Error>> {
+    pub fn from_str(s: &str) -> Result<Mapping, Box<dyn Error>> {
         let doc = document_from_str(s.into())?;
         let dataset = TemplateDataset::new(vec![doc])?;
         Ok(Mapping::new(&dataset))
-
     }
 
     pub fn write_n_triples(&self, buffer: &mut dyn Write) -> Result<(), PolarsError> {
@@ -132,6 +130,7 @@ impl Mapping {
                 "",
             )
         };
+
         let n_object_property_triples = self.object_property_triples.as_ref().unwrap().height();
         let subject_expr = braces_expr("subject", n_object_property_triples);
         let verb_expr = braces_expr("verb", n_object_property_triples);
@@ -197,86 +196,86 @@ impl Mapping {
         Ok(())
     }
 
-    pub fn to_triples(&self) -> Vec<Triple> {
+    pub fn to_triples(&mut self) -> Vec<Triple> {
         let mut triples = vec![];
-        let subject_iterator = self
-            .object_property_triples
-            .as_ref()
-            .unwrap()
-            .column("subject")
-            .unwrap()
-            .iter();
-        let verb_iterator = self
-            .object_property_triples
-            .as_ref()
-            .unwrap()
-            .column("verb")
-            .unwrap()
-            .iter();
-        let object_iterator = self
-            .object_property_triples
-            .as_ref()
-            .unwrap()
-            .column("object")
-            .unwrap()
-            .iter();
+        if let Some(object_property_triples) = &self.object_property_triples {
+            if object_property_triples.height() > 0 {
+                let mut subject_iterator =
+                    object_property_triples.column("subject").unwrap().iter();
+                let mut verb_iterator = object_property_triples.column("verb").unwrap().iter();
+                let mut object_iterator = object_property_triples.column("object").unwrap().iter();
 
-        for (s, (v, o)) in subject_iterator.zip(verb_iterator.zip(object_iterator)) {
-            if let AnyValue::Categorical(u_s, r_s) = s {
-                if let AnyValue::Categorical(u_v, r_v) = v {
-                    if let AnyValue::Categorical(u_o, r_o) = o {
-                        let subject = NamedNode::new_unchecked(r_s.get(u_s));
-                        let verb = NamedNode::new_unchecked(r_v.get(u_v));
-                        let object = NamedNode::new_unchecked(r_o.get(u_o));
-                        let t =
-                            Triple::new(Subject::NamedNode(subject), verb, Term::NamedNode(object));
-                        triples.push(t);
+                for i in 0..object_property_triples.height() {
+                    let s = subject_iterator.next().unwrap();
+                    let v = verb_iterator.next().unwrap();
+                    let o = object_iterator.next().unwrap();
+                    if let AnyValue::Categorical(u_s, r_s) = s {
+                        if let AnyValue::Categorical(u_v, r_v) = v {
+                            if let AnyValue::Categorical(u_o, r_o) = o {
+                                let subject = NamedNode::new_unchecked(r_s.get(u_s));
+                                let verb = NamedNode::new_unchecked(r_v.get(u_v));
+                                let object = NamedNode::new_unchecked(r_o.get(u_o));
+                                let t = Triple::new(
+                                    Subject::NamedNode(subject),
+                                    verb,
+                                    Term::NamedNode(object),
+                                );
+                                triples.push(t);
+                            } else {
+                                panic!("Should never happen")
+                            }
+                        } else {
+                            panic!("Should also never happen")
+                        }
                     } else {
-                        panic!("Should never happen")
+                        panic!("Also never")
                     }
-                } else {
-                    panic!("Should also never happen")
                 }
-            } else {
-                panic!("Also never")
             }
         }
 
-        let subject_iterator = self
-            .data_property_triples
-            .as_ref()
-            .unwrap()
-            .column("subject")
-            .unwrap()
-            .iter();
-        let verb_iterator = self
-            .data_property_triples
-            .as_ref()
-            .unwrap()
-            .column("verb")
-            .unwrap()
-            .iter();
-        let object_iterator = self
-            .data_property_triples
-            .as_ref()
-            .unwrap()
-            .column("object")
-            .unwrap()
-            .iter();
+        if let Some(data_property_triples) = &mut self.data_property_triples {
+            data_property_triples.as_single_chunk();
+            if data_property_triples.height() > 0 {
+                let mut subject_iterator = data_property_triples.column("subject").unwrap().iter();
+                let mut verb_iterator = data_property_triples.column("verb").unwrap().iter();
+                //Workaround due to not happy about struct iterator..
+                let obj_col = data_property_triples.column("object").unwrap();
+                let lexical_form_series = obj_col
+                    .struct_()
+                    .unwrap()
+                    .field_by_name("lexical_form")
+                    .unwrap();
+                let datatype_series = obj_col
+                    .struct_()
+                    .unwrap()
+                    .field_by_name("datatype_iri")
+                    .unwrap();
 
-        for (s, (v, o)) in subject_iterator.zip(verb_iterator.zip(object_iterator)) {
-            if let AnyValue::Categorical(u_s, r_s) = s {
-                if let AnyValue::Categorical(u_v, r_v) = v {
-                    if let AnyValue::Struct(u_o, r_o) = o {
-                        let subject = NamedNode::new_unchecked(r_s.get(u_s));
-                        let verb = NamedNode::new_unchecked(r_v.get(u_v));
-                        if let AnyValue::Utf8(value) = u_o.get(0).unwrap() {
-                            //todo add language tag.
-                            if let AnyValue::Utf8(datatype) = u_o.get(2).unwrap() {
-                                let object =
-                                    Term::Literal(Literal::new_typed_literal(*value, NamedNode::new_unchecked(*datatype)));
-                                let t = Triple::new(Subject::NamedNode(subject), verb, object);
-                                triples.push(t);
+                let mut lexical_iterator = lexical_form_series.iter();
+                let mut datatype_iterator = datatype_series.iter();
+
+                for i in 0..data_property_triples.height() {
+                    let s = subject_iterator.next().unwrap();
+                    let v = verb_iterator.next().unwrap();
+                    let l = lexical_iterator.next().unwrap();
+                    let d = datatype_iterator.next().unwrap();
+
+                    if let AnyValue::Categorical(u_s, r_s) = s {
+                        if let AnyValue::Categorical(u_v, r_v) = v {
+                            if let AnyValue::Utf8(value) = l {
+                                if let AnyValue::Categorical(u_d, r_d) = d {
+                                    let subject = NamedNode::new_unchecked(r_s.get(u_s));
+                                    let verb = NamedNode::new_unchecked(r_v.get(u_v));
+                                    let object = Term::Literal(Literal::new_typed_literal(
+                                        value,
+                                        NamedNode::new_unchecked(r_d.get(u_d)),
+                                    ));
+                                    let t = Triple::new(Subject::NamedNode(subject), verb, object);
+                                    triples.push(t);
+                                } else {
+                                    panic!("Should never happen")
+                                }
                             } else {
                                 panic!("Should never happen")
                             }
@@ -284,13 +283,9 @@ impl Mapping {
                             panic!("Should never happen")
                         }
                     } else {
-                        panic!("Should never happen")
+                        panic!("Should also never happen")
                     }
-                } else {
-                    panic!("Should also never happen")
                 }
-            } else {
-                panic!("Also never")
             }
         }
         triples
