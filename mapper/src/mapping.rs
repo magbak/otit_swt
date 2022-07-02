@@ -101,6 +101,11 @@ impl Mapping {
         Ok(Mapping::new(&dataset))
     }
 
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Mapping, Box<dyn Error>> {
+        let dataset = TemplateDataset::from_file(path)?;
+        Ok(Mapping::new(&dataset))
+    }
+
     pub fn from_str(s:&str) -> Result<Mapping, Box<dyn Error>> {
         let doc = document_from_str(s.into())?;
         let dataset = TemplateDataset::new(vec![doc])?;

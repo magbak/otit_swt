@@ -1,11 +1,13 @@
 extern crate nom;
 
-use std::error::Error;
-use std::fmt::{Display, Formatter};
+use crate::ast::Directive;
+use crate::ast::{ListExpanderType, Prefix, StottrVariable};
 use crate::parsing_ast::{
-    UnresolvedAnnotation, UnresolvedArgument, UnresolvedBaseTemplate, UnresolvedConstantLiteral, UnresolvedConstantTerm, UnresolvedDefaultValue,
-    UnresolvedInstance, UnresolvedPType, UnresolvedParameter, PrefixedName, ResolvesToNamedNode,
-    UnresolvedSignature, UnresolvedStatement, UnresolvedStottrDocument, UnresolvedStottrLiteral, UnresolvedStottrTerm, UnresolvedTemplate,
+    PrefixedName, ResolvesToNamedNode, UnresolvedAnnotation, UnresolvedArgument,
+    UnresolvedBaseTemplate, UnresolvedConstantLiteral, UnresolvedConstantTerm,
+    UnresolvedDefaultValue, UnresolvedInstance, UnresolvedPType, UnresolvedParameter,
+    UnresolvedSignature, UnresolvedStatement, UnresolvedStottrDocument, UnresolvedStottrLiteral,
+    UnresolvedStottrTerm, UnresolvedTemplate,
 };
 use nom::branch::alt;
 use nom::bytes::complete::{escaped, is_not, tag};
@@ -13,12 +15,12 @@ use nom::character::complete::{alpha1, alphanumeric1, char, digit0, digit1, mult
 use nom::combinator::opt;
 use nom::multi::{count, many0, many1, separated_list0, separated_list1};
 use nom::sequence::tuple;
+use nom::Finish;
 use nom::IResult;
 use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, NamedNode};
-use nom::Finish;
-use crate::ast::Directive;
-use crate::ast::{ListExpanderType, Prefix, StottrVariable};
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 
 enum DirectiveStatement {
     Directive(Directive),
@@ -28,7 +30,7 @@ enum DirectiveStatement {
 #[derive(Debug)]
 pub enum ParsingErrorKind {
     CouldNotParseEverything(String),
-    NomParserError(String)
+    NomParserError(String),
 }
 
 #[derive(Debug)]
@@ -40,28 +42,37 @@ impl Display for ParsingError {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match &self.kind {
             ParsingErrorKind::CouldNotParseEverything(s) => {
-                write!(f, "Could not parse entire string as sttotr document, rest: {}", s)
+                write!(
+                    f,
+                    "Could not parse entire string as sttotr document, rest: {}",
+                    s
+                )
             }
-            ParsingErrorKind::NomParserError(s) => {write!(f, "Nom parser error with code {}", s)}
+            ParsingErrorKind::NomParserError(s) => {
+                write!(f, "Nom parser error with code {}", s)
+            }
         }
     }
 }
 
+impl Error for ParsingError {}
 
-impl Error for ParsingError {
-}
-
-pub fn whole_stottr_doc(s:&str) -> Result<UnresolvedStottrDocument, Box<dyn Error>> {
+pub fn whole_stottr_doc(s: &str) -> Result<UnresolvedStottrDocument, Box<dyn Error>> {
     let result = stottr_doc(s).finish();
     match result {
-        Ok((rest, doc) ) => {if rest != "" {
-        Err(Box::new(ParsingError{kind:ParsingErrorKind::CouldNotParseEverything(rest.to_string())}))
-    } else {
-        Ok(doc)
-    }}
-        Err(e) => {Err(Box::new(ParsingError{kind:ParsingErrorKind::NomParserError(format!("{:?}", e.code))}))}
+        Ok((rest, doc)) => {
+            if rest != "" {
+                Err(Box::new(ParsingError {
+                    kind: ParsingErrorKind::CouldNotParseEverything(rest.to_string()),
+                }))
+            } else {
+                Ok(doc)
+            }
+        }
+        Err(e) => Err(Box::new(ParsingError {
+            kind: ParsingErrorKind::NomParserError(format!("{:?}", e.code)),
+        })),
     }
-
 }
 
 pub(crate) fn stottr_doc(s: &str) -> IResult<&str, UnresolvedStottrDocument> {
@@ -337,7 +348,10 @@ fn lub_type(l: &str) -> IResult<&str, UnresolvedPType> {
 
 fn basic_type(b: &str) -> IResult<&str, UnresolvedPType> {
     let (b, t) = prefixed_name(b)?;
-    Ok((b, UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(t))))
+    Ok((
+        b,
+        UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(t)),
+    ))
 }
 
 fn variable(v: &str) -> IResult<&str, StottrVariable> {
@@ -960,18 +974,20 @@ fn test_instance() {
         argument_list: vec![
             UnresolvedArgument {
                 list_expand: false,
-                term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::BlankNode(
-                    BlankNode::new_unchecked("person"),
-                ))),
+                term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(
+                    UnresolvedConstantLiteral::BlankNode(BlankNode::new_unchecked("person")),
+                )),
             },
             UnresolvedArgument {
                 list_expand: false,
-                term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::IRI(
-                    ResolvesToNamedNode::PrefixedName(PrefixedName {
-                        prefix: "foaf".to_string(),
-                        name: "Person".to_string(),
-                    }),
-                ))),
+                term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(
+                    UnresolvedConstantLiteral::IRI(ResolvesToNamedNode::PrefixedName(
+                        PrefixedName {
+                            prefix: "foaf".to_string(),
+                            name: "Person".to_string(),
+                        },
+                    )),
+                )),
             },
             UnresolvedArgument {
                 list_expand: false,
@@ -1030,7 +1046,7 @@ fn test_static_create_pn_chars_base() {
         .chain(range_l)
         .chain(range_m)
         .collect();
-    //println!("{}", all_chars);
+    println!("{}", all_chars);
 }
 
 #[test]
@@ -1040,7 +1056,7 @@ fn test_create_pn_chars() {
     let range_b = chars!('\u{203F}'..='\u{2040}').iter();
     let mut chars_string: String = range_a.chain(range_b).collect();
     chars_string.push('\u{00B7}');
-    //println!("{}", chars_string);
+    println!("{}", chars_string);
 }
 
 #[test]
@@ -1049,5 +1065,5 @@ fn test_create_iri_ref() {
     let mut notin: String = chars!('\u{0000}'..='\u{0020}').iter().collect();
     let rest = "<>\"{}|^`\\";
     notin += rest;
-    //println!("{}", notin);
+    println!("{}", notin);
 }

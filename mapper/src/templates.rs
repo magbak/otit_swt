@@ -100,7 +100,7 @@ impl TemplateDataset {
         Ok(td)
     }
 
-    pub fn from_folder<P: AsRef<Path>>(path: P) -> Result<TemplateDataset, Box<dyn Error + 'static>> {
+    pub fn from_folder<P: AsRef<Path>>(path: P) -> Result<TemplateDataset, Box<dyn Error>> {
         let mut docs = vec![];
         let files_result = read_dir(path)?;
         for f in files_result {
@@ -116,6 +116,11 @@ impl TemplateDataset {
             }
         }
         Ok(TemplateDataset::new(docs)?)
+    }
+
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<TemplateDataset, Box<dyn Error>> {
+        let doc = document_from_file(path)?;
+        Ok(TemplateDataset::new(vec![doc])?)
     }
 
     pub fn get(&self, named_node: &NamedNode) -> Option<&Template> {
