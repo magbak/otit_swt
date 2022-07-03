@@ -1,6 +1,7 @@
 use crate::ast::{
     ConstantLiteral, ConstantTerm, Instance, PType, Parameter, Signature, StottrTerm,
 };
+use crate::chrono::TimeZone as ChronoTimeZone;
 use crate::constants::{OTTR_TRIPLE, XSD_DATETIME_WITHOUT_TZ_FORMAT};
 use crate::document::document_from_str;
 use crate::ntriples_write::write_ntriples;
@@ -717,12 +718,24 @@ fn hack_format_timestamp_with_timezone(
     series: &Series,
     tz: &TimeZone,
 ) -> Result<Series, MappingError> {
-    let datetimestrings = series
-        .datetime()
-        .unwrap()
-        .strftime(XSD_DATETIME_WITHOUT_TZ_FORMAT)
-        .into_series();
-    Ok(datetimestrings)
+    let timezone_opt: Result<chrono_tz::Tz, _> = tz.parse();
+    if let Ok(timezone) = timezone_opt {
+        let dt = timezone.ymd(2020, 12, 06).and_hms(1, 2, 3);
+        let ts_offset = format!("{}", dt.format("%:z"));
+
+        let datetime_strings = series
+            .datetime()
+            .unwrap()
+            .strftime(XSD_DATETIME_WITHOUT_TZ_FORMAT)
+            .apply(|x| (x.to_string() + &ts_offset).into())
+            .into_series();
+
+        Ok(datetime_strings)
+    } else {
+        Err(MappingError {
+            kind: MappingErrorType::UnknownTimeZoneError(tz.to_string()),
+        })
+    }
 }
 
 fn polars_datatype_to_xsd_datatype(datatype: DataType) -> PType {

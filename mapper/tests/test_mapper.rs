@@ -186,7 +186,7 @@ ex:ExampleTemplate [
     float64.rename("Float64");
     let mut utf8 = Series::from_iter(["abcde", "fghij"]);
     utf8.rename("Utf8");
-    let mut datetime_ms_tz = Series::from_any_values(
+    let datetime_ms_tz = Series::from_any_values(
         "Datetime_ms_tz",
         &[
             AnyValue::Datetime(
@@ -370,7 +370,7 @@ ex:ExampleTemplate [
             )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasDateTime"),
             object: Term::Literal(Literal::new_typed_literal(
-                "2022-07-03T10:06:20",
+                "2022-07-03T10:06:20+01:00",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#dateTimeStamp"),
             )),
         },
@@ -380,7 +380,7 @@ ex:ExampleTemplate [
             )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasDateTime"),
             object: Term::Literal(Literal::new_typed_literal(
-                "2022-07-03T10:06:21",
+                "2022-07-03T10:06:21+01:00",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#dateTimeStamp"),
             )),
         },

@@ -16,6 +16,8 @@ rio_turtle = "0.7.1"
 rio_api = "0.7.1"
 polars-utils = "0.22.7"
 polars-core = "0.22.7"
+chrono = "0.4"
+chrono-tz = "0.6"
 
 [dev-dependencies]
 rstest = "0.14.0"
