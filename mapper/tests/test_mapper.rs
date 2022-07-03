@@ -8,13 +8,12 @@ use mapper::mapping::Mapping;
 use oxrdf::{Literal, NamedNode, Subject, Term, Triple};
 use polars::frame::DataFrame;
 use polars::series::Series;
+use polars_core::datatypes::DataType;
+use polars_core::prelude::{AnyValue, NamedFrom, TimeUnit, TimeZone, UInt16Chunked, UInt8Chunked};
 use rstest::*;
 use std::collections::HashSet;
 use std::fs::File;
 use std::path::PathBuf;
-use polars::export::arrow::array::PrimitiveArray;
-use polars_core::datatypes::DataType;
-use polars_core::prelude::{NamedFrom, UInt16Chunked, UInt8Chunked};
 
 #[fixture]
 fn testdata_path() -> PathBuf {
@@ -136,7 +135,7 @@ ex:Nested [?myVar] :: {
 }
 
 // ?Date
-// ?Datetime_sec_tz
+//
 // ?Time
 // ?Duration_sec
 // ?Categorical
@@ -154,7 +153,8 @@ ex:ExampleTemplate [
 ?Int64,
 ?Float32,
 ?Float64,
-?Utf8
+?Utf8,
+?Datetime_ms_tz
 ] :: {
     ottr:Triple(ex:anObject, ex:hasVal, ?Boolean),
     ottr:Triple(ex:anObject, ex:hasVal, ?UInt32),
@@ -163,7 +163,8 @@ ex:ExampleTemplate [
     ottr:Triple(ex:anObject, ex:hasVal, ?Int64),
     ottr:Triple(ex:anotherObject, ex:hasValVal, ?Float32),
     ottr:Triple(ex:anotherObject, ex:hasValVal, ?Float64),
-    ottr:Triple(ex:yetAnotherObject, ex:hasString, ?Utf8)
+    ottr:Triple(ex:yetAnotherObject, ex:hasString, ?Utf8),
+    ottr:Triple(ex:yetAnotherObject, ex:hasDateTime, ?Datetime_ms_tz)
   } .
 "#;
     let mut mapping = Mapping::from_str(&stottr).unwrap();
@@ -185,9 +186,35 @@ ex:ExampleTemplate [
     float64.rename("Float64");
     let mut utf8 = Series::from_iter(["abcde", "fghij"]);
     utf8.rename("Utf8");
+    let mut datetime_ms_tz = Series::from_any_values(
+        "Datetime_ms_tz",
+        &[
+            AnyValue::Datetime(
+                1656842780000,
+                TimeUnit::Milliseconds,
+                &Some("Europe/Oslo".to_string()),
+            ),
+            AnyValue::Datetime(
+                1656842781000,
+                TimeUnit::Milliseconds,
+                &Some("Europe/Oslo".to_string()),
+            ),
+        ],
+    )
+    .unwrap();
 
-
-    let series = [k, boolean, uint32, uint64, int32, int64, float32, float64, utf8];
+    let series = [
+        k,
+        boolean,
+        uint32,
+        uint64,
+        int32,
+        int64,
+        float32,
+        float64,
+        utf8,
+        datetime_ms_tz,
+    ];
     let df = DataFrame::from_iter(series);
     let report = mapping
         .expand(
@@ -228,7 +255,8 @@ ex:ExampleTemplate [
                 "6",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#unsignedInt"),
             )),
-        },Triple {
+        },
+        Triple {
             subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasVal"),
             object: Term::Literal(Literal::new_typed_literal(
@@ -243,7 +271,8 @@ ex:ExampleTemplate [
                 "8",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#unsignedLong"),
             )),
-        },Triple {
+        },
+        Triple {
             subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasVal"),
             object: Term::Literal(Literal::new_typed_literal(
@@ -258,7 +287,8 @@ ex:ExampleTemplate [
                 "-14",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
             )),
-        },Triple {
+        },
+        Triple {
             subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasVal"),
             object: Term::Literal(Literal::new_typed_literal(
@@ -273,8 +303,11 @@ ex:ExampleTemplate [
                 "-16",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#long"),
             )),
-        },Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anotherObject")),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/ns#anotherObject",
+            )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasValVal"),
             object: Term::Literal(Literal::new_typed_literal(
                 "17.18",
@@ -282,14 +315,19 @@ ex:ExampleTemplate [
             )),
         },
         Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anotherObject")),
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/ns#anotherObject",
+            )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasValVal"),
             object: Term::Literal(Literal::new_typed_literal(
                 "19.2",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#float"),
             )),
-        },Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anotherObject")),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/ns#anotherObject",
+            )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasValVal"),
             object: Term::Literal(Literal::new_typed_literal(
                 "21.22",
@@ -297,7 +335,9 @@ ex:ExampleTemplate [
             )),
         },
         Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anotherObject")),
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/ns#anotherObject",
+            )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasValVal"),
             object: Term::Literal(Literal::new_typed_literal(
                 "23.24",
@@ -305,7 +345,9 @@ ex:ExampleTemplate [
             )),
         },
         Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#yetAnotherObject")),
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/ns#yetAnotherObject",
+            )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasString"),
             object: Term::Literal(Literal::new_typed_literal(
                 "abcde",
@@ -313,16 +355,38 @@ ex:ExampleTemplate [
             )),
         },
         Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#yetAnotherObject")),
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/ns#yetAnotherObject",
+            )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasString"),
             object: Term::Literal(Literal::new_typed_literal(
                 "fghij",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#string"),
             )),
         },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/ns#yetAnotherObject",
+            )),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasDateTime"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "2022-07-03T10:06:20",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#dateTimeStamp"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/ns#yetAnotherObject",
+            )),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasDateTime"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "2022-07-03T10:06:21",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#dateTimeStamp"),
+            )),
+        },
     ];
-    expected_triples.sort_by_key(|x|x.to_string());
-    actual_triples.sort_by_key(|x|x.to_string());
+    expected_triples.sort_by_key(|x| x.to_string());
+    actual_triples.sort_by_key(|x| x.to_string());
 
     assert_eq!(expected_triples, actual_triples);
 }

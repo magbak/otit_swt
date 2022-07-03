@@ -1,21 +1,21 @@
 use crate::ast::{
     ConstantLiteral, ConstantTerm, Instance, PType, Parameter, Signature, StottrTerm,
 };
-use crate::constants::OTTR_TRIPLE;
+use crate::constants::{OTTR_TRIPLE, XSD_DATETIME_WITHOUT_TZ_FORMAT};
 use crate::document::document_from_str;
 use crate::ntriples_write::write_ntriples;
 use crate::templates::TemplateDataset;
-use log::warn;
 use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, Literal, NamedNode, Subject, Term, Triple};
 use polars::export::rayon::iter::ParallelIterator;
 use polars::lazy::prelude::{as_struct, col, concat, Expr, LiteralValue};
 use polars::prelude::{
     concat_str, AnyValue, BooleanChunked, DataFrame, DataType, Field, IntoLazy, LazyFrame,
-    PolarsError, Series,
+    PolarsError, Series, SeriesOps,
 };
 use polars::prelude::{IntoSeries, NoEq, StructChunked};
 use polars::toggle_string_cache;
+use polars_core::prelude::{ChunkApply, TimeZone};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::Debug;
@@ -42,6 +42,8 @@ pub enum MappingErrorType {
     ContainsIrrelevantColumns(Vec<String>),
     CouldNotInferStottrDatatypeForColumn(String, DataType),
     ColumnDataTypeMismatch(String, DataType, PType),
+    PTypeNotSupported(String, PType),
+    UnknownTimeZoneError(String),
 }
 
 #[derive(Debug)]
@@ -216,11 +218,7 @@ impl Mapping {
                                 let subject = subject_from_str(subject);
                                 let verb = NamedNode::new_unchecked(verb);
                                 let object = object_term_from_str(object);
-                                let t = Triple::new(
-                                    subject,
-                                    verb,
-                                    object,
-                                );
+                                let t = Triple::new(subject, verb, object);
                                 triples.push(t);
                             } else {
                                 panic!("Should never happen")
@@ -536,142 +534,219 @@ fn infer_validate_and_prepare_column_data_type(
     parameter: &Parameter,
     column_name: &str,
 ) -> Result<PrimitiveColumn, MappingError> {
-    let column_data_type = dataframe.column(column_name).unwrap().dtype().clone();
-    let out_column = if let Some(ptype) = &parameter.ptype {
-        match ptype {
-            PType::BasicType(bt) => {
-                if xsd::ANY_URI.as_str() == bt.as_str() {
-                    if column_data_type == DataType::Utf8 {
-                        PrimitiveColumn {
-                            polars_datatype: DataType::Utf8,
-                            rdf_node_type: RDFNodeType::IRI,
-                        }
-                    } else {
-                        return Err(MappingError {
-                            kind: MappingErrorType::ColumnDataTypeMismatch(
-                                column_name.to_string(),
-                                column_data_type,
-                                ptype.clone(),
-                            ),
-                        });
-                    }
-                } else {
-                    todo!()
-                }
-            }
-            PType::LUBType(_) => {
-                todo!()
-            }
-            PType::ListType(_) => {
-                todo!()
-            }
-            PType::NEListType(_) => {
-                todo!()
-            }
-        }
+    let series = dataframe.column(column_name).unwrap();
+    let (new_series, ptype) = if let Some(ptype) = &parameter.ptype {
+        (
+            convert_series_to_value_struct(series, ptype).unwrap(),
+            ptype.clone(),
+        )
     } else {
-        // No ptype!
-        if column_data_type == DataType::Utf8 {
-            warn!(
-                "Could not infer type for column {}, assuming it is a String column",
-                column_name
-            );
-            convert_column_to_value_struct(dataframe, column_name, &xsd::STRING.into_owned());
-            PrimitiveColumn {
-                //TODO: make a mapping..
-                polars_datatype: DataType::Utf8,
-                rdf_node_type: RDFNodeType::Literal,
-            }
-        } else if column_data_type == DataType::Boolean {
-            convert_column_to_value_struct(dataframe, column_name, &xsd::BOOLEAN.into_owned());
-            PrimitiveColumn {
-                polars_datatype: DataType::Boolean,
-                rdf_node_type: RDFNodeType::Literal,
-            }
-        } else if column_data_type == DataType::Int32 {
-            convert_column_to_value_struct(dataframe, column_name, &xsd::INT.into_owned());
-            PrimitiveColumn {
-                polars_datatype: DataType::Int32,
-                rdf_node_type: RDFNodeType::Literal,
-            }
-        } else if column_data_type == DataType::Int64 {
-            convert_column_to_value_struct(dataframe, column_name, &xsd::LONG.into_owned());
-            PrimitiveColumn {
-                polars_datatype: DataType::Int64,
-                rdf_node_type: RDFNodeType::Literal,
-            }
-        } else if column_data_type == DataType::UInt32 {
-            convert_column_to_value_struct(dataframe, column_name, &xsd::UNSIGNED_INT.into_owned());
-            PrimitiveColumn {
-                polars_datatype: DataType::UInt32,
-                rdf_node_type: RDFNodeType::Literal,
-            }
-        } else if column_data_type == DataType::UInt64 {
-            convert_column_to_value_struct(dataframe, column_name, &xsd::UNSIGNED_LONG.into_owned());
-            PrimitiveColumn {
-                polars_datatype: DataType::UInt64,
-                rdf_node_type: RDFNodeType::Literal,
-            }
-        } else if column_data_type == DataType::Float32 {
-            convert_column_to_value_struct(dataframe, column_name, &xsd::FLOAT.into_owned());
-            PrimitiveColumn {
-                polars_datatype: DataType::Float32,
-                rdf_node_type: RDFNodeType::Literal,
-            }
-        } else if column_data_type == DataType::Float64 {
-            convert_column_to_value_struct(dataframe, column_name, &xsd::DOUBLE.into_owned());
-            PrimitiveColumn {
-                polars_datatype: DataType::Float64,
-                rdf_node_type: RDFNodeType::Literal,
-            }
-        } else {
-            return Err(MappingError {
-                kind: MappingErrorType::CouldNotInferStottrDatatypeForColumn(
-                    column_name.to_string(),
-                    column_data_type,
-                ),
-            });
-        }
+        let column_data_type = dataframe.column(column_name).unwrap().dtype().clone();
+        let target_ptype = polars_datatype_to_xsd_datatype(column_data_type);
+        (
+            convert_series_to_value_struct(series, &target_ptype).unwrap(),
+            target_ptype,
+        )
     };
-    Ok(out_column)
+    let datatype = series.dtype().clone();
+    dataframe.with_column(new_series).unwrap();
+    Ok(PrimitiveColumn {
+        polars_datatype: datatype,
+        rdf_node_type: RDFNodeType::Literal,
+    })
 }
 
-fn convert_column_to_value_struct(
-    dataframe: &mut DataFrame,
-    column_name: &str,
-    swt_data_type: &NamedNode,
-) {
-    let mut value_series = dataframe
-        .column(column_name)
+fn convert_series_to_value_struct(
+    series: &Series,
+    target_ptype: &PType,
+) -> Result<Series, MappingError> {
+    let series_data_type = series.dtype();
+    let mismatch_error = || {
+        Err(MappingError {
+            kind: MappingErrorType::ColumnDataTypeMismatch(
+                series.name().to_string(),
+                series_data_type.clone(),
+                target_ptype.clone(),
+            ),
+        })
+    };
+    let convert_if_series_list = |inner| {
+        if let DataType::List(_) = series_data_type {
+            convert_list_series(series, inner)
+        } else {
+            mismatch_error()
+        }
+    };
+    match target_ptype {
+        PType::BasicType(bt) => {
+            if let DataType::List(_) = series_data_type {
+                mismatch_error()
+            } else {
+                Ok(convert_nonlist_series_to_value_struct(series, bt)?)
+            }
+        }
+        PType::LUBType(inner) => convert_if_series_list(inner),
+        PType::ListType(inner) => convert_if_series_list(inner),
+        PType::NEListType(inner) => convert_if_series_list(inner),
+    }
+}
+
+fn convert_list_series(
+    series: &Series,
+    inner_target_ptype: &PType,
+) -> Result<Series, MappingError> {
+    Ok(series
+        .list()
         .unwrap()
-        .cast(&DataType::Utf8)
-        .unwrap();
+        .apply(
+            |x| match { convert_series_to_value_struct(&x, inner_target_ptype) } {
+                Ok(ser) => ser,
+                Err(e) => {
+                    panic!("{:?}", e)
+                }
+            },
+        )
+        .into_series())
+}
+
+fn convert_nonlist_series_to_value_struct(
+    series: &Series,
+    nn: &NamedNode,
+) -> Result<Series, MappingError> {
+    let series_data_type = series.dtype();
+    let mismatch_error = || MappingError {
+        kind: MappingErrorType::ColumnDataTypeMismatch(
+            series.name().to_string(),
+            series_data_type.clone(),
+            PType::BasicType(nn.clone()),
+        ),
+    };
+    let mut value_series = if nn.as_str() == xsd::BOOLEAN.as_str() {
+        if series_data_type == &DataType::Boolean {
+            series.cast(&DataType::Utf8).unwrap()
+        } else {
+            return Err(mismatch_error());
+        }
+    } else if nn.as_str() == xsd::UNSIGNED_INT.as_str() {
+        if series_data_type == &DataType::UInt32 {
+            series.cast(&DataType::Utf8).unwrap()
+        } else {
+            return Err(mismatch_error());
+        }
+    } else if nn.as_str() == xsd::UNSIGNED_LONG.as_str() {
+        if series_data_type == &DataType::UInt64 {
+            series.cast(&DataType::Utf8).unwrap()
+        } else {
+            return Err(mismatch_error());
+        }
+    } else if nn.as_str() == xsd::INT.as_str() {
+        if series_data_type == &DataType::Int32 {
+            series.cast(&DataType::Utf8).unwrap()
+        } else {
+            return Err(mismatch_error());
+        }
+    } else if nn.as_str() == xsd::LONG.as_str() {
+        if series_data_type == &DataType::Int64 {
+            series.cast(&DataType::Utf8).unwrap()
+        } else {
+            return Err(mismatch_error());
+        }
+    } else if nn.as_str() == xsd::FLOAT.as_str() {
+        if series_data_type == &DataType::Float32 {
+            series.cast(&DataType::Utf8).unwrap()
+        } else {
+            return Err(mismatch_error());
+        }
+    } else if nn.as_str() == xsd::DOUBLE.as_str() {
+        if series_data_type == &DataType::Float64 {
+            series.cast(&DataType::Utf8).unwrap()
+        } else {
+            return Err(mismatch_error());
+        }
+    } else if nn.as_str() == xsd::STRING.as_str() {
+        if series_data_type == &DataType::Utf8 {
+            series.cast(&DataType::Utf8).unwrap()
+        } else {
+            return Err(mismatch_error());
+        }
+    } else if nn.as_str() == xsd::DATE_TIME.as_str() {
+        if let DataType::Datetime(unit, tz_opt) = series_data_type {
+            if let Some(tz) = tz_opt {
+                hack_format_timestamp_with_timezone(series, tz)?
+            } else {
+                series
+                    .datetime()
+                    .unwrap()
+                    .strftime(XSD_DATETIME_WITHOUT_TZ_FORMAT)
+                    .into_series()
+            }
+        } else {
+            return Err(mismatch_error());
+        }
+    } else if nn.as_str() == xsd::DATE_TIME_STAMP.as_str() {
+        if let DataType::Datetime(unit, Some(tz)) = series_data_type {
+            hack_format_timestamp_with_timezone(series, tz)?
+        } else {
+            return Err(mismatch_error());
+        }
+    } else {
+        return Err(MappingError {
+            kind: MappingErrorType::PTypeNotSupported(
+                series.name().to_string(),
+                PType::BasicType(nn.clone()),
+            ),
+        });
+    };
+    assert_eq!(value_series.dtype(), &DataType::Utf8);
     value_series.rename("lexical_form");
     //TODO: Allow language to be set perhaps as an argument
-    let language_series = Series::full_null(&"language_tag", dataframe.height(), &DataType::Utf8);
+    let language_series = Series::full_null(&"language_tag", series.len(), &DataType::Utf8);
     let data_type_series = Series::new_empty("datatype_iri", &DataType::Utf8)
-        .extend_constant(AnyValue::Utf8(swt_data_type.as_str()), dataframe.height())
+        .extend_constant(AnyValue::Utf8(nn.as_str()), series.len())
         .unwrap();
     let st = StructChunked::new(
-        column_name,
+        series.name(),
         &[value_series, language_series, data_type_series],
     )
     .unwrap();
     let struct_value_series = st.into_series();
-
-    dataframe.with_column(struct_value_series).unwrap();
+    Ok(struct_value_series)
 }
 
-fn convert_utf8_to_categorical(dataframe: &mut DataFrame, column_name: &str) {
-    dataframe
-        .with_column(
-            dataframe
-                .column(column_name)
-                .unwrap()
-                .cast(&DataType::Categorical(None))
-                .unwrap(),
-        )
-        .unwrap();
+fn hack_format_timestamp_with_timezone(
+    series: &Series,
+    tz: &TimeZone,
+) -> Result<Series, MappingError> {
+    let datetimestrings = series
+        .datetime()
+        .unwrap()
+        .strftime(XSD_DATETIME_WITHOUT_TZ_FORMAT)
+        .into_series();
+    Ok(datetimestrings)
+}
+
+fn polars_datatype_to_xsd_datatype(datatype: DataType) -> PType {
+    let xsd_nn_ref = match datatype {
+        DataType::Boolean => xsd::BOOLEAN,
+        DataType::UInt32 => xsd::UNSIGNED_INT,
+        DataType::UInt64 => xsd::UNSIGNED_LONG,
+        DataType::Int32 => xsd::INT,
+        DataType::Int64 => xsd::LONG,
+        DataType::Float32 => xsd::FLOAT,
+        DataType::Float64 => xsd::DOUBLE,
+        DataType::Utf8 => xsd::STRING,
+        DataType::Date => xsd::DATE,
+        DataType::Datetime(_, Some(_)) => xsd::DATE_TIME_STAMP,
+        DataType::Datetime(_, None) => xsd::DATE_TIME,
+        DataType::Duration(_) => xsd::DURATION,
+        DataType::List(inner) => {
+            return PType::ListType(Box::new(polars_datatype_to_xsd_datatype(*inner)))
+        }
+        _ => {
+            panic!("Unsupported datatype:{}", datatype)
+        }
+    };
+    PType::BasicType(xsd_nn_ref.into_owned())
 }
 
 fn validate_non_optional_parameter(df: &DataFrame, column_name: &str) -> Result<(), MappingError> {
@@ -774,7 +849,7 @@ fn constant_to_lazy_expression(constant_term: &ConstantTerm) -> (Expr, MappedCol
     }
 }
 
-fn subject_from_str(s:&str) -> Subject {
+fn subject_from_str(s: &str) -> Subject {
     if is_blank_node(s) {
         Subject::BlankNode(BlankNode::new_unchecked(s))
     } else {
@@ -782,7 +857,7 @@ fn subject_from_str(s:&str) -> Subject {
     }
 }
 
-fn object_term_from_str(s:&str) -> Term {
+fn object_term_from_str(s: &str) -> Term {
     if is_blank_node(s) {
         Term::BlankNode(BlankNode::new_unchecked(s))
     } else {
@@ -790,6 +865,6 @@ fn object_term_from_str(s:&str) -> Term {
     }
 }
 
-fn is_blank_node(s:&str) -> bool {
+fn is_blank_node(s: &str) -> bool {
     s.starts_with("_:")
 }
