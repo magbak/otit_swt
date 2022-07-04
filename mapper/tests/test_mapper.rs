@@ -11,10 +11,10 @@ use polars::series::Series;
 use polars_core::datatypes::DataType;
 use polars_core::prelude::{AnyValue, NamedFrom, TimeUnit, TimeZone, UInt16Chunked, UInt8Chunked};
 use rstest::*;
+use serial_test::serial;
 use std::collections::HashSet;
 use std::fs::File;
 use std::path::PathBuf;
-use serial_test::serial;
 
 #[fixture]
 fn testdata_path() -> PathBuf {
@@ -83,7 +83,10 @@ fn test_all_iri_case() {
 
     let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
     k.rename("Key");
-    let mut v1 = Series::from_iter(["http://example.net/ns#OneThing", "http://example.net/ns#AnotherThing"]);
+    let mut v1 = Series::from_iter([
+        "http://example.net/ns#OneThing",
+        "http://example.net/ns#AnotherThing",
+    ]);
     v1.rename("myVar1");
     let series = [k, v1];
     let df = DataFrame::from_iter(series);
@@ -107,7 +110,9 @@ fn test_all_iri_case() {
         Triple {
             subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
             predicate: NamedNode::new_unchecked("http://example.net/ns#relatesTo"),
-            object: Term::NamedNode(NamedNode::new_unchecked("http://example.net/ns#AnotherThing"))
+            object: Term::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/ns#AnotherThing",
+            )),
         },
     ]);
     assert_eq!(expected_triples_set, actual_triples_set);
