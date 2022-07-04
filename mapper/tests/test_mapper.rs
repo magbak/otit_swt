@@ -135,7 +135,6 @@ ex:Nested [?myVar] :: {
 }
 
 // ?Date
-//
 // ?Time
 // ?Duration_sec
 // ?List_Utf8
@@ -426,4 +425,72 @@ ex:ExampleTemplate [
     actual_triples.sort_by_key(|x| x.to_string());
 
     assert_eq!(expected_triples, actual_triples);
+}
+
+#[rstest]
+fn test_list_arguments() {
+    let stottr = r#"
+@prefix ex:<http://example.net/ns#>.
+ex:AnotherExampleTemplate [?object, ?predicate, ?myList] :: {
+    cross | ottr:Triple(?object, ?predicate, ++?myList)
+  } .
+"#;
+    let mut mapping = Mapping::from_str(&stottr).unwrap();
+    let mut k = Series::from_iter(["KeyOne", "KeyOne", "KeyTwo",  "KeyTwo"]);
+    k.rename("Key");
+    let mut object = Series::from_iter(["http://example.net/ns#obj1", "http://example.net/ns#obj1", "http://example.net/ns#obj2", "http://example.net/ns#obj2"]);
+    object.rename("object");
+    let mut predicate = Series::from_iter(["http://example.net/ns#hasNumberFromList1", "http://example.net/ns#hasNumberFromList1", "http://example.net/ns#hasNumberFromList2", "http://example.net/ns#hasNumberFromList2"]);
+    predicate.rename("predicate");
+    let mut my_list = Series::from_iter([1, 2, 3, 4]);
+    my_list.rename("myList");
+    let series = [k, object, predicate, my_list];
+    let mut df = DataFrame::from_iter(series);
+    df = df.groupby_stable(["Key", "object", "predicate"]).unwrap().agg_list().unwrap();
+    df.rename("myList_agg_list","myList").unwrap();
+    //println!("{df}");
+    let report = mapping
+        .expand(
+            &NamedNode::new_unchecked("http://example.net/ns#AnotherExampleTemplate"),
+            df,
+        )
+        .unwrap();
+    let triples = mapping.to_triples();
+    //println!("{:?}", triples);
+    let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
+    let expected_triples_set = HashSet::from([
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#obj1")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumberFromList1"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "1",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#obj1")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumberFromList1"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "2",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#obj2")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumberFromList2"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "3",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#obj2")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumberFromList2"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "4",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
+            )),
+        },
+    ]);
+    assert_eq!(expected_triples_set, actual_triples_set);
 }

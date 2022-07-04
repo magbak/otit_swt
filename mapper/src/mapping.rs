@@ -1,5 +1,6 @@
 use crate::ast::{
-    ConstantLiteral, ConstantTerm, Instance, PType, Parameter, Signature, StottrTerm,
+    ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Parameter, Signature,
+    StottrTerm,
 };
 use crate::chrono::TimeZone as ChronoTimeZone;
 use crate::constants::{OTTR_TRIPLE, XSD_DATETIME_WITHOUT_TZ_FORMAT, XSD_DATETIME_WITH_TZ_FORMAT};
@@ -32,7 +33,7 @@ pub struct Mapping {
 
 #[derive(Debug)]
 pub enum MappingErrorType {
-    TemplateNotFound,
+    TemplateNotFound(String),
     MissingKeyColumn,
     KeyColumnDatatypeMismatch(DataType, DataType),
     KeyColumnContainsDuplicates(Series),
@@ -46,6 +47,7 @@ pub enum MappingErrorType {
     ColumnDataTypeMismatch(String, DataType, PType),
     PTypeNotSupported(String, PType),
     UnknownTimeZoneError(String),
+    UnknownVariableError(String),
 }
 
 #[derive(Debug)]
@@ -299,14 +301,19 @@ impl Mapping {
         mut df: DataFrame,
     ) -> Result<MappingReport, MappingError> {
         self.validate_dataframe(&mut df)?;
-        let target_template = self.template_dataset.get(name).unwrap();
-        let columns =
-            find_validate_and_prepare_dataframe_columns(&target_template.signature, &mut df)?;
-        let mut result_vec = vec![];
-        self._expand(name, df.lazy(), columns, &mut result_vec)?;
-        self.process_results(result_vec);
+        if let Some(target_template) = self.template_dataset.get(name) {
+            let columns =
+                find_validate_and_prepare_dataframe_columns(&target_template.signature, &mut df)?;
+            let mut result_vec = vec![];
+            self._expand(name, df.lazy(), columns, &mut result_vec)?;
+            self.process_results(result_vec);
 
-        Ok(MappingReport {})
+            Ok(MappingReport {})
+        } else {
+            Err(MappingError {
+                kind: MappingErrorType::TemplateNotFound(name.as_str().to_string()),
+            })
+        }
     }
 
     fn _expand(
@@ -342,7 +349,7 @@ impl Mapping {
             }
         } else {
             Err(MappingError {
-                kind: MappingErrorType::TemplateNotFound,
+                kind: MappingErrorType::TemplateNotFound(name.as_str().to_string()),
             })
         }
     }
@@ -499,19 +506,26 @@ fn create_remapped_lazy_frame(
     let mut existing = vec![];
     let mut new = vec![];
     let mut expressions = vec![];
+    let mut to_expand = vec![];
     for (original, target) in instance
         .argument_list
         .iter()
         .zip(signature.parameter_list.iter())
     {
+        if original.list_expand {
+            to_expand.push(target.stottr_variable.name.clone());
+        }
         match &original.term {
             StottrTerm::Variable(v) => {
                 existing.push(v.name.clone());
                 new.push(target.stottr_variable.name.clone());
-                new_map.insert(
-                    target.stottr_variable.name.clone(),
-                    columns.get(&v.name).unwrap().clone(),
-                );
+                if let Some(c) = columns.get(&v.name) {
+                    new_map.insert(target.stottr_variable.name.clone(), c.clone());
+                } else {
+                    return Err(MappingError {
+                        kind: MappingErrorType::UnknownVariableError(v.name.clone()),
+                    });
+                }
             }
             StottrTerm::ConstantTerm(ct) => {
                 let (expr, mapped_column) = constant_to_lazy_expression(ct);
@@ -521,12 +535,36 @@ fn create_remapped_lazy_frame(
             StottrTerm::List(_) => {}
         }
     }
+    let mut drop = vec![];
+    for c in columns.keys() {
+        if !existing.contains(c) {
+            drop.push(c);
+        }
+    }
+    if drop.len() > 0 {
+        lf = lf.drop_columns(drop.as_slice());
+    }
+
     lf = lf.rename(existing.as_slice(), new.as_slice());
     let mut new_column_expressions: Vec<Expr> = new.into_iter().map(|x| col(&x)).collect();
     new_column_expressions.push(col("Key"));
     lf = lf.select(new_column_expressions.as_slice());
     for e in expressions {
         lf = lf.with_column(e);
+    }
+    if let Some(le) = &instance.list_expander {
+        let to_expand_cols: Vec<Expr> = to_expand.iter().map(|x| col(x)).collect();
+        match le {
+            ListExpanderType::Cross => {
+                lf = lf.explode(to_expand_cols);
+            }
+            ListExpanderType::ZipMin => {
+                todo!()
+            }
+            ListExpanderType::ZipMax => {
+                todo!()
+            }
+        }
     }
     Ok((lf, new_map))
 }
@@ -538,10 +576,29 @@ fn infer_validate_and_prepare_column_data_type(
 ) -> Result<PrimitiveColumn, MappingError> {
     let series = dataframe.column(column_name).unwrap();
     let (new_series, ptype) = if let Some(ptype) = &parameter.ptype {
-        (
-            convert_series_to_value_struct(series, ptype).unwrap(),
-            ptype.clone(),
-        )
+        let mut out = None;
+        if let PType::BasicType(nn) = ptype {
+            if nn.as_str() == xsd::ANY_URI.as_str() {
+                if series.dtype() == &DataType::Utf8 {
+                    out = Some((series.clone(), ptype.clone()))
+                } else {
+                    return Err(MappingError {
+                        kind: MappingErrorType::ColumnDataTypeMismatch(
+                            column_name.to_string(),
+                            series.dtype().clone(),
+                            ptype.clone(),
+                        ),
+                    });
+                }
+            }
+        }
+        if out.is_none() {
+            out = Some((
+                convert_series_to_value_struct(series, ptype).unwrap(),
+                ptype.clone(),
+            ))
+        }
+        out.unwrap()
     } else {
         let column_data_type = dataframe.column(column_name).unwrap().dtype().clone();
         let target_ptype = polars_datatype_to_xsd_datatype(column_data_type);
@@ -597,7 +654,7 @@ fn convert_list_series(
     series: &Series,
     inner_target_ptype: &PType,
 ) -> Result<Series, MappingError> {
-    Ok(series
+    let mut out = series
         .list()
         .unwrap()
         .apply(
@@ -608,7 +665,9 @@ fn convert_list_series(
                 }
             },
         )
-        .into_series())
+        .into_series();
+    out.rename(series.name());
+    Ok(out)
 }
 
 fn convert_nonlist_series_to_value_struct(
@@ -667,7 +726,7 @@ fn convert_nonlist_series_to_value_struct(
         }
     } else if nn.as_str() == xsd::STRING.as_str() {
         if series_data_type == &DataType::Utf8 {
-            series.cast(&DataType::Utf8).unwrap()
+            series.clone() //TODO: Superfluous copy..
         } else {
             return Err(mismatch_error());
         }
