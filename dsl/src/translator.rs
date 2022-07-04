@@ -407,7 +407,8 @@ impl Translator {
                         grouping_paths.insert(&vp.path_variable);
                         if project_paths.contains(&vp.path_variable) {
                             project_paths.retain(|v| v != &vp.path_variable);
-                            project_paths.insert(grouping_paths.len() - 1, vp.path_variable.clone());
+                            project_paths
+                                .insert(grouping_paths.len() - 1, vp.path_variable.clone());
                         }
 
                         if let Some(value) = self.variable_has_value.get(var) {

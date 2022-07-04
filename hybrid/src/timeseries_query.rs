@@ -1,14 +1,14 @@
-use std::collections::HashSet;
-use std::error::Error;
-use std::fmt::{Display, Formatter};
-use polars::frame::DataFrame;
 use crate::change_types::ChangeType;
 use crate::query_context::{
     AggregateExpressionInContext, Context, ExpressionInContext, PathEntry, VariableInContext,
 };
 use crate::rewriting::hash_graph_pattern;
+use polars::frame::DataFrame;
 use spargebra::algebra::{AggregateExpression, Expression, GraphPattern};
 use spargebra::term::Variable;
+use std::collections::HashSet;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Grouping {
@@ -33,17 +33,21 @@ pub struct TimeSeriesQuery {
 #[derive(Debug)]
 pub struct TimeSeriesValidationError {
     missing_columns: Vec<String>,
-    extra_columns: Vec<String>
+    extra_columns: Vec<String>,
 }
 
 impl Display for TimeSeriesValidationError {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        write!(f, "Missing columns: {}, Extra columns: {}", &self.missing_columns.join(","), &self.extra_columns.join(","))
+        write!(
+            f,
+            "Missing columns: {}, Extra columns: {}",
+            &self.missing_columns.join(","),
+            &self.extra_columns.join(",")
+        )
     }
 }
 
-impl Error for TimeSeriesValidationError {
-}
+impl Error for TimeSeriesValidationError {}
 
 impl TimeSeriesQuery {
     pub(crate) fn validate(&self, df: &DataFrame) -> Result<(), TimeSeriesValidationError> {
@@ -65,11 +69,17 @@ impl TimeSeriesQuery {
             }
         }
 
-        let df_columns:HashSet<&str> = df.get_column_names().into_iter().collect();
+        let df_columns: HashSet<&str> = df.get_column_names().into_iter().collect();
         if expected_columns != df_columns {
             let err = TimeSeriesValidationError {
-                missing_columns: expected_columns.difference(&df_columns).map(|x|x.to_string()).collect(),
-                extra_columns: df_columns.difference(&expected_columns).map(|x|x.to_string()).collect()
+                missing_columns: expected_columns
+                    .difference(&df_columns)
+                    .map(|x| x.to_string())
+                    .collect(),
+                extra_columns: df_columns
+                    .difference(&expected_columns)
+                    .map(|x| x.to_string())
+                    .collect(),
             };
             Err(err)
         } else {
@@ -586,8 +596,9 @@ impl TimeSeriesQuery {
                 );
                 if let Some((left_rewrite, ChangeType::NoChange)) = left_rewrite_opt {
                     let right_rewrites_opt = right
-                        .iter().enumerate()
-                        .map(|(i,e)| {
+                        .iter()
+                        .enumerate()
+                        .map(|(i, e)| {
                             self.try_recursive_rewrite_expression(
                                 e,
                                 required_change_direction,
@@ -826,8 +837,9 @@ impl TimeSeriesQuery {
             }
             Expression::Coalesce(inner) => {
                 let inner_rewrites_opt = inner
-                    .iter().enumerate()
-                    .map(|(i,e)| {
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| {
                         self.try_recursive_rewrite_expression(
                             e,
                             required_change_direction,
@@ -856,8 +868,9 @@ impl TimeSeriesQuery {
             }
             Expression::FunctionCall(left, right) => {
                 let right_rewrites_opt = right
-                    .iter().enumerate()
-                    .map(|(i,e)| {
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| {
                         self.try_recursive_rewrite_expression(
                             e,
                             required_change_direction,

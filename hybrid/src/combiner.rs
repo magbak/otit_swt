@@ -1276,8 +1276,14 @@ impl Combiner {
                     Function::Concat => {
                         assert!(args.len() > 1);
                         inner_lf = inner_lf.with_column(
-                            concat_str(args_contexts.iter().map(|c| col(c.as_str())).collect::<Vec<Expr>>(), "")
-                                .alias(context.as_str()),
+                            concat_str(
+                                args_contexts
+                                    .iter()
+                                    .map(|c| col(c.as_str()))
+                                    .collect::<Vec<Expr>>(),
+                                "",
+                            )
+                            .alias(context.as_str()),
                         );
                     }
                     Function::Round => {

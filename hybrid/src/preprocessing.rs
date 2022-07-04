@@ -3,11 +3,13 @@ use crate::constraints::{Constraint, VariableConstraints};
 use crate::find_query_variables::{
     find_all_used_variables_in_aggregate_expression, find_all_used_variables_in_expression,
 };
-use spargebra::algebra::{AggregateExpression, Expression, GraphPattern, OrderExpression, PropertyPathExpression};
+use crate::query_context::{Context, PathEntry};
+use spargebra::algebra::{
+    AggregateExpression, Expression, GraphPattern, OrderExpression, PropertyPathExpression,
+};
 use spargebra::term::{BlankNode, NamedNodePattern, TermPattern, TriplePattern, Variable};
 use spargebra::Query;
 use std::collections::{HashMap, HashSet};
-use crate::query_context::{Context, PathEntry};
 
 pub struct Preprocessor {
     counter: u16,
@@ -20,7 +22,7 @@ impl Preprocessor {
         Preprocessor {
             counter: 0,
             blank_node_rename: Default::default(),
-            variable_constraints: VariableConstraints::new()
+            variable_constraints: VariableConstraints::new(),
         }
     }
 
@@ -44,7 +46,11 @@ impl Preprocessor {
         }
     }
 
-    fn preprocess_graph_pattern(&mut self, graph_pattern: &GraphPattern, context:&Context) -> GraphPattern {
+    fn preprocess_graph_pattern(
+        &mut self,
+        graph_pattern: &GraphPattern,
+        context: &Context,
+    ) -> GraphPattern {
         match graph_pattern {
             GraphPattern::Bgp { patterns } => {
                 let bgp_context = context.extension_with(PathEntry::BGP);
@@ -62,8 +68,14 @@ impl Preprocessor {
                 object,
             } => self.preprocess_path(subject, path, object),
             GraphPattern::Join { left, right } => {
-                let left = self.preprocess_graph_pattern(left, &context.extension_with(PathEntry::JoinLeftSide));
-                let right = self.preprocess_graph_pattern(right, &context.extension_with(PathEntry::JoinRightSide));
+                let left = self.preprocess_graph_pattern(
+                    left,
+                    &context.extension_with(PathEntry::JoinLeftSide),
+                );
+                let right = self.preprocess_graph_pattern(
+                    right,
+                    &context.extension_with(PathEntry::JoinRightSide),
+                );
                 GraphPattern::Join {
                     left: Box::new(left),
                     right: Box::new(right),
@@ -74,10 +86,19 @@ impl Preprocessor {
                 right,
                 expression,
             } => {
-                let left = self.preprocess_graph_pattern(left, &context.extension_with(PathEntry::LeftJoinLeftSide));
-                let right = self.preprocess_graph_pattern(right, &context.extension_with(PathEntry::LeftJoinRightSide));
+                let left = self.preprocess_graph_pattern(
+                    left,
+                    &context.extension_with(PathEntry::LeftJoinLeftSide),
+                );
+                let right = self.preprocess_graph_pattern(
+                    right,
+                    &context.extension_with(PathEntry::LeftJoinRightSide),
+                );
                 let preprocessed_expression = if let Some(e) = expression {
-                    Some(self.preprocess_expression(e, &context.extension_with(PathEntry::LeftJoinExpression)))
+                    Some(self.preprocess_expression(
+                        e,
+                        &context.extension_with(PathEntry::LeftJoinExpression),
+                    ))
                 } else {
                     None
                 };
@@ -88,22 +109,37 @@ impl Preprocessor {
                 }
             }
             GraphPattern::Filter { expr, inner } => {
-                let inner = self.preprocess_graph_pattern(inner, &context.extension_with(PathEntry::FilterInner));
+                let inner = self.preprocess_graph_pattern(
+                    inner,
+                    &context.extension_with(PathEntry::FilterInner),
+                );
                 GraphPattern::Filter {
                     inner: Box::new(inner),
-                    expr: self.preprocess_expression(expr, &context.extension_with(PathEntry::FilterExpression)),
+                    expr: self.preprocess_expression(
+                        expr,
+                        &context.extension_with(PathEntry::FilterExpression),
+                    ),
                 }
             }
             GraphPattern::Union { left, right } => {
-                let left = self.preprocess_graph_pattern(left, &context.extension_with(PathEntry::UnionLeftSide));
-                let right = self.preprocess_graph_pattern(right, &context.extension_with(PathEntry::UnionRightSide));
+                let left = self.preprocess_graph_pattern(
+                    left,
+                    &context.extension_with(PathEntry::UnionLeftSide),
+                );
+                let right = self.preprocess_graph_pattern(
+                    right,
+                    &context.extension_with(PathEntry::UnionRightSide),
+                );
                 GraphPattern::Union {
                     left: Box::new(left),
                     right: Box::new(right),
                 }
             }
             GraphPattern::Graph { name, inner } => {
-                let inner = self.preprocess_graph_pattern(inner, &context.extension_with(PathEntry::GraphInner));
+                let inner = self.preprocess_graph_pattern(
+                    inner,
+                    &context.extension_with(PathEntry::GraphInner),
+                );
                 GraphPattern::Graph {
                     inner: Box::new(inner),
                     name: name.clone(),
@@ -114,7 +150,10 @@ impl Preprocessor {
                 variable,
                 expression,
             } => {
-                let inner = self.preprocess_graph_pattern(inner, &context.extension_with(PathEntry::ExtendInner));
+                let inner = self.preprocess_graph_pattern(
+                    inner,
+                    &context.extension_with(PathEntry::ExtendInner),
+                );
                 let mut used_vars = HashSet::new();
                 find_all_used_variables_in_expression(expression, &mut used_vars);
                 for v in used_vars.drain() {
@@ -124,8 +163,11 @@ impl Preprocessor {
                             || ctr == &Constraint::ExternallyDerived
                         {
                             if !self.variable_constraints.contains(variable, context) {
-                                self.variable_constraints
-                                    .insert(variable.clone(), context.clone(), Constraint::ExternallyDerived);
+                                self.variable_constraints.insert(
+                                    variable.clone(),
+                                    context.clone(),
+                                    Constraint::ExternallyDerived,
+                                );
                             }
                         }
                     }
@@ -134,12 +176,21 @@ impl Preprocessor {
                 GraphPattern::Extend {
                     inner: Box::new(inner),
                     variable: variable.clone(),
-                    expression: self.preprocess_expression(expression, &context.extension_with(PathEntry::ExtendExpression))
+                    expression: self.preprocess_expression(
+                        expression,
+                        &context.extension_with(PathEntry::ExtendExpression),
+                    ),
                 }
             }
             GraphPattern::Minus { left, right } => {
-                let left = self.preprocess_graph_pattern(left, &context.extension_with(PathEntry::MinusLeftSide));
-                let right = self.preprocess_graph_pattern(right, &context.extension_with(PathEntry::MinusRightSide));
+                let left = self.preprocess_graph_pattern(
+                    left,
+                    &context.extension_with(PathEntry::MinusLeftSide),
+                );
+                let right = self.preprocess_graph_pattern(
+                    right,
+                    &context.extension_with(PathEntry::MinusRightSide),
+                );
                 GraphPattern::Minus {
                     left: Box::new(left),
                     right: Box::new(right),
@@ -153,27 +204,48 @@ impl Preprocessor {
                 bindings: bindings.clone(),
             },
             GraphPattern::OrderBy { inner, expression } => {
-                let inner = self.preprocess_graph_pattern(inner, &context.extension_with(PathEntry::OrderByInner));
+                let inner = self.preprocess_graph_pattern(
+                    inner,
+                    &context.extension_with(PathEntry::OrderByInner),
+                );
                 GraphPattern::OrderBy {
                     inner: Box::new(inner),
-                    expression: expression.iter().enumerate().map(|(i,oe)| self.preprocess_order_expression(oe, &context.extension_with(PathEntry::OrderByExpression(i as u16)))).collect()
+                    expression: expression
+                        .iter()
+                        .enumerate()
+                        .map(|(i, oe)| {
+                            self.preprocess_order_expression(
+                                oe,
+                                &context.extension_with(PathEntry::OrderByExpression(i as u16)),
+                            )
+                        })
+                        .collect(),
                 }
             }
             GraphPattern::Project { inner, variables } => {
-                let inner = self.preprocess_graph_pattern(inner, &context.extension_with(PathEntry::ProjectInner));
+                let inner = self.preprocess_graph_pattern(
+                    inner,
+                    &context.extension_with(PathEntry::ProjectInner),
+                );
                 GraphPattern::Project {
                     inner: Box::new(inner),
                     variables: variables.clone(),
                 }
             }
             GraphPattern::Distinct { inner } => {
-                let inner = self.preprocess_graph_pattern(inner, &context.extension_with(PathEntry::DistinctInner));
+                let inner = self.preprocess_graph_pattern(
+                    inner,
+                    &context.extension_with(PathEntry::DistinctInner),
+                );
                 GraphPattern::Distinct {
                     inner: Box::new(inner),
                 }
             }
             GraphPattern::Reduced { inner } => {
-                let inner = self.preprocess_graph_pattern(inner, &context.extension_with(PathEntry::ReducedInner));
+                let inner = self.preprocess_graph_pattern(
+                    inner,
+                    &context.extension_with(PathEntry::ReducedInner),
+                );
                 GraphPattern::Reduced {
                     inner: Box::new(inner),
                 }
@@ -183,7 +255,10 @@ impl Preprocessor {
                 start,
                 length,
             } => {
-                let inner = self.preprocess_graph_pattern(inner, &context.extension_with(PathEntry::SliceInner));
+                let inner = self.preprocess_graph_pattern(
+                    inner,
+                    &context.extension_with(PathEntry::SliceInner),
+                );
                 GraphPattern::Slice {
                     inner: Box::new(inner),
                     start: start.clone(),
@@ -195,7 +270,10 @@ impl Preprocessor {
                 variables,
                 aggregates,
             } => {
-                let inner = self.preprocess_graph_pattern(inner, &context.extension_with(PathEntry::GroupInner));
+                let inner = self.preprocess_graph_pattern(
+                    inner,
+                    &context.extension_with(PathEntry::GroupInner),
+                );
                 for (variable, agg) in aggregates {
                     let mut used_vars = HashSet::new();
                     find_all_used_variables_in_aggregate_expression(agg, &mut used_vars);
@@ -205,16 +283,24 @@ impl Preprocessor {
                                 || ctr == &Constraint::ExternalTimestamp
                                 || ctr == &Constraint::ExternallyDerived
                             {
-                                self.variable_constraints
-                                    .insert(variable.clone(), context.clone(),Constraint::ExternallyDerived);
+                                self.variable_constraints.insert(
+                                    variable.clone(),
+                                    context.clone(),
+                                    Constraint::ExternallyDerived,
+                                );
                             }
                         }
                     }
                 }
                 let mut preprocessed_aggregates = vec![];
                 for (i, (var, agg)) in aggregates.iter().enumerate() {
-                    preprocessed_aggregates
-                        .push((var.clone(), self.preprocess_aggregate_expression(agg, &context.extension_with(PathEntry::GroupAggregation(i as u16)))))
+                    preprocessed_aggregates.push((
+                        var.clone(),
+                        self.preprocess_aggregate_expression(
+                            agg,
+                            &context.extension_with(PathEntry::GroupAggregation(i as u16)),
+                        ),
+                    ))
                 }
                 GraphPattern::Group {
                     inner: Box::new(inner),
@@ -227,7 +313,10 @@ impl Preprocessor {
                 inner,
                 silent,
             } => {
-                let inner = self.preprocess_graph_pattern(inner, &context.extension_with(PathEntry::ServiceInner));
+                let inner = self.preprocess_graph_pattern(
+                    inner,
+                    &context.extension_with(PathEntry::ServiceInner),
+                );
                 GraphPattern::Service {
                     inner: Box::new(inner),
                     name: name.clone(),
@@ -237,7 +326,11 @@ impl Preprocessor {
         }
     }
 
-    fn preprocess_triple_pattern(&mut self, triple_pattern: &TriplePattern, context:&Context) -> TriplePattern {
+    fn preprocess_triple_pattern(
+        &mut self,
+        triple_pattern: &TriplePattern,
+        context: &Context,
+    ) -> TriplePattern {
         let new_subject = self.rename_if_blank(&triple_pattern.subject);
         let new_object = self.rename_if_blank(&triple_pattern.object);
         if let NamedNodePattern::NamedNode(named_predicate_node) = &triple_pattern.predicate {
@@ -247,26 +340,47 @@ impl Preprocessor {
             ) = (&new_subject, &new_object)
             {
                 if named_predicate_node == &HAS_TIMESERIES {
-                    self.variable_constraints
-                        .insert(new_object_variable.clone(), context.clone(),Constraint::ExternalTimeseries);
+                    self.variable_constraints.insert(
+                        new_object_variable.clone(),
+                        context.clone(),
+                        Constraint::ExternalTimeseries,
+                    );
                 }
                 if named_predicate_node == &HAS_TIMESTAMP {
-                    self.variable_constraints
-                        .insert(new_object_variable.clone(), context.clone(), Constraint::ExternalTimestamp);
-                    self.variable_constraints
-                        .insert(new_subject_variable.clone(), context.clone(),Constraint::ExternalDataPoint);
+                    self.variable_constraints.insert(
+                        new_object_variable.clone(),
+                        context.clone(),
+                        Constraint::ExternalTimestamp,
+                    );
+                    self.variable_constraints.insert(
+                        new_subject_variable.clone(),
+                        context.clone(),
+                        Constraint::ExternalDataPoint,
+                    );
                 }
                 if named_predicate_node == &HAS_VALUE {
-                    self.variable_constraints
-                        .insert(new_object_variable.clone(), context.clone(), Constraint::ExternalDataValue);
-                    self.variable_constraints
-                        .insert(new_subject_variable.clone(), context.clone(), Constraint::ExternalDataPoint);
+                    self.variable_constraints.insert(
+                        new_object_variable.clone(),
+                        context.clone(),
+                        Constraint::ExternalDataValue,
+                    );
+                    self.variable_constraints.insert(
+                        new_subject_variable.clone(),
+                        context.clone(),
+                        Constraint::ExternalDataPoint,
+                    );
                 }
                 if named_predicate_node == &HAS_DATA_POINT {
-                    self.variable_constraints
-                        .insert(new_object_variable.clone(), context.clone(), Constraint::ExternalDataPoint);
-                    self.variable_constraints
-                        .insert(new_subject_variable.clone(), context.clone(), Constraint::ExternalTimeseries);
+                    self.variable_constraints.insert(
+                        new_object_variable.clone(),
+                        context.clone(),
+                        Constraint::ExternalDataPoint,
+                    );
+                    self.variable_constraints.insert(
+                        new_subject_variable.clone(),
+                        context.clone(),
+                        Constraint::ExternalTimeseries,
+                    );
                 }
             }
         }
@@ -297,21 +411,43 @@ impl Preprocessor {
     fn preprocess_expression(&mut self, expression: &Expression, context: &Context) -> Expression {
         match expression {
             Expression::Or(left, right) => Expression::Or(
-                Box::new(self.preprocess_expression(left, &context.extension_with(PathEntry::OrLeft))),
-                Box::new(self.preprocess_expression(right, &context.extension_with(PathEntry::OrRight))),
+                Box::new(
+                    self.preprocess_expression(left, &context.extension_with(PathEntry::OrLeft)),
+                ),
+                Box::new(
+                    self.preprocess_expression(right, &context.extension_with(PathEntry::OrRight)),
+                ),
             ),
             Expression::And(left, right) => Expression::And(
-                Box::new(self.preprocess_expression(left, &context.extension_with(PathEntry::AndLeft))),
-                Box::new(self.preprocess_expression(right, &context.extension_with(PathEntry::AndRight))),
+                Box::new(
+                    self.preprocess_expression(left, &context.extension_with(PathEntry::AndLeft)),
+                ),
+                Box::new(
+                    self.preprocess_expression(right, &context.extension_with(PathEntry::AndRight)),
+                ),
             ),
-            Expression::Not(inner) => Expression::Not(Box::new(self.preprocess_expression(inner, &context.extension_with(PathEntry::Not)))),
+            Expression::Not(inner) => Expression::Not(Box::new(
+                self.preprocess_expression(inner, &context.extension_with(PathEntry::Not)),
+            )),
             Expression::Exists(graph_pattern) => {
-                Expression::Exists(Box::new(self.preprocess_graph_pattern(graph_pattern, &context.extension_with(PathEntry::Exists))))
+                Expression::Exists(Box::new(self.preprocess_graph_pattern(
+                    graph_pattern,
+                    &context.extension_with(PathEntry::Exists),
+                )))
             }
             Expression::If(left, middle, right) => Expression::If(
-                Box::new(self.preprocess_expression(left, &context.extension_with(PathEntry::IfLeft))),
-                Box::new(self.preprocess_expression(middle, &context.extension_with(PathEntry::IfMiddle))),
-                Box::new(self.preprocess_expression(right, &context.extension_with(PathEntry::IfRight))),
+                Box::new(
+                    self.preprocess_expression(left, &context.extension_with(PathEntry::IfLeft)),
+                ),
+                Box::new(
+                    self.preprocess_expression(
+                        middle,
+                        &context.extension_with(PathEntry::IfMiddle),
+                    ),
+                ),
+                Box::new(
+                    self.preprocess_expression(right, &context.extension_with(PathEntry::IfRight)),
+                ),
             ),
             _ => expression.clone(),
         }
@@ -339,7 +475,10 @@ impl Preprocessor {
         match aggregate_expression {
             AggregateExpression::Count { expr, distinct } => {
                 let rewritten_expression = if let Some(e) = expr {
-                    Some(Box::new(self.preprocess_expression(e, &context.extension_with(PathEntry::AggregationOperation) )))
+                    Some(Box::new(self.preprocess_expression(
+                        e,
+                        &context.extension_with(PathEntry::AggregationOperation),
+                    )))
                 } else {
                     None
                 };
@@ -349,19 +488,31 @@ impl Preprocessor {
                 }
             }
             AggregateExpression::Sum { expr, distinct } => AggregateExpression::Sum {
-                expr: Box::new(self.preprocess_expression(expr, &context.extension_with(PathEntry::AggregationOperation))),
+                expr: Box::new(self.preprocess_expression(
+                    expr,
+                    &context.extension_with(PathEntry::AggregationOperation),
+                )),
                 distinct: *distinct,
             },
             AggregateExpression::Avg { expr, distinct } => AggregateExpression::Avg {
-                expr: Box::new(self.preprocess_expression(expr, &context.extension_with(PathEntry::AggregationOperation))),
+                expr: Box::new(self.preprocess_expression(
+                    expr,
+                    &context.extension_with(PathEntry::AggregationOperation),
+                )),
                 distinct: *distinct,
             },
             AggregateExpression::Min { expr, distinct } => AggregateExpression::Min {
-                expr: Box::new(self.preprocess_expression(expr, &context.extension_with(PathEntry::AggregationOperation))),
+                expr: Box::new(self.preprocess_expression(
+                    expr,
+                    &context.extension_with(PathEntry::AggregationOperation),
+                )),
                 distinct: *distinct,
             },
             AggregateExpression::Max { expr, distinct } => AggregateExpression::Max {
-                expr: Box::new(self.preprocess_expression(expr, &context.extension_with(PathEntry::AggregationOperation))),
+                expr: Box::new(self.preprocess_expression(
+                    expr,
+                    &context.extension_with(PathEntry::AggregationOperation),
+                )),
                 distinct: *distinct,
             },
             AggregateExpression::GroupConcat {
@@ -369,12 +520,18 @@ impl Preprocessor {
                 distinct,
                 separator,
             } => AggregateExpression::GroupConcat {
-                expr: Box::new(self.preprocess_expression(expr, &context.extension_with(PathEntry::AggregationOperation))),
+                expr: Box::new(self.preprocess_expression(
+                    expr,
+                    &context.extension_with(PathEntry::AggregationOperation),
+                )),
                 distinct: *distinct,
                 separator: separator.clone(),
             },
             AggregateExpression::Sample { expr, distinct } => AggregateExpression::Sample {
-                expr: Box::new(self.preprocess_expression(expr, &context.extension_with(PathEntry::AggregationOperation))),
+                expr: Box::new(self.preprocess_expression(
+                    expr,
+                    &context.extension_with(PathEntry::AggregationOperation),
+                )),
                 distinct: *distinct,
             },
             AggregateExpression::Custom {
@@ -383,15 +540,32 @@ impl Preprocessor {
                 distinct,
             } => AggregateExpression::Custom {
                 name: name.clone(),
-                expr: Box::new(self.preprocess_expression(expr, &context.extension_with(PathEntry::AggregationOperation))),
+                expr: Box::new(self.preprocess_expression(
+                    expr,
+                    &context.extension_with(PathEntry::AggregationOperation),
+                )),
                 distinct: *distinct,
             },
         }
     }
-    fn preprocess_order_expression(&mut self, order_expression: &OrderExpression, context:&Context) -> OrderExpression {
+    fn preprocess_order_expression(
+        &mut self,
+        order_expression: &OrderExpression,
+        context: &Context,
+    ) -> OrderExpression {
         match order_expression {
-            OrderExpression::Asc(e) => {OrderExpression::Asc(self.preprocess_expression(e, &context.extension_with(PathEntry::OrderingOperation)))}
-            OrderExpression::Desc(e) => {OrderExpression::Desc(self.preprocess_expression(e, &context.extension_with(PathEntry::OrderingOperation)))}
+            OrderExpression::Asc(e) => {
+                OrderExpression::Asc(self.preprocess_expression(
+                    e,
+                    &context.extension_with(PathEntry::OrderingOperation),
+                ))
+            }
+            OrderExpression::Desc(e) => {
+                OrderExpression::Desc(self.preprocess_expression(
+                    e,
+                    &context.extension_with(PathEntry::OrderingOperation),
+                ))
+            }
         }
     }
 }

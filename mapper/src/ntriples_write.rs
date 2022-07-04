@@ -19,7 +19,6 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-use std::io::Write;
 use polars::error::PolarsError;
 use polars::export::rayon::iter::{IntoParallelIterator, ParallelIterator};
 use polars::export::rayon::prelude::ParallelExtend;
@@ -27,11 +26,15 @@ use polars::prelude::{AnyValue, DataFrame, Series};
 use polars::series::SeriesIter;
 use polars_core::POOL;
 use polars_utils::contention_pool::LowContentionPool;
+use std::io::Write;
 
 fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue) {
     match value {
         AnyValue::Utf8(v) => write!(f, "{}", v),
-        dt => panic!("DataType: {} not supported, some bad change has happened", dt),
+        dt => panic!(
+            "DataType: {} not supported, some bad change has happened",
+            dt
+        ),
     }
     .unwrap();
 }

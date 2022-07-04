@@ -1,6 +1,10 @@
-use chrono::{DateTime};
-use dsl::ast::ElementConstraint::{Name};
-use dsl::ast::{Aggregation, BooleanOperator, ConditionedPath, Connective, ConnectiveType, ElementConstraint, Glue, GraphPathPattern, Group, LiteralData, Path, PathElement, PathElementOrConnective, PathOrLiteralData, TsQuery};
+use chrono::DateTime;
+use dsl::ast::ElementConstraint::Name;
+use dsl::ast::{
+    Aggregation, BooleanOperator, ConditionedPath, Connective, ConnectiveType, ElementConstraint,
+    Glue, GraphPathPattern, Group, LiteralData, Path, PathElement, PathElementOrConnective,
+    PathOrLiteralData, TsQuery,
+};
 use dsl::parser::ts_query;
 use std::str::FromStr;
 use std::time::Duration;
@@ -18,47 +22,43 @@ fn test_basic_multiline_query() {
     let (_, actual) = ts_query(q).expect("No problemo");
     let expected = TsQuery::new(
         GraphPathPattern::new(vec![
-            ConditionedPath::from_path(
-                Path::from_vec(vec![
-                    PathElementOrConnective::PathElement(PathElement::new(
-                        None,
-                        Some(ElementConstraint::TypeName("ABC".to_string())),
-                    )),
-                    PathElementOrConnective::Connective(Connective::new(ConnectiveType::Dash, 1)),
-                    PathElementOrConnective::PathElement(PathElement::new(
-                        Some(Glue::new("valve")),
-                        Some(Name("HLV".to_string())),
-                    )),
-                    PathElementOrConnective::Connective(Connective::new(ConnectiveType::Period, 1)),
-                    PathElementOrConnective::PathElement(PathElement::new(
-                        None,
-                        Some(Name("Mvm".to_string())),
-                    )),
-                    PathElementOrConnective::Connective(Connective::new(ConnectiveType::Period, 1)),
-                    PathElementOrConnective::PathElement(PathElement::new(
-                        None,
-                        Some(Name("stVal".to_string())),
-                    )),
-                ])
-            ),
-            ConditionedPath::from_path(
-                Path::from_vec(vec![
-                    PathElementOrConnective::PathElement(PathElement::new(
-                        Some(Glue::new("valve")),
-                        None,
-                    )),
-                    PathElementOrConnective::Connective(Connective::new(ConnectiveType::Period, 1)),
-                    PathElementOrConnective::PathElement(PathElement::new(
-                        None,
-                        Some(Name("PosPct".to_string())),
-                    )),
-                    PathElementOrConnective::Connective(Connective::new(ConnectiveType::Period, 1)),
-                    PathElementOrConnective::PathElement(PathElement::new(
-                        None,
-                        Some(Name("mag".to_string())),
-                    )),
-                ]),
-            ),
+            ConditionedPath::from_path(Path::from_vec(vec![
+                PathElementOrConnective::PathElement(PathElement::new(
+                    None,
+                    Some(ElementConstraint::TypeName("ABC".to_string())),
+                )),
+                PathElementOrConnective::Connective(Connective::new(ConnectiveType::Dash, 1)),
+                PathElementOrConnective::PathElement(PathElement::new(
+                    Some(Glue::new("valve")),
+                    Some(Name("HLV".to_string())),
+                )),
+                PathElementOrConnective::Connective(Connective::new(ConnectiveType::Period, 1)),
+                PathElementOrConnective::PathElement(PathElement::new(
+                    None,
+                    Some(Name("Mvm".to_string())),
+                )),
+                PathElementOrConnective::Connective(Connective::new(ConnectiveType::Period, 1)),
+                PathElementOrConnective::PathElement(PathElement::new(
+                    None,
+                    Some(Name("stVal".to_string())),
+                )),
+            ])),
+            ConditionedPath::from_path(Path::from_vec(vec![
+                PathElementOrConnective::PathElement(PathElement::new(
+                    Some(Glue::new("valve")),
+                    None,
+                )),
+                PathElementOrConnective::Connective(Connective::new(ConnectiveType::Period, 1)),
+                PathElementOrConnective::PathElement(PathElement::new(
+                    None,
+                    Some(Name("PosPct".to_string())),
+                )),
+                PathElementOrConnective::Connective(Connective::new(ConnectiveType::Period, 1)),
+                PathElementOrConnective::PathElement(PathElement::new(
+                    None,
+                    Some(Name("mag".to_string())),
+                )),
+            ])),
         ]),
         Some(Group::new(vec!["valve"])),
         Some(DateTime::from_str("2021-11-30T23:00:01Z").expect("ParseOk")),

@@ -1,8 +1,8 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Formatter;
-use chrono::{DateTime, Utc};
 use std::time::Duration;
-use serde::{Serialize, Deserialize};
 
 #[derive(PartialEq, Debug, Hash, Eq, Serialize, Deserialize)]
 pub enum ConnectiveType {
@@ -29,11 +29,11 @@ impl ConnectiveType {
 
     pub fn as_str(&self) -> &str {
         match self {
-            ConnectiveType::Period => {"."}
-            ConnectiveType::Semicolon => {";"}
-            ConnectiveType::Dash => {"-"}
-            ConnectiveType::Slash => {"/"}
-            ConnectiveType::Backslash => {"\\"}
+            ConnectiveType::Period => ".",
+            ConnectiveType::Semicolon => ";",
+            ConnectiveType::Dash => "-",
+            ConnectiveType::Slash => "/",
+            ConnectiveType::Backslash => "\\",
         }
     }
 }
@@ -46,7 +46,11 @@ pub struct Connective {
 
 impl fmt::Display for Connective {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.connective_type.as_str().repeat(self.number_of))
+        write!(
+            f,
+            "{}",
+            self.connective_type.as_str().repeat(self.number_of)
+        )
     }
 }
 
@@ -60,11 +64,11 @@ impl Connective {
 
     pub fn to_variable_name_part(&self) -> String {
         let ctype_part = match self.connective_type {
-            ConnectiveType::Period => {"Period"}
-            ConnectiveType::Semicolon => {"Semicolon"}
-            ConnectiveType::Dash => {"Dash"}
-            ConnectiveType::Slash => {"Slash"}
-            ConnectiveType::Backslash => {"Backslash"}
+            ConnectiveType::Period => "Period",
+            ConnectiveType::Semicolon => "Semicolon",
+            ConnectiveType::Dash => "Dash",
+            ConnectiveType::Slash => "Slash",
+            ConnectiveType::Backslash => "Backslash",
         };
         ctype_part.repeat(self.number_of)
     }
@@ -91,15 +95,18 @@ impl PathElement {
 #[derive(PartialEq, Debug)]
 pub struct Path {
     pub(crate) path: Vec<PathElementOrConnective>,
-    pub optional: bool
+    pub optional: bool,
 }
 
 impl Path {
     pub fn from_vec(path: Vec<PathElementOrConnective>) -> Path {
-        Path { path, optional: false }
+        Path {
+            path,
+            optional: false,
+        }
     }
 
-    pub fn new(path:Vec<PathElementOrConnective>, optional:bool) -> Path {
+    pub fn new(path: Vec<PathElementOrConnective>, optional: bool) -> Path {
         Path { path, optional }
     }
 
@@ -255,7 +262,7 @@ pub enum DataType {
     String,
     Real,
     Integer,
-    Boolean
+    Boolean,
 }
 
 impl DataType {
@@ -309,7 +316,7 @@ pub struct InputOutput {
 }
 
 impl InputOutput {
-    pub fn new(path: Path, arrow_type: ArrowType, typed_label:TypedLabel) -> InputOutput {
+    pub fn new(path: Path, arrow_type: ArrowType, typed_label: TypedLabel) -> InputOutput {
         InputOutput {
             path,
             arrow_type: Some(arrow_type),

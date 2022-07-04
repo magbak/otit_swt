@@ -154,10 +154,11 @@ impl TemplateDataset {
             for i in 0..self.templates.len() {
                 let (left, right) = self.templates.split_at_mut(i);
                 let (element, right) = right.split_at_mut(1);
-                inner_changed = inner_changed || infer_template_types(
-                    element.first_mut().unwrap(),
-                    (&left).iter().chain((&right).iter()).collect(),
-                )?;
+                inner_changed = inner_changed
+                    || infer_template_types(
+                        element.first_mut().unwrap(),
+                        (&left).iter().chain((&right).iter()).collect(),
+                    )?;
             }
             if !inner_changed {
                 changed = false;
@@ -199,27 +200,30 @@ fn infer_template_types(
                             if let Some(other_ptype) = &other_parameter.ptype {
                                 if argument.list_expand {
                                     if !other_parameter.optional {
-                                        changed = changed || lub_update(
-                                            &template.signature.template_name,
-                                            v,
-                                            my_parameter,
-                                            &PType::NEListType(Box::new(other_ptype.clone())),
-                                        )?;
+                                        changed = changed
+                                            || lub_update(
+                                                &template.signature.template_name,
+                                                v,
+                                                my_parameter,
+                                                &PType::NEListType(Box::new(other_ptype.clone())),
+                                            )?;
                                     } else {
-                                        changed = changed || lub_update(
-                                            &template.signature.template_name,
-                                            v,
-                                            my_parameter,
-                                            &PType::ListType(Box::new(other_ptype.clone())),
-                                        )?;
+                                        changed = changed
+                                            || lub_update(
+                                                &template.signature.template_name,
+                                                v,
+                                                my_parameter,
+                                                &PType::ListType(Box::new(other_ptype.clone())),
+                                            )?;
                                     }
                                 } else {
-                                    changed = changed || lub_update(
-                                        &template.signature.template_name,
-                                        v,
-                                        my_parameter,
-                                        other_ptype,
-                                    )?;
+                                    changed = changed
+                                        || lub_update(
+                                            &template.signature.template_name,
+                                            v,
+                                            my_parameter,
+                                            other_ptype,
+                                        )?;
                                 }
                             }
                         }

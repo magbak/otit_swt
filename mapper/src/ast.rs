@@ -1,5 +1,5 @@
-use std::fmt::{Display, Formatter};
 use oxrdf::{BlankNode, NamedNode};
+use std::fmt::{Display, Formatter};
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Prefix {
@@ -10,7 +10,7 @@ pub struct Prefix {
 #[derive(PartialEq, Debug, Clone)]
 pub enum Directive {
     Prefix(Prefix),
-    Base(NamedNode)
+    Base(NamedNode),
 }
 
 #[derive(PartialEq, Debug, Clone)]

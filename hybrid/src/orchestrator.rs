@@ -1,19 +1,19 @@
-use std::collections::HashSet;
 use crate::combiner::Combiner;
+use crate::groupby_pushdown::find_all_groupby_pushdowns;
 use crate::preprocessing::Preprocessor;
 use crate::rewriting::StaticQueryRewriter;
+use crate::sparql_result_to_polars::create_static_query_result_df;
 use crate::splitter::parse_sparql_select_query;
 use crate::static_sparql::execute_sparql_query;
 use crate::timeseries_database::TimeSeriesQueryable;
 use crate::timeseries_query::TimeSeriesQuery;
+use log::debug;
 use oxrdf::vocab::xsd;
 use oxrdf::Term;
 use polars::frame::DataFrame;
 use sparesults::QuerySolution;
+use std::collections::HashSet;
 use std::error::Error;
-use log::debug;
-use crate::groupby_pushdown::find_all_groupby_pushdowns;
-use crate::sparql_result_to_polars::create_static_query_result_df;
 
 pub async fn execute_hybrid_query(
     query: &str,
@@ -33,11 +33,20 @@ pub async fn execute_hybrid_query(
     complete_time_series_queries(&static_query_solutions, &mut time_series_queries);
     let static_result_df = create_static_query_result_df(&static_rewrite, static_query_solutions);
     debug!("Static result dataframe: {}", static_result_df);
-    find_all_groupby_pushdowns(&parsed_query,&static_result_df, &mut time_series_queries, &variable_constraints);
+    find_all_groupby_pushdowns(
+        &parsed_query,
+        &static_result_df,
+        &mut time_series_queries,
+        &variable_constraints,
+    );
     let mut time_series = execute_time_series_queries(time_series_database, time_series_queries)?;
     debug!("Time series: {:?}", time_series);
     let mut combiner = Combiner::new();
-    let lazy_frame = combiner.combine_static_and_time_series_results(parsed_query, static_result_df, &mut time_series);
+    let lazy_frame = combiner.combine_static_and_time_series_results(
+        parsed_query,
+        static_result_df,
+        &mut time_series,
+    );
     Ok(lazy_frame.collect()?)
 }
 
@@ -58,7 +67,7 @@ fn complete_time_series_queries(
                 }
             }
         }
-        let mut ids_vec:Vec<String> = ids.into_iter().collect();
+        let mut ids_vec: Vec<String> = ids.into_iter().collect();
         ids_vec.sort();
         tsq.ids = Some(ids_vec);
     }
@@ -74,14 +83,13 @@ fn execute_time_series_queries(
         match df_res {
             Ok(df) => {
                 match tsq.validate(&df) {
-                    Ok(_) => {},
-                    Err(err) => {return Err(Box::new(err))}
+                    Ok(_) => {}
+                    Err(err) => return Err(Box::new(err)),
                 }
-                out.push((tsq, df))},
+                out.push((tsq, df))
+            }
             Err(err) => return Err(err),
         }
     }
     Ok(out)
 }
-
-

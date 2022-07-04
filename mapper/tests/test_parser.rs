@@ -1,12 +1,13 @@
+use mapper::ast::{Directive, ListExpanderType, Prefix, StottrVariable};
+use mapper::parser::whole_stottr_doc;
 use mapper::parsing_ast::{
-    UnresolvedAnnotation, UnresolvedArgument, UnresolvedConstantLiteral, UnresolvedConstantTerm, UnresolvedDefaultValue, UnresolvedInstance,
-    UnresolvedPType, UnresolvedParameter, PrefixedName, ResolvesToNamedNode, UnresolvedSignature,
-    UnresolvedStatement, UnresolvedStottrDocument, UnresolvedStottrLiteral, UnresolvedStottrTerm, UnresolvedTemplate,
+    PrefixedName, ResolvesToNamedNode, UnresolvedAnnotation, UnresolvedArgument,
+    UnresolvedConstantLiteral, UnresolvedConstantTerm, UnresolvedDefaultValue, UnresolvedInstance,
+    UnresolvedPType, UnresolvedParameter, UnresolvedSignature, UnresolvedStatement,
+    UnresolvedStottrDocument, UnresolvedStottrLiteral, UnresolvedStottrTerm, UnresolvedTemplate,
 };
-use mapper::parser::{whole_stottr_doc};
 use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, NamedNode};
-use mapper::ast::{Directive, ListExpanderType, Prefix, StottrVariable};
 
 #[test]
 fn test_easy_template() {
@@ -20,7 +21,7 @@ fn test_easy_template() {
     "#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -73,16 +74,20 @@ fn test_easy_template() {
                     UnresolvedArgument {
                         list_expand: false,
                         term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(
-                            UnresolvedConstantLiteral::BlankNode(BlankNode::new_unchecked("person")),
+                            UnresolvedConstantLiteral::BlankNode(BlankNode::new_unchecked(
+                                "person",
+                            )),
                         )),
                     },
                     UnresolvedArgument {
                         list_expand: false,
                         term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::Constant(
-                            UnresolvedConstantLiteral::IRI(ResolvesToNamedNode::PrefixedName(PrefixedName {
-                                prefix: "foaf".to_string(),
-                                name: "Person".to_string(),
-                            })),
+                            UnresolvedConstantLiteral::IRI(ResolvesToNamedNode::PrefixedName(
+                                PrefixedName {
+                                    prefix: "foaf".to_string(),
+                                    name: "Person".to_string(),
+                                },
+                            )),
                         )),
                     },
                 ],
@@ -135,7 +140,7 @@ fn test_spec_modifiers_2() {
     "#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -170,7 +175,7 @@ fn test_spec_modifiers_3() {
     "#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -205,7 +210,7 @@ fn test_spec_modifiers_4() {
     "#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -240,7 +245,7 @@ fn test_spec_type_1() {
     "#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -254,10 +259,12 @@ fn test_spec_type_1() {
             parameter_list: vec![UnresolvedParameter {
                 optional: false,
                 non_blank: false,
-                ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
-                    prefix: "owl".to_string(),
-                    name: "Class".to_string(),
-                }))),
+                ptype: Some(UnresolvedPType::BasicType(
+                    ResolvesToNamedNode::PrefixedName(PrefixedName {
+                        prefix: "owl".to_string(),
+                        name: "Class".to_string(),
+                    }),
+                )),
                 stottr_variable: StottrVariable {
                     name: "pizza".to_string(),
                 },
@@ -278,7 +285,7 @@ fn test_spec_type_2() {
     "#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -292,10 +299,12 @@ fn test_spec_type_2() {
             parameter_list: vec![UnresolvedParameter {
                 optional: true,
                 non_blank: false,
-                ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
-                    prefix: "owl".to_string(),
-                    name: "Class".to_string(),
-                }))),
+                ptype: Some(UnresolvedPType::BasicType(
+                    ResolvesToNamedNode::PrefixedName(PrefixedName {
+                        prefix: "owl".to_string(),
+                        name: "Class".to_string(),
+                    }),
+                )),
                 stottr_variable: StottrVariable {
                     name: "pizza".to_string(),
                 },
@@ -316,7 +325,7 @@ fn test_spec_type_3() {
     "#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![Directive::Prefix(Prefix {
             name: "ex".to_string(),
@@ -330,10 +339,12 @@ fn test_spec_type_3() {
             parameter_list: vec![UnresolvedParameter {
                 optional: true,
                 non_blank: true,
-                ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
-                    prefix: "owl".to_string(),
-                    name: "Class".to_string(),
-                }))),
+                ptype: Some(UnresolvedPType::BasicType(
+                    ResolvesToNamedNode::PrefixedName(PrefixedName {
+                        prefix: "owl".to_string(),
+                        name: "Class".to_string(),
+                    }),
+                )),
                 stottr_variable: StottrVariable {
                     name: "pizza".to_string(),
                 },
@@ -352,7 +363,7 @@ fn test_spec_default_value_1() {
     ex:NamedPizza[ owl:Class ?pizza = p:pizza] ."#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -372,20 +383,24 @@ fn test_spec_default_value_1() {
             parameter_list: vec![UnresolvedParameter {
                 optional: false,
                 non_blank: false,
-                ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
-                    prefix: "owl".to_string(),
-                    name: "Class".to_string(),
-                }))),
+                ptype: Some(UnresolvedPType::BasicType(
+                    ResolvesToNamedNode::PrefixedName(PrefixedName {
+                        prefix: "owl".to_string(),
+                        name: "Class".to_string(),
+                    }),
+                )),
                 stottr_variable: StottrVariable {
                     name: "pizza".to_string(),
                 },
                 default_value: Some(UnresolvedDefaultValue {
-                    constant_term: UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::IRI(
-                        ResolvesToNamedNode::PrefixedName(PrefixedName {
-                            prefix: "p".to_string(),
-                            name: "pizza".to_string(),
-                        }),
-                    )),
+                    constant_term: UnresolvedConstantTerm::Constant(
+                        UnresolvedConstantLiteral::IRI(ResolvesToNamedNode::PrefixedName(
+                            PrefixedName {
+                                prefix: "p".to_string(),
+                                name: "pizza".to_string(),
+                            },
+                        )),
+                    ),
                 }),
             }],
             annotation_list: None,
@@ -401,7 +416,7 @@ fn test_spec_default_value_2() {
     ex:NamedPizza[ owl:Class ?pizza = 2] ."#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -421,23 +436,25 @@ fn test_spec_default_value_2() {
             parameter_list: vec![UnresolvedParameter {
                 optional: false,
                 non_blank: false,
-                ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
-                    prefix: "owl".to_string(),
-                    name: "Class".to_string(),
-                }))),
+                ptype: Some(UnresolvedPType::BasicType(
+                    ResolvesToNamedNode::PrefixedName(PrefixedName {
+                        prefix: "owl".to_string(),
+                        name: "Class".to_string(),
+                    }),
+                )),
                 stottr_variable: StottrVariable {
                     name: "pizza".to_string(),
                 },
                 default_value: Some(UnresolvedDefaultValue {
-                    constant_term: UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(
-                        UnresolvedStottrLiteral {
+                    constant_term: UnresolvedConstantTerm::Constant(
+                        UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                             value: "2".to_string(),
                             language: None,
                             data_type_iri: Some(ResolvesToNamedNode::NamedNode(
                                 xsd::INTEGER.into_owned(),
                             )),
-                        },
-                    )),
+                        }),
+                    ),
                 }),
             }],
             annotation_list: None,
@@ -453,7 +470,7 @@ fn test_spec_default_value_3() {
     ex:NamedPizza[ owl:Class ?pizza = "asdf"] ."#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -473,23 +490,25 @@ fn test_spec_default_value_3() {
             parameter_list: vec![UnresolvedParameter {
                 optional: false,
                 non_blank: false,
-                ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
-                    prefix: "owl".to_string(),
-                    name: "Class".to_string(),
-                }))),
+                ptype: Some(UnresolvedPType::BasicType(
+                    ResolvesToNamedNode::PrefixedName(PrefixedName {
+                        prefix: "owl".to_string(),
+                        name: "Class".to_string(),
+                    }),
+                )),
                 stottr_variable: StottrVariable {
                     name: "pizza".to_string(),
                 },
                 default_value: Some(UnresolvedDefaultValue {
-                    constant_term: UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(
-                        UnresolvedStottrLiteral {
+                    constant_term: UnresolvedConstantTerm::Constant(
+                        UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                             value: "asdf".to_string(),
                             language: None,
                             data_type_iri: Some(ResolvesToNamedNode::NamedNode(
                                 xsd::STRING.into_owned(),
                             )),
-                        },
-                    )),
+                        }),
+                    ),
                 }),
             }],
             annotation_list: None,
@@ -505,7 +524,7 @@ fn test_spec_more_parameters() {
     ex:NamedPizza [  ?pizza ,  ?country  ,  ?toppings ] ."#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -564,7 +583,7 @@ fn test_spec_lists() {
     ex:NamedPizza [  ?pizza = "asdf" ,  ?country = ("asdf", "asdf") ,  ?toppings = ((())) ] ."#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -590,8 +609,8 @@ fn test_spec_lists() {
                         name: "pizza".to_string(),
                     },
                     default_value: Some(UnresolvedDefaultValue {
-                        constant_term: UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(
-                            UnresolvedStottrLiteral {
+                        constant_term: UnresolvedConstantTerm::Constant(
+                            UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
                                 value: "asdf".to_string(),
                                 language: None,
                                 data_type_iri: Some(ResolvesToNamedNode::NamedNode(
@@ -599,8 +618,8 @@ fn test_spec_lists() {
                                         "http://www.w3.org/2001/XMLSchema#string",
                                     ),
                                 )),
-                            },
-                        )),
+                            }),
+                        ),
                     }),
                 },
                 UnresolvedParameter {
@@ -612,24 +631,28 @@ fn test_spec_lists() {
                     },
                     default_value: Some(UnresolvedDefaultValue {
                         constant_term: UnresolvedConstantTerm::ConstantList(vec![
-                            UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
-                                value: "asdf".to_string(),
-                                language: None,
-                                data_type_iri: Some(ResolvesToNamedNode::NamedNode(
-                                    NamedNode::new_unchecked(
-                                        "http://www.w3.org/2001/XMLSchema#string",
-                                    ),
-                                )),
-                            })),
-                            UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(UnresolvedStottrLiteral {
-                                value: "asdf".to_string(),
-                                language: None,
-                                data_type_iri: Some(ResolvesToNamedNode::NamedNode(
-                                    NamedNode::new_unchecked(
-                                        "http://www.w3.org/2001/XMLSchema#string",
-                                    ),
-                                )),
-                            })),
+                            UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(
+                                UnresolvedStottrLiteral {
+                                    value: "asdf".to_string(),
+                                    language: None,
+                                    data_type_iri: Some(ResolvesToNamedNode::NamedNode(
+                                        NamedNode::new_unchecked(
+                                            "http://www.w3.org/2001/XMLSchema#string",
+                                        ),
+                                    )),
+                                },
+                            )),
+                            UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::Literal(
+                                UnresolvedStottrLiteral {
+                                    value: "asdf".to_string(),
+                                    language: None,
+                                    data_type_iri: Some(ResolvesToNamedNode::NamedNode(
+                                        NamedNode::new_unchecked(
+                                            "http://www.w3.org/2001/XMLSchema#string",
+                                        ),
+                                    )),
+                                },
+                            )),
                         ]),
                     }),
                 },
@@ -642,7 +665,9 @@ fn test_spec_lists() {
                     },
                     default_value: Some(UnresolvedDefaultValue {
                         constant_term: UnresolvedConstantTerm::ConstantList(vec![
-                            UnresolvedConstantTerm::ConstantList(vec![UnresolvedConstantTerm::ConstantList(vec![])]),
+                            UnresolvedConstantTerm::ConstantList(vec![
+                                UnresolvedConstantTerm::ConstantList(vec![]),
+                            ]),
                         ]),
                     }),
                 },
@@ -664,7 +689,7 @@ fn test_spec_more_complex_types() {
     ] ."#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -685,10 +710,12 @@ fn test_spec_more_complex_types() {
                 UnresolvedParameter {
                     optional: false,
                     non_blank: true,
-                    ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
-                        prefix: "owl".to_string(),
-                        name: "Class".to_string(),
-                    }))),
+                    ptype: Some(UnresolvedPType::BasicType(
+                        ResolvesToNamedNode::PrefixedName(PrefixedName {
+                            prefix: "owl".to_string(),
+                            name: "Class".to_string(),
+                        }),
+                    )),
                     stottr_variable: StottrVariable {
                         name: "pizza".to_string(),
                     },
@@ -697,31 +724,39 @@ fn test_spec_more_complex_types() {
                 UnresolvedParameter {
                     optional: true,
                     non_blank: true,
-                    ptype: Some(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
-                        prefix: "owl".to_string(),
-                        name: "NamedIndividual".to_string(),
-                    }))),
+                    ptype: Some(UnresolvedPType::BasicType(
+                        ResolvesToNamedNode::PrefixedName(PrefixedName {
+                            prefix: "owl".to_string(),
+                            name: "NamedIndividual".to_string(),
+                        }),
+                    )),
                     stottr_variable: StottrVariable {
                         name: "country".to_string(),
                     },
                     default_value: Some(UnresolvedDefaultValue {
-                        constant_term: UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::IRI(
-                            ResolvesToNamedNode::PrefixedName(PrefixedName {
-                                prefix: "ex".to_string(),
-                                name: "Class".to_string(),
-                            }),
-                        )),
+                        constant_term: UnresolvedConstantTerm::Constant(
+                            UnresolvedConstantLiteral::IRI(ResolvesToNamedNode::PrefixedName(
+                                PrefixedName {
+                                    prefix: "ex".to_string(),
+                                    name: "Class".to_string(),
+                                },
+                            )),
+                        ),
                     }),
                 },
                 UnresolvedParameter {
                     optional: false,
                     non_blank: false,
-                    ptype: Some(UnresolvedPType::NEListType(Box::new(UnresolvedPType::ListType(Box::new(
-                        UnresolvedPType::ListType(Box::new(UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(PrefixedName {
-                            prefix: "owl".to_string(),
-                            name: "Class".to_string(),
-                        })))),
-                    ))))),
+                    ptype: Some(UnresolvedPType::NEListType(Box::new(
+                        UnresolvedPType::ListType(Box::new(UnresolvedPType::ListType(Box::new(
+                            UnresolvedPType::BasicType(ResolvesToNamedNode::PrefixedName(
+                                PrefixedName {
+                                    prefix: "owl".to_string(),
+                                    name: "Class".to_string(),
+                                },
+                            )),
+                        )))),
+                    ))),
                     stottr_variable: StottrVariable {
                         name: "toppings".to_string(),
                     },
@@ -741,7 +776,7 @@ fn test_spec_example_1() {
     ex:template [ ] :: { ex:template((ex:template)) } ."#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -770,14 +805,16 @@ fn test_spec_example_1() {
                 }),
                 argument_list: vec![UnresolvedArgument {
                     list_expand: false,
-                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::ConstantList(vec![
-                        UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::IRI(
-                            ResolvesToNamedNode::PrefixedName(PrefixedName {
-                                prefix: "ex".to_string(),
-                                name: "template".to_string(),
-                            }),
-                        )),
-                    ])),
+                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::ConstantList(
+                        vec![UnresolvedConstantTerm::Constant(
+                            UnresolvedConstantLiteral::IRI(ResolvesToNamedNode::PrefixedName(
+                                PrefixedName {
+                                    prefix: "ex".to_string(),
+                                    name: "template".to_string(),
+                                },
+                            )),
+                        )],
+                    )),
                 }],
             }],
         })],
@@ -792,7 +829,7 @@ fn test_spec_example_2() {
     ex:template [?!?var ] :: { ex:template((((ex:template)))) } ."#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -829,16 +866,18 @@ fn test_spec_example_2() {
                 }),
                 argument_list: vec![UnresolvedArgument {
                     list_expand: false,
-                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::ConstantList(vec![
-                        UnresolvedConstantTerm::ConstantList(vec![UnresolvedConstantTerm::ConstantList(vec![
-                            UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::IRI(
-                                ResolvesToNamedNode::PrefixedName(PrefixedName {
-                                    prefix: "ex".to_string(),
-                                    name: "template".to_string(),
-                                }),
-                            )),
-                        ])]),
-                    ])),
+                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::ConstantList(
+                        vec![UnresolvedConstantTerm::ConstantList(vec![
+                            UnresolvedConstantTerm::ConstantList(vec![
+                                UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::IRI(
+                                    ResolvesToNamedNode::PrefixedName(PrefixedName {
+                                        prefix: "ex".to_string(),
+                                        name: "template".to_string(),
+                                    }),
+                                )),
+                            ]),
+                        ])],
+                    )),
                 }],
             }],
         })],
@@ -853,7 +892,7 @@ fn test_spec_example_3() {
     ex:template [ ] :: { ex:template(( ex:template )) } ."#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {
@@ -882,14 +921,16 @@ fn test_spec_example_3() {
                 }),
                 argument_list: vec![UnresolvedArgument {
                     list_expand: false,
-                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::ConstantList(vec![
-                        UnresolvedConstantTerm::Constant(UnresolvedConstantLiteral::IRI(
-                            ResolvesToNamedNode::PrefixedName(PrefixedName {
-                                prefix: "ex".to_string(),
-                                name: "template".to_string(),
-                            }),
-                        )),
-                    ])),
+                    term: UnresolvedStottrTerm::ConstantTerm(UnresolvedConstantTerm::ConstantList(
+                        vec![UnresolvedConstantTerm::Constant(
+                            UnresolvedConstantLiteral::IRI(ResolvesToNamedNode::PrefixedName(
+                                PrefixedName {
+                                    prefix: "ex".to_string(),
+                                    name: "template".to_string(),
+                                },
+                            )),
+                        )],
+                    )),
                 }],
             }],
         })],
@@ -916,7 +957,7 @@ fn test_spec_example_4() {
       } ."#;
 
     let doc = whole_stottr_doc(stottr).expect("Ok");
-    
+
     let expected = UnresolvedStottrDocument {
         directives: vec![
             Directive::Prefix(Prefix {

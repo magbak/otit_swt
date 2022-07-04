@@ -1,8 +1,8 @@
 use crate::ast::{
-    Annotation, Argument, ConstantLiteral, ConstantTerm, DefaultValue, Directive,
-    Instance, PType, Parameter, Signature, Statement, StottrDocument, StottrLiteral, StottrTerm,
-    Template,
+    Annotation, Argument, ConstantLiteral, ConstantTerm, DefaultValue, Directive, Instance, PType,
+    Parameter, Signature, Statement, StottrDocument, StottrLiteral, StottrTerm, Template,
 };
+use crate::constants::{OTTR_PREFIX, OTTR_PREFIX_IRI, XSD_PREFIX, XSD_PREFIX_IRI};
 use crate::parsing_ast::{
     ResolvesToNamedNode, UnresolvedAnnotation, UnresolvedArgument, UnresolvedBaseTemplate,
     UnresolvedConstantLiteral, UnresolvedConstantTerm, UnresolvedDefaultValue, UnresolvedInstance,
@@ -14,7 +14,6 @@ use oxrdf::{IriParseError, NamedNode};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
-use crate::constants::{OTTR_PREFIX, OTTR_PREFIX_IRI, XSD_PREFIX, XSD_PREFIX_IRI};
 
 #[derive(Debug)]
 pub struct ResolutionError {
@@ -45,7 +44,10 @@ pub(crate) fn resolve_document(
     for us in &unresolved_document.statements {
         statements.push(resolve_statement(us, &mut prefix_map)?);
     }
-    Ok(StottrDocument{ directives, statements })
+    Ok(StottrDocument {
+        directives,
+        statements,
+    })
 }
 
 fn resolve_statement(
@@ -53,9 +55,10 @@ fn resolve_statement(
     prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<Statement, ResolutionError> {
     Ok(match unresolved_statement {
-        UnresolvedStatement::Signature(s) => {
-            Statement::Template(Template { signature: resolve_signature(s, prefix_map)?, pattern_list: vec![] })
-        }
+        UnresolvedStatement::Signature(s) => Statement::Template(Template {
+            signature: resolve_signature(s, prefix_map)?,
+            pattern_list: vec![],
+        }),
         UnresolvedStatement::Template(t) => Statement::Template(resolve_template(t, prefix_map)?),
         UnresolvedStatement::BaseTemplate(b) => {
             Statement::Template(resolve_base_template(b, prefix_map)?)
@@ -70,7 +73,7 @@ fn resolve_base_template(
 ) -> Result<Template, ResolutionError> {
     Ok(Template {
         signature: resolve_signature(&unresolved_base_template.signature, prefix_map)?,
-        pattern_list: vec![]
+        pattern_list: vec![],
     })
 }
 

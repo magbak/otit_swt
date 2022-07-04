@@ -8,6 +8,7 @@ use bollard::Docker;
 use hybrid::orchestrator::execute_hybrid_query;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::static_sparql::execute_sparql_query;
+use log::debug;
 use oxrdf::{NamedNode, Term, Variable};
 use polars::prelude::{CsvReader, SerReader};
 use reqwest::header::CONTENT_TYPE;
@@ -21,7 +22,6 @@ use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
 use std::time::Duration;
-use log::{debug};
 use tokio::time::sleep;
 
 pub mod in_memory_timeseries;
@@ -60,7 +60,9 @@ fn use_logger() {
     let res = env_logger::try_init();
     match res {
         Ok(_) => {}
-        Err(_) => {debug!("Tried to initialize logger which is already initialize")}
+        Err(_) => {
+            debug!("Tried to initialize logger which is already initialize")
+        }
     }
 }
 
@@ -709,7 +711,6 @@ async fn test_pushdown_groupby_exists_aggregated_timeseries_value_hybrid_query(
     // println!("{}", df);
 }
 
-
 #[rstest]
 #[tokio::test]
 #[serial]
@@ -871,7 +872,9 @@ async fn test_minus_query(
     "#;
     let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
-        .expect("Hybrid error").sort(&["w", "v"], vec![false]).expect("Sort error");
+        .expect("Hybrid error")
+        .sort(&["w", "v"], vec![false])
+        .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_minus_query.csv");
 
@@ -881,7 +884,9 @@ async fn test_minus_query(
         .has_header(true)
         .with_parse_dates(true)
         .finish()
-        .expect("DF read error").sort(&["w", "v"], vec![false]).expect("Sort error");
+        .expect("DF read error")
+        .sort(&["w", "v"], vec![false])
+        .expect("Sort error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let writer = CsvWriter::new(file);
@@ -995,7 +1000,8 @@ async fn test_if_query(
     let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
         .expect("Hybrid error")
-        .sort(&["w", "v_with_min"], vec![false]).expect("Sort problem");
+        .sort(&["w", "v_with_min"], vec![false])
+        .expect("Sort problem");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_if_query.csv");
 
@@ -1006,7 +1012,8 @@ async fn test_if_query(
         .with_parse_dates(true)
         .finish()
         .expect("DF read error")
-        .sort(&["w", "v_with_min"], vec![false]).expect("Sort problem");
+        .sort(&["w", "v_with_min"], vec![false])
+        .expect("Sort problem");
 
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
@@ -1085,7 +1092,9 @@ async fn test_union_query(
     "#;
     let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
-        .expect("Hybrid error").sort(&["w", "v"], vec![false]).expect("Sort problem");
+        .expect("Hybrid error")
+        .sort(&["w", "v"], vec![false])
+        .expect("Sort problem");
 
     let mut file_path = testdata_path.clone();
     file_path.push("expected_union_query.csv");
@@ -1097,7 +1106,8 @@ async fn test_union_query(
         .with_parse_dates(true)
         .finish()
         .expect("DF read error")
-                .sort(&["w", "v"], vec![false]).expect("Sort problem");
+        .sort(&["w", "v"], vec![false])
+        .expect("Sort problem");
 
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
@@ -1135,7 +1145,9 @@ async fn test_coalesce_query(
     "#;
     let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
         .await
-        .expect("Hybrid error").sort(&["s1", "s2", "v1", "v2", "t"], vec![false]).expect("Sort problem");
+        .expect("Hybrid error")
+        .sort(&["s1", "s2", "v1", "v2", "t"], vec![false])
+        .expect("Sort problem");
 
     let mut file_path = testdata_path.clone();
     file_path.push("expected_coalesce_query.csv");
@@ -1147,7 +1159,8 @@ async fn test_coalesce_query(
         .with_parse_dates(true)
         .finish()
         .expect("DF read error")
-        .sort(&["s1", "s2", "v1", "v2", "t"], vec![false]).expect("Sort problem");
+        .sort(&["s1", "s2", "v1", "v2", "t"], vec![false])
+        .expect("Sort problem");
 
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");

@@ -1,8 +1,9 @@
 use crate::change_types::ChangeType;
 use crate::constants::{HAS_DATA_POINT, HAS_EXTERNAL_ID, HAS_TIMESTAMP, HAS_VALUE};
 use crate::constraints::{Constraint, VariableConstraints};
-use crate::timeseries_query::TimeSeriesQuery;
+use crate::query_context::PathEntry::ExtendExpression;
 use crate::query_context::{Context, PathEntry, VariableInContext};
+use crate::timeseries_query::TimeSeriesQuery;
 use log::debug;
 use spargebra::algebra::{
     AggregateExpression, Expression, GraphPattern, OrderExpression, PropertyPathExpression,
@@ -14,7 +15,6 @@ use spargebra::Query;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use crate::query_context::PathEntry::ExtendExpression;
 
 struct GPReturn {
     graph_pattern: Option<GraphPattern>,
@@ -796,7 +796,10 @@ impl StaticQueryRewriter {
             required_change_direction,
             &context.extension_with(PathEntry::FilterInner),
         );
-        self.pushdown_expression(expression, &context.extension_with(PathEntry::FilterExpression));
+        self.pushdown_expression(
+            expression,
+            &context.extension_with(PathEntry::FilterExpression),
+        );
         if let Some(mut gpr_inner) = inner_rewrite_opt {
             let mut expression_rewrite = self.rewrite_expression(
                 expression,
@@ -872,7 +875,8 @@ impl StaticQueryRewriter {
                     .collect();
 
                 let mut aes_rewritten: Vec<(Option<Variable>, AEReturn)> = aggregates
-                    .iter().enumerate()
+                    .iter()
+                    .enumerate()
                     .map(|(i, (v, a))| {
                         (
                             self.rewrite_variable(v, context),
@@ -1165,12 +1169,15 @@ impl StaticQueryRewriter {
         required_change_direction: &ChangeType,
         context: &Context,
     ) -> Option<GPReturn> {
-        if let Some(mut gpr_inner) =
-            self.rewrite_graph_pattern(inner, required_change_direction, &context.extension_with(PathEntry::OrderByInner))
-        {
+        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(
+            inner,
+            required_change_direction,
+            &context.extension_with(PathEntry::OrderByInner),
+        ) {
             let mut order_expressions_rewrite = order_expressions
-                .iter().enumerate()
-                .map(|(i,e)| {
+                .iter()
+                .enumerate()
+                .map(|(i, e)| {
                     self.rewrite_order_expression(
                         e,
                         &gpr_inner.variables_in_scope,
@@ -1720,12 +1727,18 @@ impl StaticQueryRewriter {
                 exr
             }
             Expression::Equal(left, right) => {
-                let mut left_rewrite =
-                    self.rewrite_expression(left, &ChangeType::NoChange, variables_in_scope,                         &context.extension_with(PathEntry::EqualLeft)
-);
-                let mut right_rewrite =
-                    self.rewrite_expression(right, &ChangeType::NoChange, variables_in_scope,                         &context.extension_with(PathEntry::EqualRight)
-);
+                let mut left_rewrite = self.rewrite_expression(
+                    left,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::EqualLeft),
+                );
+                let mut right_rewrite = self.rewrite_expression(
+                    right,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::EqualRight),
+                );
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut left_rewrite)
                     .with_pushups(&mut right_rewrite);
@@ -1747,12 +1760,18 @@ impl StaticQueryRewriter {
                 exr
             }
             Expression::SameTerm(left, right) => {
-                let mut left_rewrite =
-                    self.rewrite_expression(left, &ChangeType::NoChange, variables_in_scope,                         &context.extension_with(PathEntry::SameTermLeft)
-);
-                let mut right_rewrite =
-                    self.rewrite_expression(right, &ChangeType::NoChange, variables_in_scope,                         &context.extension_with(PathEntry::SameTermRight)
-);
+                let mut left_rewrite = self.rewrite_expression(
+                    left,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::SameTermLeft),
+                );
+                let mut right_rewrite = self.rewrite_expression(
+                    right,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::SameTermRight),
+                );
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut left_rewrite)
                     .with_pushups(&mut right_rewrite);
@@ -1777,12 +1796,18 @@ impl StaticQueryRewriter {
                 exr
             }
             Expression::Greater(left, right) => {
-                let mut left_rewrite =
-                    self.rewrite_expression(left, &ChangeType::NoChange, variables_in_scope,                         &context.extension_with(PathEntry::GreaterLeft)
-);
-                let mut right_rewrite =
-                    self.rewrite_expression(right, &ChangeType::NoChange, variables_in_scope,                         &context.extension_with(PathEntry::GreaterRight)
-);
+                let mut left_rewrite = self.rewrite_expression(
+                    left,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::GreaterLeft),
+                );
+                let mut right_rewrite = self.rewrite_expression(
+                    right,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::GreaterRight),
+                );
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut left_rewrite)
                     .with_pushups(&mut right_rewrite);
@@ -1806,11 +1831,18 @@ impl StaticQueryRewriter {
                 exr
             }
             Expression::GreaterOrEqual(left, right) => {
-                let mut left_rewrite =
-                    self.rewrite_expression(left, &ChangeType::NoChange, variables_in_scope,                         &context.extension_with(PathEntry::GreaterOrEqualLeft));
-                let mut right_rewrite =
-                    self.rewrite_expression(right, &ChangeType::NoChange, variables_in_scope,                         &context.extension_with(PathEntry::GreaterOrEqualRight)
-);
+                let mut left_rewrite = self.rewrite_expression(
+                    left,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::GreaterOrEqualLeft),
+                );
+                let mut right_rewrite = self.rewrite_expression(
+                    right,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::GreaterOrEqualRight),
+                );
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut left_rewrite)
                     .with_pushups(&mut right_rewrite);
@@ -1832,10 +1864,18 @@ impl StaticQueryRewriter {
                 exr
             }
             Expression::Less(left, right) => {
-                let mut left_rewrite =
-                    self.rewrite_expression(left, &ChangeType::NoChange, variables_in_scope,  &context.extension_with(PathEntry::LessLeft));
-                let mut right_rewrite =
-                    self.rewrite_expression(right, &ChangeType::NoChange, variables_in_scope,  &context.extension_with(PathEntry::LessLeft));
+                let mut left_rewrite = self.rewrite_expression(
+                    left,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::LessLeft),
+                );
+                let mut right_rewrite = self.rewrite_expression(
+                    right,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::LessLeft),
+                );
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut left_rewrite)
                     .with_pushups(&mut right_rewrite);
@@ -1857,10 +1897,18 @@ impl StaticQueryRewriter {
                 exr
             }
             Expression::LessOrEqual(left, right) => {
-                let mut left_rewrite =
-                    self.rewrite_expression(left, &ChangeType::NoChange, variables_in_scope,  &context.extension_with(PathEntry::LessOrEqualLeft));
-                let mut right_rewrite =
-                    self.rewrite_expression(right, &ChangeType::NoChange, variables_in_scope,  &context.extension_with(PathEntry::LessOrEqualLeft));
+                let mut left_rewrite = self.rewrite_expression(
+                    left,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::LessOrEqualLeft),
+                );
+                let mut right_rewrite = self.rewrite_expression(
+                    right,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::LessOrEqualLeft),
+                );
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut left_rewrite)
                     .with_pushups(&mut right_rewrite);
@@ -1882,11 +1930,23 @@ impl StaticQueryRewriter {
                 exr
             }
             Expression::In(left, expressions) => {
-                let mut left_rewrite =
-                    self.rewrite_expression(left, &ChangeType::NoChange, variables_in_scope,  &context.extension_with(PathEntry::InLeft));
+                let mut left_rewrite = self.rewrite_expression(
+                    left,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::InLeft),
+                );
                 let mut expressions_rewritten = expressions
-                    .iter().enumerate()
-                    .map(|(i,e)| self.rewrite_expression(e, &ChangeType::NoChange, variables_in_scope,  &context.extension_with(PathEntry::InRight(i as u16))))
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| {
+                        self.rewrite_expression(
+                            e,
+                            &ChangeType::NoChange,
+                            variables_in_scope,
+                            &context.extension_with(PathEntry::InRight(i as u16)),
+                        )
+                    })
                     .collect::<Vec<ExReturn>>();
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut left_rewrite);
@@ -1932,7 +1992,7 @@ impl StaticQueryRewriter {
                                         && x.change_type.as_ref().unwrap() != &ChangeType::NoChange
                                 })
                                 .collect(),
-                            context
+                            context,
                         );
                         {
                             let left_expression_rewrite = left_rewrite.expression.take().unwrap();
@@ -1958,10 +2018,18 @@ impl StaticQueryRewriter {
                 exr
             }
             Expression::Add(left, right) => {
-                let mut left_rewrite =
-                    self.rewrite_expression(left, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::AddLeft));
-                let mut right_rewrite =
-                    self.rewrite_expression(right, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::AddRight));
+                let mut left_rewrite = self.rewrite_expression(
+                    left,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::AddLeft),
+                );
+                let mut right_rewrite = self.rewrite_expression(
+                    right,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::AddRight),
+                );
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut left_rewrite)
                     .with_pushups(&mut right_rewrite);
@@ -1983,10 +2051,18 @@ impl StaticQueryRewriter {
                 exr
             }
             Expression::Subtract(left, right) => {
-                let mut left_rewrite =
-                    self.rewrite_expression(left, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::SubtractLeft));
-                let mut right_rewrite =
-                    self.rewrite_expression(right, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::SubtractRight));
+                let mut left_rewrite = self.rewrite_expression(
+                    left,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::SubtractLeft),
+                );
+                let mut right_rewrite = self.rewrite_expression(
+                    right,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::SubtractRight),
+                );
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut left_rewrite)
                     .with_pushups(&mut right_rewrite);
@@ -2008,10 +2084,18 @@ impl StaticQueryRewriter {
                 exr
             }
             Expression::Multiply(left, right) => {
-                let mut left_rewrite =
-                    self.rewrite_expression(left, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::MultiplyLeft));
-                let mut right_rewrite =
-                    self.rewrite_expression(right, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::MultiplyRight));
+                let mut left_rewrite = self.rewrite_expression(
+                    left,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::MultiplyLeft),
+                );
+                let mut right_rewrite = self.rewrite_expression(
+                    right,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::MultiplyRight),
+                );
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut left_rewrite)
                     .with_pushups(&mut right_rewrite);
@@ -2033,10 +2117,18 @@ impl StaticQueryRewriter {
                 exr
             }
             Expression::Divide(left, right) => {
-                let mut left_rewrite =
-                    self.rewrite_expression(left, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::DivideLeft));
-                let mut right_rewrite =
-                    self.rewrite_expression(right, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::DivideRight));
+                let mut left_rewrite = self.rewrite_expression(
+                    left,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::DivideLeft),
+                );
+                let mut right_rewrite = self.rewrite_expression(
+                    right,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::DivideRight),
+                );
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut left_rewrite)
                     .with_pushups(&mut right_rewrite);
@@ -2058,8 +2150,12 @@ impl StaticQueryRewriter {
                 exr
             }
             Expression::UnaryPlus(wrapped) => {
-                let mut wrapped_rewrite =
-                    self.rewrite_expression(wrapped, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::UnaryPlus));
+                let mut wrapped_rewrite = self.rewrite_expression(
+                    wrapped,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::UnaryPlus),
+                );
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut wrapped_rewrite);
                 if wrapped_rewrite.expression.is_some()
@@ -2076,8 +2172,12 @@ impl StaticQueryRewriter {
                 exr
             }
             Expression::UnaryMinus(wrapped) => {
-                let mut wrapped_rewrite =
-                    self.rewrite_expression(wrapped, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::UnaryMinus));
+                let mut wrapped_rewrite = self.rewrite_expression(
+                    wrapped,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::UnaryMinus),
+                );
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut wrapped_rewrite);
                 if wrapped_rewrite.expression.is_some()
@@ -2098,7 +2198,7 @@ impl StaticQueryRewriter {
                     wrapped,
                     &required_change_direction.opposite(),
                     variables_in_scope,
-                    &context.extension_with(PathEntry::Not)
+                    &context.extension_with(PathEntry::Not),
                 );
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut wrapped_rewrite);
@@ -2163,12 +2263,24 @@ impl StaticQueryRewriter {
                 exr
             }
             Expression::If(left, mid, right) => {
-                let mut left_rewrite =
-                    self.rewrite_expression(left, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::IfLeft));
-                let mut mid_rewrite =
-                    self.rewrite_expression(mid, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::IfMiddle));
-                let mut right_rewrite =
-                    self.rewrite_expression(right, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::IfRight));
+                let mut left_rewrite = self.rewrite_expression(
+                    left,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::IfLeft),
+                );
+                let mut mid_rewrite = self.rewrite_expression(
+                    mid,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::IfMiddle),
+                );
+                let mut right_rewrite = self.rewrite_expression(
+                    right,
+                    &ChangeType::NoChange,
+                    variables_in_scope,
+                    &context.extension_with(PathEntry::IfRight),
+                );
                 let mut exr = ExReturn::new();
                 exr.with_pushups(&mut left_rewrite)
                     .with_pushups(&mut mid_rewrite)
@@ -2191,17 +2303,24 @@ impl StaticQueryRewriter {
                     .with_change_type(ChangeType::NoChange);
                     return exr;
                 }
-                self.project_all_static_variables(vec![
-                    &left_rewrite,
-                    &mid_rewrite,
-                    &right_rewrite,
-                ], context);
+                self.project_all_static_variables(
+                    vec![&left_rewrite, &mid_rewrite, &right_rewrite],
+                    context,
+                );
                 exr
             }
             Expression::Coalesce(wrapped) => {
                 let mut rewritten = wrapped
-                    .iter().enumerate()
-                    .map(|(i,e)| self.rewrite_expression(e, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::Coalesce(i as u16))))
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| {
+                        self.rewrite_expression(
+                            e,
+                            &ChangeType::NoChange,
+                            variables_in_scope,
+                            &context.extension_with(PathEntry::Coalesce(i as u16)),
+                        )
+                    })
                     .collect::<Vec<ExReturn>>();
                 let mut exr = ExReturn::new();
                 for e in rewritten.iter_mut() {
@@ -2227,8 +2346,16 @@ impl StaticQueryRewriter {
             }
             Expression::FunctionCall(fun, args) => {
                 let mut args_rewritten = args
-                    .iter().enumerate()
-                    .map(|(i,e)| self.rewrite_expression(e, &ChangeType::NoChange, variables_in_scope, &context.extension_with(PathEntry::FunctionCall(i as u16))))
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| {
+                        self.rewrite_expression(
+                            e,
+                            &ChangeType::NoChange,
+                            variables_in_scope,
+                            &context.extension_with(PathEntry::FunctionCall(i as u16)),
+                        )
+                    })
                     .collect::<Vec<ExReturn>>();
                 let mut exr = ExReturn::new();
                 for arg in args_rewritten.iter_mut() {
@@ -2254,7 +2381,7 @@ impl StaticQueryRewriter {
         }
     }
 
-    fn project_all_static_variables(&mut self, rewrites: Vec<&ExReturn>, context:&Context) {
+    fn project_all_static_variables(&mut self, rewrites: Vec<&ExReturn>, context: &Context) {
         for r in rewrites {
             if let Some(expr) = &r.expression {
                 self.project_all_static_variables_in_expression(expr, context);
@@ -2270,11 +2397,18 @@ impl StaticQueryRewriter {
         required_change_direction: &ChangeType,
         context: &Context,
     ) -> Option<GPReturn> {
-        let inner_rewrite_opt =
-            self.rewrite_graph_pattern(inner, required_change_direction, &context.extension_with(PathEntry::ExtendInner));
+        let inner_rewrite_opt = self.rewrite_graph_pattern(
+            inner,
+            required_change_direction,
+            &context.extension_with(PathEntry::ExtendInner),
+        );
         if let Some(mut gpr_inner) = inner_rewrite_opt {
-            let mut expr_rewrite =
-                self.rewrite_expression(expr, &ChangeType::NoChange, &gpr_inner.variables_in_scope, &context.extension_with(PathEntry::ExtendExpression));
+            let mut expr_rewrite = self.rewrite_expression(
+                expr,
+                &ChangeType::NoChange,
+                &gpr_inner.variables_in_scope,
+                &context.extension_with(PathEntry::ExtendExpression),
+            );
             if expr_rewrite.expression.is_some() {
                 gpr_inner.variables_in_scope.insert(var.clone());
                 let inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
@@ -2293,7 +2427,12 @@ impl StaticQueryRewriter {
                 return Some(gpr_inner);
             }
         }
-        let expr_rewrite = self.rewrite_expression(expr, &ChangeType::NoChange, &HashSet::new(), &context.extension_with(ExtendExpression));
+        let expr_rewrite = self.rewrite_expression(
+            expr,
+            &ChangeType::NoChange,
+            &HashSet::new(),
+            &context.extension_with(ExtendExpression),
+        );
         if expr_rewrite.graph_pattern_pushups.len() > 0 {
             todo!("Solution will require graph pattern pushups for graph patterns!!");
         }
@@ -2308,8 +2447,11 @@ impl StaticQueryRewriter {
         required_change_direction: &ChangeType,
         context: &Context,
     ) -> Option<GPReturn> {
-        let rewrite_inner_opt =
-            self.rewrite_graph_pattern(inner, required_change_direction, &context.extension_with(PathEntry::SliceInner));
+        let rewrite_inner_opt = self.rewrite_graph_pattern(
+            inner,
+            required_change_direction,
+            &context.extension_with(PathEntry::SliceInner),
+        );
         if let Some(mut gpr_inner) = rewrite_inner_opt {
             let inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
             gpr_inner.with_graph_pattern(GraphPattern::Slice {
@@ -2328,9 +2470,11 @@ impl StaticQueryRewriter {
         required_change_direction: &ChangeType,
         context: &Context,
     ) -> Option<GPReturn> {
-        if let Some(mut gpr_inner) =
-            self.rewrite_graph_pattern(inner, required_change_direction, &context.extension_with(PathEntry::ReducedInner))
-        {
+        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(
+            inner,
+            required_change_direction,
+            &context.extension_with(PathEntry::ReducedInner),
+        ) {
             let inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
             gpr_inner.with_graph_pattern(GraphPattern::Reduced {
                 inner: Box::new(inner_graph_pattern),
@@ -2347,9 +2491,11 @@ impl StaticQueryRewriter {
         silent: &bool,
         context: &Context,
     ) -> Option<GPReturn> {
-        if let Some(mut gpr_inner) =
-            self.rewrite_graph_pattern(inner, &ChangeType::NoChange, &context.extension_with(PathEntry::ServiceInner))
-        {
+        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(
+            inner,
+            &ChangeType::NoChange,
+            &context.extension_with(PathEntry::ServiceInner),
+        ) {
             let inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
             gpr_inner.with_graph_pattern(GraphPattern::Service {
                 name: name.clone(),
@@ -2361,73 +2507,160 @@ impl StaticQueryRewriter {
         None
     }
 
-    fn project_all_static_variables_in_expression(&mut self, expr: &Expression, context:&Context) {
+    fn project_all_static_variables_in_expression(&mut self, expr: &Expression, context: &Context) {
         match expr {
             Expression::Variable(var) => {
                 self.project_variable_if_static(var, context);
             }
             Expression::Or(left, right) => {
-                self.project_all_static_variables_in_expression(left, &context.extension_with(PathEntry::OrLeft));
-                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::OrRight));
+                self.project_all_static_variables_in_expression(
+                    left,
+                    &context.extension_with(PathEntry::OrLeft),
+                );
+                self.project_all_static_variables_in_expression(
+                    right,
+                    &context.extension_with(PathEntry::OrRight),
+                );
             }
             Expression::And(left, right) => {
-                self.project_all_static_variables_in_expression(left, &context.extension_with(PathEntry::AndLeft));
-                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::AndRight));
+                self.project_all_static_variables_in_expression(
+                    left,
+                    &context.extension_with(PathEntry::AndLeft),
+                );
+                self.project_all_static_variables_in_expression(
+                    right,
+                    &context.extension_with(PathEntry::AndRight),
+                );
             }
             Expression::Equal(left, right) => {
-                self.project_all_static_variables_in_expression(left, &context.extension_with(PathEntry::EqualLeft));
-                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::EqualRight));
+                self.project_all_static_variables_in_expression(
+                    left,
+                    &context.extension_with(PathEntry::EqualLeft),
+                );
+                self.project_all_static_variables_in_expression(
+                    right,
+                    &context.extension_with(PathEntry::EqualRight),
+                );
             }
             Expression::SameTerm(left, right) => {
-                self.project_all_static_variables_in_expression(left, &context.extension_with(PathEntry::SameTermLeft));
-                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::SameTermRight));
+                self.project_all_static_variables_in_expression(
+                    left,
+                    &context.extension_with(PathEntry::SameTermLeft),
+                );
+                self.project_all_static_variables_in_expression(
+                    right,
+                    &context.extension_with(PathEntry::SameTermRight),
+                );
             }
             Expression::Greater(left, right) => {
-                self.project_all_static_variables_in_expression(left, &context.extension_with(PathEntry::GreaterLeft));
-                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::GreaterRight));
+                self.project_all_static_variables_in_expression(
+                    left,
+                    &context.extension_with(PathEntry::GreaterLeft),
+                );
+                self.project_all_static_variables_in_expression(
+                    right,
+                    &context.extension_with(PathEntry::GreaterRight),
+                );
             }
             Expression::GreaterOrEqual(left, right) => {
-                self.project_all_static_variables_in_expression(left, &context.extension_with(PathEntry::GreaterOrEqualLeft));
-                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::GreaterOrEqualRight));
+                self.project_all_static_variables_in_expression(
+                    left,
+                    &context.extension_with(PathEntry::GreaterOrEqualLeft),
+                );
+                self.project_all_static_variables_in_expression(
+                    right,
+                    &context.extension_with(PathEntry::GreaterOrEqualRight),
+                );
             }
             Expression::Less(left, right) => {
-                self.project_all_static_variables_in_expression(left, &context.extension_with(PathEntry::LessLeft));
-                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::LessRight));
+                self.project_all_static_variables_in_expression(
+                    left,
+                    &context.extension_with(PathEntry::LessLeft),
+                );
+                self.project_all_static_variables_in_expression(
+                    right,
+                    &context.extension_with(PathEntry::LessRight),
+                );
             }
             Expression::LessOrEqual(left, right) => {
-                self.project_all_static_variables_in_expression(left, &context.extension_with(PathEntry::LessOrEqualLeft));
-                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::LessOrEqualRight));
+                self.project_all_static_variables_in_expression(
+                    left,
+                    &context.extension_with(PathEntry::LessOrEqualLeft),
+                );
+                self.project_all_static_variables_in_expression(
+                    right,
+                    &context.extension_with(PathEntry::LessOrEqualRight),
+                );
             }
             Expression::In(expr, expressions) => {
-                self.project_all_static_variables_in_expression(expr, &context.extension_with(PathEntry::InLeft));
-                for (i,e) in expressions.iter().enumerate() {
-                    self.project_all_static_variables_in_expression(e, &context.extension_with(PathEntry::InRight(i as u16)));
+                self.project_all_static_variables_in_expression(
+                    expr,
+                    &context.extension_with(PathEntry::InLeft),
+                );
+                for (i, e) in expressions.iter().enumerate() {
+                    self.project_all_static_variables_in_expression(
+                        e,
+                        &context.extension_with(PathEntry::InRight(i as u16)),
+                    );
                 }
             }
             Expression::Add(left, right) => {
-                self.project_all_static_variables_in_expression(left, &context.extension_with(PathEntry::AddLeft));
-                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::AddRight));
+                self.project_all_static_variables_in_expression(
+                    left,
+                    &context.extension_with(PathEntry::AddLeft),
+                );
+                self.project_all_static_variables_in_expression(
+                    right,
+                    &context.extension_with(PathEntry::AddRight),
+                );
             }
             Expression::Subtract(left, right) => {
-                self.project_all_static_variables_in_expression(left, &context.extension_with(PathEntry::SubtractLeft));
-                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::SubtractRight));
+                self.project_all_static_variables_in_expression(
+                    left,
+                    &context.extension_with(PathEntry::SubtractLeft),
+                );
+                self.project_all_static_variables_in_expression(
+                    right,
+                    &context.extension_with(PathEntry::SubtractRight),
+                );
             }
             Expression::Multiply(left, right) => {
-                self.project_all_static_variables_in_expression(left, &context.extension_with(PathEntry::MultiplyLeft));
-                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::MultiplyRight));
+                self.project_all_static_variables_in_expression(
+                    left,
+                    &context.extension_with(PathEntry::MultiplyLeft),
+                );
+                self.project_all_static_variables_in_expression(
+                    right,
+                    &context.extension_with(PathEntry::MultiplyRight),
+                );
             }
             Expression::Divide(left, right) => {
-                self.project_all_static_variables_in_expression(left, &context.extension_with(PathEntry::DivideLeft));
-                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::DivideRight));
+                self.project_all_static_variables_in_expression(
+                    left,
+                    &context.extension_with(PathEntry::DivideLeft),
+                );
+                self.project_all_static_variables_in_expression(
+                    right,
+                    &context.extension_with(PathEntry::DivideRight),
+                );
             }
             Expression::UnaryPlus(expr) => {
-                self.project_all_static_variables_in_expression(expr, &context.extension_with(PathEntry::UnaryPlus));
+                self.project_all_static_variables_in_expression(
+                    expr,
+                    &context.extension_with(PathEntry::UnaryPlus),
+                );
             }
             Expression::UnaryMinus(expr) => {
-                self.project_all_static_variables_in_expression(expr, &context.extension_with(PathEntry::UnaryMinus));
+                self.project_all_static_variables_in_expression(
+                    expr,
+                    &context.extension_with(PathEntry::UnaryMinus),
+                );
             }
             Expression::Not(expr) => {
-                self.project_all_static_variables_in_expression(expr, &context.extension_with(PathEntry::Not));
+                self.project_all_static_variables_in_expression(
+                    expr,
+                    &context.extension_with(PathEntry::Not),
+                );
             }
             Expression::Exists(_) => {
                 todo!("Fix handling..")
@@ -2436,18 +2669,33 @@ impl StaticQueryRewriter {
                 self.project_variable_if_static(var, context);
             }
             Expression::If(left, middle, right) => {
-                self.project_all_static_variables_in_expression(left, &context.extension_with(PathEntry::IfLeft));
-                self.project_all_static_variables_in_expression(middle, &context.extension_with(PathEntry::IfMiddle));
-                self.project_all_static_variables_in_expression(right, &context.extension_with(PathEntry::IfRight));
+                self.project_all_static_variables_in_expression(
+                    left,
+                    &context.extension_with(PathEntry::IfLeft),
+                );
+                self.project_all_static_variables_in_expression(
+                    middle,
+                    &context.extension_with(PathEntry::IfMiddle),
+                );
+                self.project_all_static_variables_in_expression(
+                    right,
+                    &context.extension_with(PathEntry::IfRight),
+                );
             }
             Expression::Coalesce(expressions) => {
-                for (i,e) in expressions.iter().enumerate() {
-                    self.project_all_static_variables_in_expression(e, &context.extension_with(PathEntry::Coalesce(i as u16)));
+                for (i, e) in expressions.iter().enumerate() {
+                    self.project_all_static_variables_in_expression(
+                        e,
+                        &context.extension_with(PathEntry::Coalesce(i as u16)),
+                    );
                 }
             }
             Expression::FunctionCall(_, expressions) => {
-                for (i,e) in expressions.iter().enumerate() {
-                    self.project_all_static_variables_in_expression(e, &context.extension_with(PathEntry::FunctionCall(i as u16)));
+                for (i, e) in expressions.iter().enumerate() {
+                    self.project_all_static_variables_in_expression(
+                        e,
+                        &context.extension_with(PathEntry::FunctionCall(i as u16)),
+                    );
                 }
             }
             _ => {}
@@ -2559,7 +2807,10 @@ impl StaticQueryRewriter {
     ) {
         let mut ts_query = TimeSeriesQuery::new();
         ts_query.identifier_variable = Some(time_series_id_variable.clone());
-        ts_query.timeseries_variable = Some(VariableInContext::new(time_series_variable.clone(), context.clone()));
+        ts_query.timeseries_variable = Some(VariableInContext::new(
+            time_series_variable.clone(),
+            context.clone(),
+        ));
         self.time_series_queries.push(ts_query);
     }
 }

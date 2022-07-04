@@ -1,13 +1,16 @@
-use std::str::FromStr;
-use oxrdf::{Literal, NamedNode, Term};
 use oxrdf::vocab::xsd;
+use oxrdf::{Literal, NamedNode, Term};
 use polars::export::chrono::NaiveDateTime;
 use polars::prelude::{DataFrame, LiteralValue, NamedFrom, Series, TimeUnit};
 use sparesults::QuerySolution;
 use spargebra::algebra::GraphPattern;
 use spargebra::Query;
+use std::str::FromStr;
 
-pub(crate) fn create_static_query_result_df(static_query:&Query, static_query_solutions:Vec<QuerySolution>) -> DataFrame {
+pub(crate) fn create_static_query_result_df(
+    static_query: &Query,
+    static_query_solutions: Vec<QuerySolution>,
+) -> DataFrame {
     let column_variables;
     if let Query::Select {
         dataset: _,
@@ -18,7 +21,7 @@ pub(crate) fn create_static_query_result_df(static_query:&Query, static_query_so
         if let GraphPattern::Project { variables, .. } = pattern {
             column_variables = variables.clone();
         } else if let GraphPattern::Distinct { inner } = pattern {
-            if let GraphPattern::Project {variables, ..} = inner.as_ref() {
+            if let GraphPattern::Project { variables, .. } = inner.as_ref() {
                 column_variables = variables.clone();
             } else {
                 panic!("");
@@ -31,22 +34,21 @@ pub(crate) fn create_static_query_result_df(static_query:&Query, static_query_so
     }
 
     let mut series_vec = vec![];
-        for c in &column_variables {
-            let literal_values = static_query_solutions
-                .iter()
-                .map(|x| {
-                    if let Some(term) = x.get(c) {
-                        sparql_term_to_polars_literal_value(term)
-                    } else {
-                        LiteralValue::Null
-                    }
-                })
-                .collect();
-            let series = polars_literal_values_to_series(literal_values, c.as_str());
-            series_vec.push(series);
-        }
-        let df = DataFrame::new(series_vec)
-            .expect("Create df problem");
+    for c in &column_variables {
+        let literal_values = static_query_solutions
+            .iter()
+            .map(|x| {
+                if let Some(term) = x.get(c) {
+                    sparql_term_to_polars_literal_value(term)
+                } else {
+                    LiteralValue::Null
+                }
+            })
+            .collect();
+        let series = polars_literal_values_to_series(literal_values, c.as_str());
+        series_vec.push(series);
+    }
+    let df = DataFrame::new(series_vec).expect("Create df problem");
     df
 }
 
@@ -83,8 +85,7 @@ pub(crate) fn sparql_literal_to_polars_literal_value(lit: &Literal) -> LiteralVa
     } else if datatype == xsd::DECIMAL {
         let d = f64::from_str(value).expect("Decimal parsing error");
         LiteralValue::Float64(d)
-    }
-    else {
+    } else {
         todo!("Not implemented!")
     };
     literal_value
@@ -210,23 +211,23 @@ fn polars_literal_values_to_series(literal_values: Vec<LiteralValue>, name: &str
             }
             LiteralValue::DateTime(_, t) =>
             //TODO: Assert time unit lik??
-                {
-                    let s = Series::new(
-                        name,
-                        literal_values
-                            .into_iter()
-                            .map(|x| {
-                                if let LiteralValue::DateTime(n, t_prime) = x {
-                                    assert_eq!(t, &t_prime);
-                                    n
-                                } else {
-                                    panic!("Not possible")
-                                }
-                            })
-                            .collect::<Vec<NaiveDateTime>>(),
-                    );
-                    s
-                }
+            {
+                let s = Series::new(
+                    name,
+                    literal_values
+                        .into_iter()
+                        .map(|x| {
+                            if let LiteralValue::DateTime(n, t_prime) = x {
+                                assert_eq!(t, &t_prime);
+                                n
+                            } else {
+                                panic!("Not possible")
+                            }
+                        })
+                        .collect::<Vec<NaiveDateTime>>(),
+                );
+                s
+            }
             LiteralValue::Duration(_, _) => {
                 todo!()
             }
@@ -348,22 +349,22 @@ fn polars_literal_values_to_series(literal_values: Vec<LiteralValue>, name: &str
             }
             LiteralValue::DateTime(_, t) =>
             //TODO: Assert time unit lik??
-                {
-                    Series::new(
-                        name,
-                        literal_values
-                            .into_iter()
-                            .map(|x| {
-                                if let LiteralValue::DateTime(n, t_prime) = x {
-                                    assert_eq!(t, &t_prime);
-                                    Some(n)
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect::<Vec<Option<NaiveDateTime>>>(),
-                    )
-                }
+            {
+                Series::new(
+                    name,
+                    literal_values
+                        .into_iter()
+                        .map(|x| {
+                            if let LiteralValue::DateTime(n, t_prime) = x {
+                                assert_eq!(t, &t_prime);
+                                Some(n)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<Option<NaiveDateTime>>>(),
+                )
+            }
             LiteralValue::Duration(_, _) => {
                 todo!()
             }

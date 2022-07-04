@@ -93,6 +93,6 @@ pub(crate) fn rewrite_exists_graph_pattern(
                 aggregates: new_aggregates,
             }
         }
-        _ => {graph_pattern.clone()}
+        _ => graph_pattern.clone(),
     }
 }

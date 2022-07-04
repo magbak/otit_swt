@@ -1,10 +1,10 @@
-use std::fmt::{Display, Formatter};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Error, StatusCode};
 use sparesults::{
     ParseError, QueryResultsFormat, QueryResultsParser, QueryResultsReader, QuerySolution,
 };
 use spargebra::Query;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub struct QueryExecutionError {
@@ -23,9 +23,7 @@ pub enum QueryExecutionErrorKind {
 impl Display for QueryExecutionError {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match &self.kind {
-            QueryExecutionErrorKind::RequestError(reqerr) => {
-                 std::fmt::Display::fmt(&reqerr, f)
-            }
+            QueryExecutionErrorKind::RequestError(reqerr) => std::fmt::Display::fmt(&reqerr, f),
             QueryExecutionErrorKind::BadStatusCode(status_code) => {
                 std::fmt::Display::fmt(&status_code, f)
             }
@@ -42,8 +40,7 @@ impl Display for QueryExecutionError {
     }
 }
 
-impl std::error::Error for QueryExecutionError {
-}
+impl std::error::Error for QueryExecutionError {}
 
 pub async fn execute_sparql_query(
     endpoint: &str,

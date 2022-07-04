@@ -1,6 +1,5 @@
-use oxrdf::{BlankNode, NamedNode};
 use crate::ast::{Directive, ListExpanderType, StottrVariable};
-
+use oxrdf::{BlankNode, NamedNode};
 
 #[derive(PartialEq, Debug)]
 pub enum UnresolvedStatement {

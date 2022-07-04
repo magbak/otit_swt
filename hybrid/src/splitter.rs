@@ -1,5 +1,5 @@
-use std::error::Error;
 use spargebra::{ParseError, Query};
+use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 
 #[derive(Debug)]
@@ -28,8 +28,7 @@ impl Display for SelectQueryError {
     }
 }
 
-impl Error for SelectQueryError {
-}
+impl Error for SelectQueryError {}
 
 pub fn parse_sparql_select_query(query_str: &str) -> Result<Query, SelectQueryError> {
     let q_res = Query::parse(query_str, None);

@@ -1,6 +1,10 @@
 extern crate nom;
 
-use crate::ast::{Aggregation, ArrowType, BooleanOperator, ConditionedPath, Connective, ConnectiveType, DataType, ElementConstraint, Glue, GraphPathPattern, Group, InputOutput, LiteralData, Path, PathElement, PathElementOrConnective, PathOrLiteralData, TsApi, TsQuery, TypedLabel};
+use crate::ast::{
+    Aggregation, ArrowType, BooleanOperator, ConditionedPath, Connective, ConnectiveType, DataType,
+    ElementConstraint, Glue, GraphPathPattern, Group, InputOutput, LiteralData, Path, PathElement,
+    PathElementOrConnective, PathOrLiteralData, TsApi, TsQuery, TypedLabel,
+};
 use chrono::{DateTime, Utc};
 use dateparser::DateTimeUtc;
 use nom::branch::alt;
@@ -60,9 +64,13 @@ fn type_constraint(t: &str) -> IResult<&str, ElementConstraint> {
     Ok((t, ElementConstraint::TypeName(f.to_string() + s)))
 }
 
-fn type_and_name_constraint(tn:&str) -> IResult<&str, ElementConstraint> {
-    let (tn, (_,n,_,_,t)) = tuple((tag("\""), alphanumeric1, tag("\""), char(':'), alpha1))(tn)?;
-    Ok((tn, ElementConstraint::TypeNameAndName(n.to_string(), t.to_string())))
+fn type_and_name_constraint(tn: &str) -> IResult<&str, ElementConstraint> {
+    let (tn, (_, n, _, _, t)) =
+        tuple((tag("\""), alphanumeric1, tag("\""), char(':'), alpha1))(tn)?;
+    Ok((
+        tn,
+        ElementConstraint::TypeNameAndName(n.to_string(), t.to_string()),
+    ))
 }
 
 fn element_constraint(e: &str) -> IResult<&str, PathElement> {
@@ -81,7 +89,10 @@ fn path_element(p: &str) -> IResult<&str, PathElement> {
 
 fn singleton_path(p: &str) -> IResult<&str, Path> {
     let (p, el) = path_element(p)?;
-    Ok((p, Path::from_vec(vec![PathElementOrConnective::PathElement(el)])))
+    Ok((
+        p,
+        Path::from_vec(vec![PathElementOrConnective::PathElement(el)]),
+    ))
 }
 
 fn path_triple(p: &str) -> IResult<&str, Path> {
@@ -98,11 +109,11 @@ fn path(p: &str) -> IResult<&str, Path> {
 }
 
 fn questionable_path(p: &str) -> IResult<&str, Path> {
-    let (p, (mut pa, qm)) = tuple((path,opt(pair(space0, char('?')))))(p)?;
+    let (p, (mut pa, qm)) = tuple((path, opt(pair(space0, char('?')))))(p)?;
     if qm.is_some() {
         pa.optional = true;
     }
-    Ok((p,pa))
+    Ok((p, pa))
 }
 
 fn numeric_literal(l: &str) -> IResult<&str, LiteralData> {
@@ -164,8 +175,13 @@ fn path_or_literal(pl: &str) -> IResult<&str, PathOrLiteralData> {
 }
 
 fn conditioned_path(cp: &str) -> IResult<&str, ConditionedPath> {
-    let (cp, (p, _, bop, _, pol)) =
-        tuple((questionable_path, space0, boolean_operator, space0, path_or_literal))(cp)?;
+    let (cp, (p, _, bop, _, pol)) = tuple((
+        questionable_path,
+        space0,
+        boolean_operator,
+        space0,
+        path_or_literal,
+    ))(cp)?;
     Ok((cp, ConditionedPath::new(p, bop, pol)))
 }
 
@@ -256,8 +272,14 @@ fn aggregation(a: &str) -> IResult<&str, Aggregation> {
 }
 
 pub fn ts_query(t: &str) -> IResult<&str, TsQuery> {
-    let (t, (_, graph_pattern,  from_datetime, to_datetime,group, aggregation)) =
-        tuple((many0(newline), graph_pattern, opt(from), opt(to), opt(group), opt(aggregation)))(t)?;
+    let (t, (_, graph_pattern, from_datetime, to_datetime, group, aggregation)) = tuple((
+        many0(newline),
+        graph_pattern,
+        opt(from),
+        opt(to),
+        opt(group),
+        opt(aggregation),
+    ))(t)?;
     Ok((
         t,
         TsQuery::new(
@@ -280,19 +302,29 @@ fn arrow(a: &str) -> IResult<&str, ArrowType> {
     Ok((a, ArrowType::new(arrow)))
 }
 
-fn typed_label(t:&str) -> IResult<&str, TypedLabel> {
-    let (t, (label,_,data_type)) = tuple((alpha1, char(':'), data_type))(t)?;
+fn typed_label(t: &str) -> IResult<&str, TypedLabel> {
+    let (t, (label, _, data_type)) = tuple((alpha1, char(':'), data_type))(t)?;
     Ok((t, TypedLabel::new(label, data_type)))
 }
 
 fn input_output(io: &str) -> IResult<&str, InputOutput> {
-    let (io, (_, path, _, arrow_type,_, label,_,_)) = tuple((space0, questionable_path, space1, arrow, space1, typed_label, space0, many0(newline)))(io)?;
+    let (io, (_, path, _, arrow_type, _, label, _, _)) = tuple((
+        space0,
+        questionable_path,
+        space1,
+        arrow,
+        space1,
+        typed_label,
+        space0,
+        many0(newline),
+    ))(io)?;
     Ok((io, InputOutput::new(path, arrow_type, label)))
 }
 
 pub fn ts_api(a: &str) -> IResult<&str, TsApi> {
-    let (a, (_,_,inputs_outputs, group)) = tuple((space0, many0(newline), many1(input_output), group))(a)?;
-    Ok((a,TsApi::new(inputs_outputs, group)))
+    let (a, (_, _, inputs_outputs, group)) =
+        tuple((space0, many0(newline), many1(input_output), group))(a)?;
+    Ok((a, TsApi::new(inputs_outputs, group)))
 }
 
 #[test]

@@ -2,11 +2,11 @@ use crate::constraints::{Constraint, VariableConstraints};
 use crate::find_query_variables::{
     find_all_used_variables_in_expression, find_all_used_variables_in_graph_pattern,
 };
-use crate::timeseries_query::TimeSeriesQuery;
 use crate::query_context::{Context, ExpressionInContext, PathEntry};
+use crate::timeseries_query::TimeSeriesQuery;
 use oxrdf::Variable;
 use polars::prelude::{ChunkAgg, DataFrame};
-use spargebra::algebra::{GraphPattern};
+use spargebra::algebra::GraphPattern;
 use spargebra::Query;
 use std::collections::HashSet;
 
@@ -27,7 +27,7 @@ pub(crate) fn find_all_groupby_pushdowns(
             static_query_df,
             time_series_queries,
             variable_constraints,
-            &Context::new()
+            &Context::new(),
         )
     }
 }
@@ -53,7 +53,7 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                                &context.extension_with(PathEntry::JoinRightSide)
+                &context.extension_with(PathEntry::JoinRightSide),
             );
         }
         GraphPattern::LeftJoin { left, right, .. } => {
@@ -103,7 +103,7 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                                &context.extension_with(PathEntry::GraphInner)
+                &context.extension_with(PathEntry::GraphInner),
             );
         }
         GraphPattern::Extend { inner, .. } => {
@@ -189,7 +189,15 @@ fn find_groupby_pushdowns_in_graph_pattern(
             let vs_and_cs: Vec<(Variable, Constraint)> = used_vars
                 .iter()
                 .filter(|v| variable_constraints.contains(v, context))
-                .map(|v| (v.clone(), variable_constraints.get_constraint(v, context).unwrap().clone()))
+                .map(|v| {
+                    (
+                        v.clone(),
+                        variable_constraints
+                            .get_constraint(v, context)
+                            .unwrap()
+                            .clone(),
+                    )
+                })
                 .collect();
             'outer: for tsq in time_series_queries {
                 for (v, c) in &vs_and_cs {
@@ -231,7 +239,12 @@ fn find_groupby_pushdowns_in_graph_pattern(
                     }
                 }
                 let mut timeseries_funcs = vec![];
-                find_all_timeseries_funcs_in_graph_pattern(inner, &mut timeseries_funcs, tsq, &context.extension_with(PathEntry::GroupInner));
+                find_all_timeseries_funcs_in_graph_pattern(
+                    inner,
+                    &mut timeseries_funcs,
+                    tsq,
+                    &context.extension_with(PathEntry::GroupInner),
+                );
                 let mut static_grouping_variables = vec![];
                 let mut dynamic_grouping_variables = vec![];
                 'forvar: for v in variables {
@@ -267,7 +280,13 @@ fn find_groupby_pushdowns_in_graph_pattern(
                     if !static_grouping_variables.is_empty() {
                         by.push(tsq.identifier_variable.as_ref().unwrap().clone());
                     }
-                    tsq.try_pushdown_aggregates(aggregates, graph_pattern, timeseries_funcs, by, context);
+                    tsq.try_pushdown_aggregates(
+                        aggregates,
+                        graph_pattern,
+                        timeseries_funcs,
+                        by,
+                        context,
+                    );
                 }
             }
         }
@@ -283,26 +302,66 @@ fn find_all_timeseries_funcs_in_graph_pattern(
 ) {
     match graph_pattern {
         GraphPattern::Join { left, right } => {
-            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq, &context.extension_with(PathEntry::JoinLeftSide));
-            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq, &context.extension_with(PathEntry::JoinRightSide));
+            find_all_timeseries_funcs_in_graph_pattern(
+                left,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::JoinLeftSide),
+            );
+            find_all_timeseries_funcs_in_graph_pattern(
+                right,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::JoinRightSide),
+            );
         }
         GraphPattern::LeftJoin {
             left,
             right,
             expression: _,
         } => {
-            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq, &context.extension_with(PathEntry::LeftJoinLeftSide));
-            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq, &context.extension_with(PathEntry::LeftJoinRightSide));
+            find_all_timeseries_funcs_in_graph_pattern(
+                left,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::LeftJoinLeftSide),
+            );
+            find_all_timeseries_funcs_in_graph_pattern(
+                right,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::LeftJoinRightSide),
+            );
         }
         GraphPattern::Filter { inner, .. } => {
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::FilterInner));
+            find_all_timeseries_funcs_in_graph_pattern(
+                inner,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::FilterInner),
+            );
         }
         GraphPattern::Union { left, right } => {
-            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq, &context.extension_with(PathEntry::UnionLeftSide));
-            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq, &context.extension_with(PathEntry::UnionRightSide));
+            find_all_timeseries_funcs_in_graph_pattern(
+                left,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::UnionLeftSide),
+            );
+            find_all_timeseries_funcs_in_graph_pattern(
+                right,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::UnionRightSide),
+            );
         }
         GraphPattern::Graph { inner, .. } => {
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::GraphInner));
+            find_all_timeseries_funcs_in_graph_pattern(
+                inner,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::GraphInner),
+            );
         }
         GraphPattern::Extend {
             inner,
@@ -310,7 +369,12 @@ fn find_all_timeseries_funcs_in_graph_pattern(
             expression,
         } => {
             //Very important to process inner first here to detect nested functions.
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::ExtendInner));
+            find_all_timeseries_funcs_in_graph_pattern(
+                inner,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::ExtendInner),
+            );
             let mut function_vars = HashSet::new();
             find_all_used_variables_in_expression(expression, &mut function_vars);
             if !function_vars.is_empty() {
@@ -336,35 +400,78 @@ fn find_all_timeseries_funcs_in_graph_pattern(
                     }
                 }
                 if exists_var_in_timeseries {
-                    timeseries_funcs.push((variable.clone(), ExpressionInContext::new(expression.clone(), context.clone())))
+                    timeseries_funcs.push((
+                        variable.clone(),
+                        ExpressionInContext::new(expression.clone(), context.clone()),
+                    ))
                 }
             }
         }
         GraphPattern::Minus { left, right } => {
-            find_all_timeseries_funcs_in_graph_pattern(left, timeseries_funcs, tsq, &context.extension_with(PathEntry::MinusLeftSide));
-            find_all_timeseries_funcs_in_graph_pattern(right, timeseries_funcs, tsq, &context.extension_with(PathEntry::MinusRightSide));
+            find_all_timeseries_funcs_in_graph_pattern(
+                left,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::MinusLeftSide),
+            );
+            find_all_timeseries_funcs_in_graph_pattern(
+                right,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::MinusRightSide),
+            );
         }
         GraphPattern::OrderBy {
             inner,
             expression: _,
         } => {
             //No ordering expressions should be pushed down, not supported
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::OrderByInner));
+            find_all_timeseries_funcs_in_graph_pattern(
+                inner,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::OrderByInner),
+            );
         }
         GraphPattern::Project { inner, .. } => {
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::ProjectInner));
+            find_all_timeseries_funcs_in_graph_pattern(
+                inner,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::ProjectInner),
+            );
         }
         GraphPattern::Distinct { inner } => {
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::DistinctInner));
+            find_all_timeseries_funcs_in_graph_pattern(
+                inner,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::DistinctInner),
+            );
         }
         GraphPattern::Reduced { inner } => {
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::ReducedInner));
+            find_all_timeseries_funcs_in_graph_pattern(
+                inner,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::ReducedInner),
+            );
         }
         GraphPattern::Slice { inner, .. } => {
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::SliceInner));
+            find_all_timeseries_funcs_in_graph_pattern(
+                inner,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::SliceInner),
+            );
         }
         GraphPattern::Group { inner, .. } => {
-            find_all_timeseries_funcs_in_graph_pattern(inner, timeseries_funcs, tsq, &context.extension_with(PathEntry::GroupInner));
+            find_all_timeseries_funcs_in_graph_pattern(
+                inner,
+                timeseries_funcs,
+                tsq,
+                &context.extension_with(PathEntry::GroupInner),
+            );
         }
         _ => {}
     }

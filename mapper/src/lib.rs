@@ -1,5 +1,6 @@
 #[cfg(test)]
-#[macro_use] extern crate unic_char_range;
+#[macro_use]
+extern crate unic_char_range;
 extern crate core;
 
 extern crate chrono;
@@ -10,12 +11,12 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+pub mod ast;
+mod constants;
+pub mod document;
+pub mod mapping;
+mod ntriples_write;
 pub mod parser;
 pub mod parsing_ast;
-pub mod templates;
-pub mod mapping;
-pub mod ast;
 pub mod resolver;
-mod constants;
-mod ntriples_write;
-pub mod document;
+pub mod templates;
