@@ -370,7 +370,7 @@ ex:ExampleTemplate [
             )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasDateTime"),
             object: Term::Literal(Literal::new_typed_literal(
-                "2022-07-03T10:06:20+01:00",
+                "2022-07-03T10:06:20+02:00",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#dateTimeStamp"),
             )),
         },
@@ -380,7 +380,7 @@ ex:ExampleTemplate [
             )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasDateTime"),
             object: Term::Literal(Literal::new_typed_literal(
-                "2022-07-03T10:06:21+01:00",
+                "2022-07-03T10:06:21+02:00",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#dateTimeStamp"),
             )),
         },

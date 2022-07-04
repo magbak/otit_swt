@@ -2,10 +2,11 @@ use crate::ast::{
     ConstantLiteral, ConstantTerm, Instance, PType, Parameter, Signature, StottrTerm,
 };
 use crate::chrono::TimeZone as ChronoTimeZone;
-use crate::constants::{OTTR_TRIPLE, XSD_DATETIME_WITHOUT_TZ_FORMAT};
+use crate::constants::{OTTR_TRIPLE, XSD_DATETIME_WITHOUT_TZ_FORMAT, XSD_DATETIME_WITH_TZ_FORMAT};
 use crate::document::document_from_str;
 use crate::ntriples_write::write_ntriples;
 use crate::templates::TemplateDataset;
+use chrono::{Datelike, Timelike};
 use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, Literal, NamedNode, Subject, Term, Triple};
 use polars::export::rayon::iter::ParallelIterator;
@@ -721,14 +722,24 @@ fn hack_format_timestamp_with_timezone(
     let timezone_opt: Result<chrono_tz::Tz, _> = tz.parse();
     if let Ok(timezone) = timezone_opt {
         let dt = timezone.ymd(2020, 12, 06).and_hms(1, 2, 3);
-        let ts_offset = format!("{}", dt.format("%:z"));
+        //let ts_offset = format!("{}", dt.format("%:z"));
 
-        let datetime_strings = series
-            .datetime()
-            .unwrap()
-            .strftime(XSD_DATETIME_WITHOUT_TZ_FORMAT)
-            .apply(|x| (x.to_string() + &ts_offset).into())
-            .into_series();
+        let datetime_strings = Series::from_iter(
+            series
+                .datetime()
+                .unwrap()
+                .as_datetime_iter()
+                .map(|x| x.unwrap())
+                .map(|x| {
+                    format!(
+                        "{}",
+                        timezone
+                            .ymd(x.year(), x.month(), x.day())
+                            .and_hms(x.hour(), x.minute(), x.second())
+                            .format(XSD_DATETIME_WITH_TZ_FORMAT)
+                    )
+                }),
+        );
 
         Ok(datetime_strings)
     } else {
