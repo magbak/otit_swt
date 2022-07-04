@@ -16,20 +16,19 @@ use oxrdf::{BlankNode, Literal, NamedNode, Subject, Term, Triple};
 use polars::export::rayon::iter::ParallelIterator;
 use polars::lazy::prelude::{as_struct, col, concat, Expr, LiteralValue};
 use polars::prelude::{
-    concat_str, AnyValue, BooleanChunked, DataFrame, DataType, Field, IntoLazy, LazyFrame,
-    PolarsError, Series, SeriesOps,
+    concat_lst, concat_str, AnyValue, BooleanChunked, DataFrame, DataType, Field, IntoLazy,
+    LazyFrame, PolarsError, Series, SeriesOps,
 };
 use polars::prelude::{IntoSeries, NoEq, StructChunked};
 use polars::toggle_string_cache;
-use polars_core::prelude::{ChunkApply, TimeZone};
+use polars_core::prelude::{ChunkApply, NamedFrom, TimeZone};
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::io::Write;
-use std::ops::Not;
+use std::ops::{Deref, Not};
 use std::path::Path;
-use uuid::Uuid;
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
@@ -991,39 +990,40 @@ fn constant_to_expr(
                 PType::BasicType(NamedNode::new_unchecked(BLANK_NODE_IRI)),
                 RDFNodeType::BlankNode,
             ),
-            ConstantLiteral::Literal(lit) => (
-                as_struct(&[
-                    Expr::Literal(LiteralValue::Utf8(lit.value.to_string())),
-                    Expr::Literal(if let Some(lang) = &lit.language {
-                        LiteralValue::Utf8(lang.clone())
-                    } else {
-                        LiteralValue::Null
-                    }),
-                    Expr::Literal(if let Some(dt) = &lit.data_type_iri {
-                        LiteralValue::Utf8(dt.as_str().to_string())
-                    } else {
-                        panic!("literal in invalid state")
-                    }),
-                ]),
-                PType::BasicType(lit.data_type_iri.as_ref().unwrap().clone()),
-                RDFNodeType::Literal,
-            ),
-            ConstantLiteral::None => {
-                ((
-                    Expr::Literal(LiteralValue::Null),
-                    PType::BasicType(NamedNode::new_unchecked(NONE_IRI)),
-                    RDFNodeType::None,
-                ))
+            ConstantLiteral::Literal(lit) => {
+                let value_series = Series::new_empty("lexical_form", &DataType::Utf8)
+                    .extend_constant(AnyValue::Utf8(lit.value.as_str()), 1)
+                    .unwrap();
+                let language_series = Series::full_null(&"language_tag", 1, &DataType::Utf8);
+                let data_type_series = Series::new_empty("datatype_iri", &DataType::Utf8)
+                    .extend_constant(
+                        AnyValue::Utf8(lit.data_type_iri.as_ref().unwrap().as_str()),
+                        1,
+                    )
+                    .unwrap();
+                let struct_series = StructChunked::new(
+                    "stuct_chunked",
+                    &[value_series, language_series, data_type_series],
+                )
+                .unwrap()
+                .into_series();
+
+                (
+                    Expr::Literal(LiteralValue::Series(NoEq::new(struct_series))),
+                    PType::BasicType(lit.data_type_iri.as_ref().unwrap().clone()),
+                    RDFNodeType::Literal,
+                )
             }
+            ConstantLiteral::None => (
+                Expr::Literal(LiteralValue::Null),
+                PType::BasicType(NamedNode::new_unchecked(NONE_IRI)),
+                RDFNodeType::None,
+            ),
         },
         ConstantTerm::ConstantList(inner) => {
-            let mut dummy_series = Series::from_iter((0..1).map(|i| i as u32));
-            dummy_series.rename("dummy");
-            let mut dummy_df = DataFrame::new(vec![dummy_series]).unwrap();
             let mut expressions = vec![];
             let mut last_ptype = None;
             let mut last_rdf_node_type = None;
-            let mut id_vars = vec![];
             for (i, ct) in inner.iter().enumerate() {
                 let (constant_expr, actual_ptype, rdf_node_type) = constant_to_expr(ct, ptype_opt);
                 if last_ptype.is_none() {
@@ -1032,28 +1032,38 @@ fn constant_to_expr(
                     todo!()
                 }
                 last_rdf_node_type = Some(rdf_node_type);
-                let id_var = format!("{:0>9}", i);
-                expressions.push(constant_expr.alias(&id_var));
-                id_vars.push(id_var);
+                expressions.push(constant_expr);
             }
-            dummy_df = dummy_df.lazy().with_columns(expressions).collect().unwrap();
-            dummy_df = dummy_df.melt(["dummy"], id_vars.as_slice()).unwrap();
-            dummy_df = dummy_df
-                .sort(["variable"], vec![false])
-                .unwrap()
-                .drop("variable")
-                .unwrap();
-            dummy_df = dummy_df
-                .groupby_stable(["dummy"])
-                .unwrap()
-                .agg_list()
-                .unwrap();
-            let out_series = dummy_df.column("value_agg_list").unwrap().clone();
-            (
-                Expr::Literal(LiteralValue::Series(NoEq::new(out_series))),
-                PType::ListType(Box::new(last_ptype.unwrap())),
-                last_rdf_node_type.unwrap(),
-            )
+            let out_ptype = PType::ListType(Box::new(last_ptype.unwrap()));
+            let out_rdf_node_type = last_rdf_node_type.as_ref().unwrap().clone();
+
+            //Workaround for ArrowError(NotYetImplemented("Cannot cast to struct from other types"))
+            if last_rdf_node_type.as_ref().unwrap() == &RDFNodeType::Literal {
+                let mut all_series = vec![];
+                for ex in &expressions {
+                    if let Expr::Literal(inner) = ex {
+                        if let LiteralValue::Series(series) = inner {
+                            all_series.push(series.deref().clone())
+                        } else {
+                            panic!("Should never happen");
+                        }
+                    } else {
+                        panic!("Should also never happen");
+                    }
+                }
+                let mut first = all_series.remove(0);
+                for s in &all_series {
+                    first.append(s).unwrap();
+                }
+                let out_series = first.to_list().unwrap().into_series();
+                (
+                    Expr::Literal(LiteralValue::Series(NoEq::new(out_series))),
+                    out_ptype,
+                    out_rdf_node_type,
+                )
+            } else {
+                (concat_lst(expressions), out_ptype, out_rdf_node_type)
+            }
         }
     };
     if let Some(ptype_in) = ptype_opt {

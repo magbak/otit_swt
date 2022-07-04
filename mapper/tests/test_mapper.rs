@@ -119,6 +119,73 @@ fn test_all_iri_case() {
 
 #[rstest]
 #[serial]
+fn test_const_list_case() {
+    let t_str = r#"
+    @prefix ex:<http://example.net/ns#>.
+
+    ex:ExampleTemplate [xsd:anyURI ?var1]
+      :: {
+        cross | ottr:Triple(?var1, ex:hasNumber, ++(1,2))
+      } .
+    "#;
+
+    let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
+    k.rename("Key");
+    let mut v1 = Series::from_iter([
+        "http://example.net/ns#OneThing",
+        "http://example.net/ns#AnotherThing",
+    ]);
+    v1.rename("var1");
+    let series = [k, v1];
+    let df = DataFrame::from_iter(series);
+
+    let mut mapping = Mapping::from_str(&t_str).unwrap();
+    let report = mapping
+        .expand(
+            &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
+            df,
+        )
+        .expect("");
+    let triples = mapping.to_triples();
+    //println!("{:?}", triples);
+    let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
+    let expected_triples_set = HashSet::from([
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#OneThing")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumber"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "1",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#integer"),
+            )),        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#OneThing")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumber"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "2",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#integer"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#AnotherThing")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumber"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "1",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#integer"),
+            )),        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#AnotherThing")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumber"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "2",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#integer"),
+            )),
+        },
+    ]);
+    assert_eq!(expected_triples_set, actual_triples_set);
+}
+
+#[rstest]
+#[serial]
 fn test_nested_templates() {
     let stottr = r#"
 @prefix ex:<http://example.net/ns#>.
