@@ -4,7 +4,7 @@ use crate::ast::{
 };
 use crate::chrono::TimeZone as ChronoTimeZone;
 use crate::constants::{
-    BLANK_NODE_IRI, BLANK_NODE_SEPARATOR, NONE_IRI, OTTR_TRIPLE, XSD_DATETIME_WITHOUT_TZ_FORMAT,
+    BLANK_NODE_IRI, NONE_IRI, OTTR_TRIPLE, XSD_DATETIME_WITHOUT_TZ_FORMAT,
     XSD_DATETIME_WITH_TZ_FORMAT,
 };
 use crate::document::document_from_str;
@@ -14,15 +14,14 @@ use chrono::{Datelike, Timelike};
 use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, Literal, NamedNode, Subject, Term, Triple};
 use polars::export::rayon::iter::ParallelIterator;
-use polars::lazy::prelude::{as_struct, col, concat, Expr, LiteralValue};
+use polars::lazy::prelude::{col, concat, Expr, LiteralValue};
 use polars::prelude::{
     concat_lst, concat_str, AnyValue, BooleanChunked, DataFrame, DataType, Field, IntoLazy,
     LazyFrame, PolarsError, Series, SeriesOps,
 };
 use polars::prelude::{IntoSeries, NoEq, StructChunked};
 use polars::toggle_string_cache;
-use polars_core::prelude::{ChunkApply, NamedFrom, TimeZone};
-use std::any::Any;
+use polars_core::prelude::{ChunkApply, TimeZone};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
@@ -52,6 +51,8 @@ pub enum MappingErrorType {
     PTypeNotSupported(String, PType),
     UnknownTimeZoneError(String),
     UnknownVariableError(String),
+    ConstantDoesNotMatchDataType(ConstantTerm, PType, PType),
+    ConstantListHasInconsistentPType(ConstantTerm, PType, PType),
 }
 
 #[derive(Debug)]
@@ -126,6 +127,20 @@ impl Display for MappingError {
                     f,
                     "Could not find variable {}, is the stottr template invalid?",
                     v
+                )
+            }
+            MappingErrorType::ConstantDoesNotMatchDataType(constant_term, expected, actual) => {
+                write!(
+                    f,
+                    "Expected constant term {:?} to have data type {} but was {}",
+                    constant_term, expected, actual
+                )
+            }
+            MappingErrorType::ConstantListHasInconsistentPType(constant_term, prev, next) => {
+                write!(
+                    f,
+                    "Constant term {:?} has inconsistent data types {} and {}",
+                    constant_term, prev, next
                 )
             }
         }
@@ -620,7 +635,7 @@ fn create_remapped_lazy_frame(
                 }
             }
             StottrTerm::ConstantTerm(ct) => {
-                let (expr, _, rdf_node_type) = constant_to_expr(ct, &target.ptype);
+                let (expr, _, rdf_node_type) = constant_to_expr(ct, &target.ptype)?;
                 let mapped_column =
                     MappedColumn::PrimitiveColumn(PrimitiveColumn { rdf_node_type });
                 expressions.push(expr.alias(&target.stottr_variable.name));
@@ -650,13 +665,16 @@ fn create_remapped_lazy_frame(
         let to_expand_cols: Vec<Expr> = to_expand.iter().map(|x| col(x)).collect();
         match le {
             ListExpanderType::Cross => {
-                lf = lf.explode(to_expand_cols);
+                for c in to_expand_cols {
+                    lf = lf.explode(vec![c]);
+                }
             }
             ListExpanderType::ZipMin => {
-                todo!()
+                lf = lf.explode(to_expand_cols.clone());
+                lf = lf.drop_nulls(Some(to_expand_cols));
             }
             ListExpanderType::ZipMax => {
-                todo!()
+                lf = lf.explode(to_expand_cols);
             }
         }
     }
@@ -821,7 +839,7 @@ fn convert_nonlist_series_to_value_struct_if_required(
         }
     } else if nn.as_str() == xsd::STRING.as_str() {
         if series_data_type == &DataType::Utf8 {
-            series.clone() //TODO: Superfluous copy..
+            series.clone()
         } else {
             return Err(mismatch_error());
         }
@@ -858,7 +876,9 @@ fn convert_nonlist_series_to_value_struct_if_required(
     if rdf_node_type == RDFNodeType::Literal {
         new_series.rename("lexical_form");
         //TODO: Allow language to be set perhaps as an argument
-        let language_series = Series::full_null(&"language_tag", series.len(), &DataType::Utf8);
+        let language_series = Series::new_empty(&"language_tag", &DataType::Utf8)
+            .extend_constant(AnyValue::Utf8(""), series.len())
+            .unwrap();
         let data_type_series = Series::new_empty("datatype_iri", &DataType::Utf8)
             .extend_constant(AnyValue::Utf8(nn.as_str()), series.len())
             .unwrap();
@@ -977,7 +997,7 @@ fn literal_struct_fields() -> Vec<Field> {
 fn constant_to_expr(
     constant_term: &ConstantTerm,
     ptype_opt: &Option<PType>,
-) -> (Expr, PType, RDFNodeType) {
+) -> Result<(Expr, PType, RDFNodeType), MappingError> {
     let (expr, ptype, rdf_node_type) = match constant_term {
         ConstantTerm::Constant(c) => match c {
             ConstantLiteral::IRI(iri) => (
@@ -994,7 +1014,9 @@ fn constant_to_expr(
                 let value_series = Series::new_empty("lexical_form", &DataType::Utf8)
                     .extend_constant(AnyValue::Utf8(lit.value.as_str()), 1)
                     .unwrap();
-                let language_series = Series::full_null(&"language_tag", 1, &DataType::Utf8);
+                let language_series = Series::new_empty(&"language_tag", &DataType::Utf8)
+                    .extend_constant(AnyValue::Utf8(""), 1)
+                    .unwrap();
                 let data_type_series = Series::new_empty("datatype_iri", &DataType::Utf8)
                     .extend_constant(
                         AnyValue::Utf8(lit.data_type_iri.as_ref().unwrap().as_str()),
@@ -1024,12 +1046,18 @@ fn constant_to_expr(
             let mut expressions = vec![];
             let mut last_ptype = None;
             let mut last_rdf_node_type = None;
-            for (i, ct) in inner.iter().enumerate() {
-                let (constant_expr, actual_ptype, rdf_node_type) = constant_to_expr(ct, ptype_opt);
+            for ct in inner {
+                let (constant_expr, actual_ptype, rdf_node_type) = constant_to_expr(ct, ptype_opt)?;
                 if last_ptype.is_none() {
                     last_ptype = Some(actual_ptype);
                 } else if last_ptype.as_ref().unwrap() != &actual_ptype {
-                    todo!()
+                    return Err(MappingError {
+                        kind: MappingErrorType::ConstantListHasInconsistentPType(
+                            constant_term.clone(),
+                            last_ptype.as_ref().unwrap().clone(),
+                            actual_ptype.clone(),
+                        ),
+                    });
                 }
                 last_rdf_node_type = Some(rdf_node_type);
                 expressions.push(constant_expr);
@@ -1068,10 +1096,16 @@ fn constant_to_expr(
     };
     if let Some(ptype_in) = ptype_opt {
         if ptype_in != &ptype {
-            todo!();
+            return Err(MappingError {
+                kind: MappingErrorType::ConstantDoesNotMatchDataType(
+                    constant_term.clone(),
+                    ptype_in.clone(),
+                    ptype.clone(),
+                ),
+            });
         }
     }
-    (expr, ptype, rdf_node_type)
+    Ok((expr, ptype, rdf_node_type))
 }
 
 fn subject_from_str(s: &str) -> Subject {
