@@ -21,3 +21,4 @@ chrono-tz = "0.6"
 
 [dev-dependencies]
 rstest = "0.14.0"
+serial_test = "0.8.0"

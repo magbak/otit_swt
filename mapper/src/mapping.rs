@@ -23,6 +23,7 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::Debug;
 use std::io::Write;
+use std::ops::Not;
 use std::path::Path;
 
 pub struct Mapping {
@@ -326,8 +327,9 @@ impl Mapping {
         //At this point, the lf should have columns with names appropriate for the template to be instantiated (named_node).
         if let Some(template) = self.template_dataset.get(name) {
             if template.signature.template_name.as_str() == OTTR_TRIPLE {
-                lf = lf.select(&[col("Key"), col("subject"), col("verb"), col("object")]);
-                new_lfs_columns.push((lf.collect().unwrap().lazy(), columns));
+                let keep_cols = vec![col("Key"), col("subject"), col("verb"), col("object")];
+                lf = lf.select(keep_cols.as_slice());
+                new_lfs_columns.push((lf, columns));
                 Ok(())
             } else {
                 for i in &template.pattern_list {
@@ -418,14 +420,18 @@ impl Mapping {
         let mut object_properties = vec![];
         let mut data_properties = vec![];
         for (lf, columns) in result_vec {
-            let df = lf.collect().expect("Collect problem");
+            let mut df = lf.collect().expect("Collect problem");
             match columns.get("object").unwrap() {
                 MappedColumn::PrimitiveColumn(c) => match c.rdf_node_type {
                     RDFNodeType::IRI => {
+                        df = df.drop_nulls(Some(&["subject".to_string(), "object".to_string()])).unwrap();
                         object_properties.push(df.lazy());
                     }
                     RDFNodeType::BlankNode => {}
                     RDFNodeType::Literal => {
+                        let lexical_form_null = df.column("object").unwrap().struct_().unwrap().field_by_name("lexical_form").unwrap().is_null();
+                        df = df.filter(&lexical_form_null.not()).unwrap();
+                        df = df.drop_nulls(Some(&["subject".to_string(), "verb".to_string()])).unwrap();
                         data_properties.push(df.lazy());
                     }
                     RDFNodeType::None => {}
@@ -575,12 +581,14 @@ fn infer_validate_and_prepare_column_data_type(
     column_name: &str,
 ) -> Result<PrimitiveColumn, MappingError> {
     let series = dataframe.column(column_name).unwrap();
-    let (new_series, ptype) = if let Some(ptype) = &parameter.ptype {
-        let mut out = None;
+    let new_series = if let Some(ptype) = &parameter.ptype {
         if let PType::BasicType(nn) = ptype {
             if nn.as_str() == xsd::ANY_URI.as_str() {
                 if series.dtype() == &DataType::Utf8 {
-                    out = Some((series.clone(), ptype.clone()))
+                    return Ok(PrimitiveColumn {
+                        polars_datatype: series.dtype().clone(),
+                        rdf_node_type: RDFNodeType::IRI,
+                    });
                 } else {
                     return Err(MappingError {
                         kind: MappingErrorType::ColumnDataTypeMismatch(
@@ -592,20 +600,11 @@ fn infer_validate_and_prepare_column_data_type(
                 }
             }
         }
-        if out.is_none() {
-            out = Some((
-                convert_series_to_value_struct(series, ptype).unwrap(),
-                ptype.clone(),
-            ))
-        }
-        out.unwrap()
+        convert_series_to_value_struct(series, ptype).unwrap()
     } else {
         let column_data_type = dataframe.column(column_name).unwrap().dtype().clone();
         let target_ptype = polars_datatype_to_xsd_datatype(column_data_type);
-        (
-            convert_series_to_value_struct(series, &target_ptype).unwrap(),
-            target_ptype,
-        )
+        convert_series_to_value_struct(series, &target_ptype).unwrap()
     };
     let datatype = series.dtype().clone();
     dataframe.with_column(new_series).unwrap();
