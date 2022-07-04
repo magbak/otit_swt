@@ -721,9 +721,6 @@ fn hack_format_timestamp_with_timezone(
 ) -> Result<Series, MappingError> {
     let timezone_opt: Result<chrono_tz::Tz, _> = tz.parse();
     if let Ok(timezone) = timezone_opt {
-        let dt = timezone.ymd(2020, 12, 06).and_hms(1, 2, 3);
-        //let ts_offset = format!("{}", dt.format("%:z"));
-
         let datetime_strings = Series::from_iter(
             series
                 .datetime()
@@ -735,7 +732,7 @@ fn hack_format_timestamp_with_timezone(
                         "{}",
                         timezone
                             .ymd(x.year(), x.month(), x.day())
-                            .and_hms(x.hour(), x.minute(), x.second())
+                            .and_hms_nano(x.hour(), x.minute(), x.second(), x.nanosecond())
                             .format(XSD_DATETIME_WITH_TZ_FORMAT)
                     )
                 }),

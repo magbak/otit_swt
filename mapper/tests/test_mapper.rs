@@ -138,7 +138,6 @@ ex:Nested [?myVar] :: {
 //
 // ?Time
 // ?Duration_sec
-// ?Categorical
 // ?List_Utf8
 
 #[rstest]
@@ -154,7 +153,8 @@ ex:ExampleTemplate [
 ?Float32,
 ?Float64,
 ?Utf8,
-?Datetime_ms_tz
+?Datetime_ms_tz,
+?Datetime_ms
 ] :: {
     ottr:Triple(ex:anObject, ex:hasVal, ?Boolean),
     ottr:Triple(ex:anObject, ex:hasVal, ?UInt32),
@@ -164,7 +164,8 @@ ex:ExampleTemplate [
     ottr:Triple(ex:anotherObject, ex:hasValVal, ?Float32),
     ottr:Triple(ex:anotherObject, ex:hasValVal, ?Float64),
     ottr:Triple(ex:yetAnotherObject, ex:hasString, ?Utf8),
-    ottr:Triple(ex:yetAnotherObject, ex:hasDateTime, ?Datetime_ms_tz)
+    ottr:Triple(ex:yetAnotherObject, ex:hasDateTime, ?Datetime_ms_tz),
+    ottr:Triple(ex:yetAnotherObject, ex:hasDateTime, ?Datetime_ms)
   } .
 "#;
     let mut mapping = Mapping::from_str(&stottr).unwrap();
@@ -190,18 +191,33 @@ ex:ExampleTemplate [
         "Datetime_ms_tz",
         &[
             AnyValue::Datetime(
-                1656842780000,
+                1656842780123,
                 TimeUnit::Milliseconds,
                 &Some("Europe/Oslo".to_string()),
             ),
             AnyValue::Datetime(
-                1656842781000,
+                1656842781456,
                 TimeUnit::Milliseconds,
                 &Some("Europe/Oslo".to_string()),
             ),
         ],
     )
     .unwrap();
+    let datetime_ms = Series::from_any_values(
+        "Datetime_ms",
+        &[
+            AnyValue::Datetime(
+                1656842790789,
+                TimeUnit::Milliseconds,
+                &None,
+            ),
+            AnyValue::Datetime(
+                1656842791101,
+                TimeUnit::Milliseconds,
+                &None,
+            ),
+        ],
+    ).unwrap();
 
     let series = [
         k,
@@ -214,6 +230,7 @@ ex:ExampleTemplate [
         float64,
         utf8,
         datetime_ms_tz,
+        datetime_ms,
     ];
     let df = DataFrame::from_iter(series);
     let report = mapping
@@ -370,7 +387,7 @@ ex:ExampleTemplate [
             )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasDateTime"),
             object: Term::Literal(Literal::new_typed_literal(
-                "2022-07-03T10:06:20+02:00",
+                "2022-07-03T10:06:20.123+02:00",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#dateTimeStamp"),
             )),
         },
@@ -380,8 +397,28 @@ ex:ExampleTemplate [
             )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasDateTime"),
             object: Term::Literal(Literal::new_typed_literal(
-                "2022-07-03T10:06:21+02:00",
+                "2022-07-03T10:06:21.456+02:00",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#dateTimeStamp"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/ns#yetAnotherObject",
+            )),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasDateTime"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "2022-07-03T10:06:30.789",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#dateTime"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/ns#yetAnotherObject",
+            )),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasDateTime"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "2022-07-03T10:06:31.101",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#dateTime"),
             )),
         },
     ];
