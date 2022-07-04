@@ -58,7 +58,7 @@ pub struct MappingError {
 
 pub struct MappingReport {}
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum RDFNodeType {
     IRI,
     BlankNode,
@@ -424,14 +424,25 @@ impl Mapping {
             match columns.get("object").unwrap() {
                 MappedColumn::PrimitiveColumn(c) => match c.rdf_node_type {
                     RDFNodeType::IRI => {
-                        df = df.drop_nulls(Some(&["subject".to_string(), "object".to_string()])).unwrap();
+                        df = df
+                            .drop_nulls(Some(&["subject".to_string(), "object".to_string()]))
+                            .unwrap();
                         object_properties.push(df.lazy());
                     }
                     RDFNodeType::BlankNode => {}
                     RDFNodeType::Literal => {
-                        let lexical_form_null = df.column("object").unwrap().struct_().unwrap().field_by_name("lexical_form").unwrap().is_null();
+                        let lexical_form_null = df
+                            .column("object")
+                            .unwrap()
+                            .struct_()
+                            .unwrap()
+                            .field_by_name("lexical_form")
+                            .unwrap()
+                            .is_null();
                         df = df.filter(&lexical_form_null.not()).unwrap();
-                        df = df.drop_nulls(Some(&["subject".to_string(), "verb".to_string()])).unwrap();
+                        df = df
+                            .drop_nulls(Some(&["subject".to_string(), "verb".to_string()]))
+                            .unwrap();
                         data_properties.push(df.lazy());
                     }
                     RDFNodeType::None => {}
@@ -581,40 +592,44 @@ fn infer_validate_and_prepare_column_data_type(
     column_name: &str,
 ) -> Result<PrimitiveColumn, MappingError> {
     let series = dataframe.column(column_name).unwrap();
-    let new_series = if let Some(ptype) = &parameter.ptype {
-        if let PType::BasicType(nn) = ptype {
-            if nn.as_str() == xsd::ANY_URI.as_str() {
-                if series.dtype() == &DataType::Utf8 {
-                    return Ok(PrimitiveColumn {
-                        polars_datatype: series.dtype().clone(),
-                        rdf_node_type: RDFNodeType::IRI,
-                    });
-                } else {
-                    return Err(MappingError {
-                        kind: MappingErrorType::ColumnDataTypeMismatch(
-                            column_name.to_string(),
-                            series.dtype().clone(),
-                            ptype.clone(),
-                        ),
-                    });
-                }
-            }
-        }
-        convert_series_to_value_struct(series, ptype).unwrap()
+    let (new_series, ptype) = if let Some(ptype) = &parameter.ptype {
+        (convert_series_if_required(series, ptype).unwrap(), ptype.clone())
     } else {
         let column_data_type = dataframe.column(column_name).unwrap().dtype().clone();
         let target_ptype = polars_datatype_to_xsd_datatype(column_data_type);
-        convert_series_to_value_struct(series, &target_ptype).unwrap()
+        (convert_series_if_required(series, &target_ptype).unwrap(), target_ptype)
     };
     let datatype = series.dtype().clone();
     dataframe.with_column(new_series).unwrap();
+    let rdf_node_type = infer_rdf_node_type(&ptype);
     Ok(PrimitiveColumn {
         polars_datatype: datatype,
-        rdf_node_type: RDFNodeType::Literal,
+        rdf_node_type,
     })
 }
 
-fn convert_series_to_value_struct(
+fn infer_rdf_node_type(ptype: &PType) -> RDFNodeType {
+    match ptype {
+        PType::BasicType(b) => {
+            if b.as_str() == xsd::ANY_URI {
+                RDFNodeType::IRI
+            } else {
+                RDFNodeType::Literal
+            }
+        }
+        PType::LUBType(l) => {
+            infer_rdf_node_type(l)
+        }
+        PType::ListType(l) => {
+            infer_rdf_node_type(l)
+        }
+        PType::NEListType(l) => {
+            infer_rdf_node_type(l)
+        }
+    }
+}
+
+fn convert_series_if_required(
     series: &Series,
     target_ptype: &PType,
 ) -> Result<Series, MappingError> {
@@ -640,7 +655,9 @@ fn convert_series_to_value_struct(
             if let DataType::List(_) = series_data_type {
                 mismatch_error()
             } else {
-                Ok(convert_nonlist_series_to_value_struct(series, bt)?)
+                Ok(convert_nonlist_series_to_value_struct_if_required(
+                    series, bt,
+                )?)
             }
         }
         PType::LUBType(inner) => convert_if_series_list(inner),
@@ -657,8 +674,10 @@ fn convert_list_series(
         .list()
         .unwrap()
         .apply(
-            |x| match { convert_series_to_value_struct(&x, inner_target_ptype) } {
-                Ok(ser) => ser,
+            |x| match { convert_series_if_required(&x, inner_target_ptype) } {
+                Ok(ser) => {
+                    ser
+                }
                 Err(e) => {
                     panic!("{:?}", e)
                 }
@@ -669,7 +688,7 @@ fn convert_list_series(
     Ok(out)
 }
 
-fn convert_nonlist_series_to_value_struct(
+fn convert_nonlist_series_to_value_struct_if_required(
     series: &Series,
     nn: &NamedNode,
 ) -> Result<Series, MappingError> {
@@ -681,7 +700,13 @@ fn convert_nonlist_series_to_value_struct(
             PType::BasicType(nn.clone()),
         ),
     };
-    let mut value_series = if nn.as_str() == xsd::BOOLEAN.as_str() {
+    let mut new_series= if nn.as_str() == xsd::ANY_URI.as_str() {
+        if series_data_type == &DataType::Utf8 {
+            series.clone()
+        } else {
+            return Err(mismatch_error());
+        }
+    } else if nn.as_str() == xsd::BOOLEAN.as_str() {
         if series_data_type == &DataType::Boolean {
             series.cast(&DataType::Utf8).unwrap()
         } else {
@@ -732,20 +757,26 @@ fn convert_nonlist_series_to_value_struct(
     } else if nn.as_str() == xsd::DATE_TIME.as_str() {
         if let DataType::Datetime(unit, tz_opt) = series_data_type {
             if let Some(tz) = tz_opt {
-                hack_format_timestamp_with_timezone(series, tz)?
+
+                    hack_format_timestamp_with_timezone(series, tz)?
+
             } else {
-                series
-                    .datetime()
-                    .unwrap()
-                    .strftime(XSD_DATETIME_WITHOUT_TZ_FORMAT)
-                    .into_series()
+
+                    series
+                        .datetime()
+                        .unwrap()
+                        .strftime(XSD_DATETIME_WITHOUT_TZ_FORMAT)
+                        .into_series()
+
             }
         } else {
             return Err(mismatch_error());
         }
     } else if nn.as_str() == xsd::DATE_TIME_STAMP.as_str() {
         if let DataType::Datetime(unit, Some(tz)) = series_data_type {
-            hack_format_timestamp_with_timezone(series, tz)?
+
+                hack_format_timestamp_with_timezone(series, tz)?
+
         } else {
             return Err(mismatch_error());
         }
@@ -757,20 +788,23 @@ fn convert_nonlist_series_to_value_struct(
             ),
         });
     };
-    assert_eq!(value_series.dtype(), &DataType::Utf8);
-    value_series.rename("lexical_form");
-    //TODO: Allow language to be set perhaps as an argument
-    let language_series = Series::full_null(&"language_tag", series.len(), &DataType::Utf8);
-    let data_type_series = Series::new_empty("datatype_iri", &DataType::Utf8)
-        .extend_constant(AnyValue::Utf8(nn.as_str()), series.len())
+    assert_eq!(new_series.dtype(), &DataType::Utf8);
+    let rdf_node_type = infer_rdf_node_type(&PType::BasicType(nn.clone()));
+    if rdf_node_type == RDFNodeType::Literal {
+        new_series.rename("lexical_form");
+        //TODO: Allow language to be set perhaps as an argument
+        let language_series = Series::full_null(&"language_tag", series.len(), &DataType::Utf8);
+        let data_type_series = Series::new_empty("datatype_iri", &DataType::Utf8)
+            .extend_constant(AnyValue::Utf8(nn.as_str()), series.len())
+            .unwrap();
+        let st = StructChunked::new(
+            series.name(),
+            &[new_series, language_series, data_type_series],
+        )
         .unwrap();
-    let st = StructChunked::new(
-        series.name(),
-        &[value_series, language_series, data_type_series],
-    )
-    .unwrap();
-    let struct_value_series = st.into_series();
-    Ok(struct_value_series)
+        new_series = st.into_series();
+    }
+    Ok(new_series)
 }
 
 fn hack_format_timestamp_with_timezone(

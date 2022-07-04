@@ -71,6 +71,50 @@ fn test_mapper_easy_case(testdata_path: PathBuf) {
 
 #[rstest]
 #[serial]
+fn test_all_iri_case() {
+    let t_str = r#"
+    @prefix ex:<http://example.net/ns#>.
+
+    ex:ExampleTemplate [xsd:anyURI ?myVar1]
+      :: {
+        ottr:Triple(ex:anObject, ex:relatesTo, ?myVar1)
+      } .
+    "#;
+
+    let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
+    k.rename("Key");
+    let mut v1 = Series::from_iter(["http://example.net/ns#OneThing", "http://example.net/ns#AnotherThing"]);
+    v1.rename("myVar1");
+    let series = [k, v1];
+    let df = DataFrame::from_iter(series);
+
+    let mut mapping = Mapping::from_str(&t_str).unwrap();
+    let report = mapping
+        .expand(
+            &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
+            df,
+        )
+        .expect("");
+    let triples = mapping.to_triples();
+    //println!("{:?}", triples);
+    let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
+    let expected_triples_set = HashSet::from([
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#relatesTo"),
+            object: Term::NamedNode(NamedNode::new_unchecked("http://example.net/ns#OneThing")),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#relatesTo"),
+            object: Term::NamedNode(NamedNode::new_unchecked("http://example.net/ns#AnotherThing"))
+        },
+    ]);
+    assert_eq!(expected_triples_set, actual_triples_set);
+}
+
+#[rstest]
+#[serial]
 fn test_nested_templates() {
     let stottr = r#"
 @prefix ex:<http://example.net/ns#>.

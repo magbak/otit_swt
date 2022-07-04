@@ -14,7 +14,7 @@ use oxrdf::{IriParseError, NamedNode};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
-use crate::constants::{OTTR_PREFIX, OTTR_PREFIX_URI};
+use crate::constants::{OTTR_PREFIX, OTTR_PREFIX_IRI, XSD_PREFIX, XSD_PREFIX_IRI};
 
 #[derive(Debug)]
 pub struct ResolutionError {
@@ -50,11 +50,11 @@ pub(crate) fn resolve_document(
 
 fn resolve_statement(
     unresolved_statement: &UnresolvedStatement,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<Statement, ResolutionError> {
     Ok(match unresolved_statement {
         UnresolvedStatement::Signature(s) => {
-            Statement::Template(Template { signature: resolve_signature(s, prefix_map, )?, pattern_list: vec![] })
+            Statement::Template(Template { signature: resolve_signature(s, prefix_map)?, pattern_list: vec![] })
         }
         UnresolvedStatement::Template(t) => Statement::Template(resolve_template(t, prefix_map)?),
         UnresolvedStatement::BaseTemplate(b) => {
@@ -66,7 +66,7 @@ fn resolve_statement(
 
 fn resolve_base_template(
     unresolved_base_template: &UnresolvedBaseTemplate,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<Template, ResolutionError> {
     Ok(Template {
         signature: resolve_signature(&unresolved_base_template.signature, prefix_map)?,
@@ -76,7 +76,7 @@ fn resolve_base_template(
 
 fn resolve_template(
     unresolved_template: &UnresolvedTemplate,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<Template, ResolutionError> {
     let mut pattern_list = vec![];
     for ui in &unresolved_template.pattern_list {
@@ -90,7 +90,7 @@ fn resolve_template(
 
 fn resolve_signature(
     unresolved_signature: &UnresolvedSignature,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<Signature, ResolutionError> {
     let mut parameter_list = vec![];
     for up in &unresolved_signature.parameter_list {
@@ -116,7 +116,7 @@ fn resolve_signature(
 
 fn resolve_annotation(
     unresolved_annotation: &UnresolvedAnnotation,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<Annotation, ResolutionError> {
     Ok(Annotation {
         instance: resolve_instance(&unresolved_annotation.instance, prefix_map)?,
@@ -125,7 +125,7 @@ fn resolve_annotation(
 
 fn resolve_instance(
     unresolved_instance: &UnresolvedInstance,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<Instance, ResolutionError> {
     let mut argument_list = vec![];
     for ua in &unresolved_instance.argument_list {
@@ -140,7 +140,7 @@ fn resolve_instance(
 
 fn resolve_argument(
     unresolved_argument: &UnresolvedArgument,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<Argument, ResolutionError> {
     Ok(Argument {
         list_expand: unresolved_argument.list_expand,
@@ -150,7 +150,7 @@ fn resolve_argument(
 
 fn resolve_stottr_term(
     unresolved_stottr_term: &UnresolvedStottrTerm,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<StottrTerm, ResolutionError> {
     Ok(match unresolved_stottr_term {
         UnresolvedStottrTerm::Variable(v) => StottrTerm::Variable(v.clone()),
@@ -169,7 +169,7 @@ fn resolve_stottr_term(
 
 fn resolve_constant_term(
     unresolved_constant_term: &UnresolvedConstantTerm,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<ConstantTerm, ResolutionError> {
     Ok(match unresolved_constant_term {
         UnresolvedConstantTerm::Constant(c) => {
@@ -187,7 +187,7 @@ fn resolve_constant_term(
 
 fn resolve_constant_literal(
     unresolved_constant_literal: &UnresolvedConstantLiteral,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<ConstantLiteral, ResolutionError> {
     Ok(match unresolved_constant_literal {
         UnresolvedConstantLiteral::IRI(iri) => ConstantLiteral::IRI(resolve(iri, prefix_map)?),
@@ -201,7 +201,7 @@ fn resolve_constant_literal(
 
 fn resolve_stottr_literal(
     unresolved_stottr_literal: &UnresolvedStottrLiteral,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<StottrLiteral, ResolutionError> {
     Ok(StottrLiteral {
         value: unresolved_stottr_literal.value.clone(),
@@ -218,7 +218,7 @@ fn resolve_stottr_literal(
 
 fn resolve_parameter(
     unresolved_parameter: &UnresolvedParameter,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<Parameter, ResolutionError> {
     Ok(Parameter {
         optional: unresolved_parameter.optional,
@@ -239,7 +239,7 @@ fn resolve_parameter(
 
 fn resolve_default_value(
     unresolved_default_value: &UnresolvedDefaultValue,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<DefaultValue, ResolutionError> {
     Ok(DefaultValue {
         constant_term: resolve_constant_term(&unresolved_default_value.constant_term, prefix_map)?,
@@ -248,7 +248,7 @@ fn resolve_default_value(
 
 fn resolve_ptype(
     unresolved_ptype: &UnresolvedPType,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<PType, ResolutionError> {
     Ok(match unresolved_ptype {
         UnresolvedPType::BasicType(b) => PType::BasicType(resolve(b, prefix_map)?),
@@ -262,22 +262,12 @@ fn resolve_ptype(
 
 fn resolve(
     resolves_to_named_node: &ResolvesToNamedNode,
-    prefix_map: &mut HashMap<String, &NamedNode>,
+    prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<NamedNode, ResolutionError> {
     Ok(match resolves_to_named_node {
         ResolvesToNamedNode::PrefixedName(pn) => {
             if let Some(nn) = prefix_map.get(&pn.prefix) {
                 let new_node_result = NamedNode::new(format!("{}{}", nn.as_str(), &pn.name));
-                match new_node_result {
-                    Ok(new_node) => new_node,
-                    Err(err) => {
-                        return Err(ResolutionError {
-                            kind: ResolutionErrorType::BadCompositeIRIError(err),
-                        })
-                    }
-                }
-            } else if pn.prefix.as_str() == OTTR_PREFIX {
-                let new_node_result = NamedNode::new(format!("{}{}", OTTR_PREFIX_URI, &pn.name));
                 match new_node_result {
                     Ok(new_node) => new_node,
                     Err(err) => {
@@ -301,7 +291,7 @@ fn resolve(
 
 fn build_prefix_map(
     directives: &Vec<Directive>,
-) -> Result<HashMap<String, &NamedNode>, ResolutionError> {
+) -> Result<HashMap<String, NamedNode>, ResolutionError> {
     let mut map = HashMap::new();
     for d in directives {
         match d {
@@ -313,16 +303,22 @@ fn build_prefix_map(
             }
         }
     }
+    let predefined = [(XSD_PREFIX, XSD_PREFIX_IRI), (OTTR_PREFIX, OTTR_PREFIX_IRI)];
+    for (pre, iri) in predefined {
+        if !map.contains_key(pre) {
+            map.insert(pre.to_string(), NamedNode::new_unchecked(iri));
+        }
+    }
     Ok(map)
 }
 
-fn insert_or_raise<'a>(
+fn insert_or_raise(
     key: &str,
-    value: &'a NamedNode,
-    map: &mut HashMap<String, &'a NamedNode>,
+    value: &NamedNode,
+    map: &mut HashMap<String, NamedNode>,
 ) -> Result<(), ResolutionError> {
-    if let Some(n) = map.insert(key.to_string(), value) {
-        if n != value {
+    if let Some(n) = map.insert(key.to_string(), value.clone()) {
+        if &n != value {
             return Err(ResolutionError {
                 kind: ResolutionErrorType::DuplicatedPrefixDefinition(
                     key.to_string(),
