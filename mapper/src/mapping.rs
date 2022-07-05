@@ -147,6 +147,20 @@ impl Display for MappingError {
     }
 }
 
+pub struct ExpandOptions {
+    pub language_tags: Option<HashMap<String, String>>,
+    pub mint_iris: Option<HashMap<String, String>>,
+}
+
+impl Default for ExpandOptions {
+    fn default() -> Self {
+        ExpandOptions {
+            language_tags: None,
+            mint_iris: None,
+        }
+    }
+}
+
 pub struct MappingReport {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -340,6 +354,11 @@ impl Mapping {
                     .unwrap()
                     .field_by_name("lexical_form")
                     .unwrap();
+                let language_tag_series = obj_col
+                    .struct_()
+                    .unwrap()
+                    .field_by_name("language_tag")
+                    .unwrap();
                 let datatype_series = obj_col
                     .struct_()
                     .unwrap()
@@ -347,27 +366,42 @@ impl Mapping {
                     .unwrap();
 
                 let mut lexical_iterator = lexical_form_series.iter();
+                let mut language_tag_iterator = language_tag_series.iter();
                 let mut datatype_iterator = datatype_series.iter();
 
                 for _ in 0..data_property_triples.height() {
                     let s = subject_iterator.next().unwrap();
                     let v = verb_iterator.next().unwrap();
                     let l = lexical_iterator.next().unwrap();
+                    let t = language_tag_iterator.next().unwrap();
                     let d = datatype_iterator.next().unwrap();
 
                     //TODO: Fix for when subject might be blank node.
                     if let AnyValue::Utf8(subject) = s {
                         if let AnyValue::Utf8(verb) = v {
                             if let AnyValue::Utf8(value) = l {
-                                if let AnyValue::Utf8(datatype) = d {
-                                    let subject = subject_from_str(subject);
-                                    let verb = NamedNode::new_unchecked(verb);
-                                    let object = Term::Literal(Literal::new_typed_literal(
-                                        value,
-                                        NamedNode::new_unchecked(datatype),
-                                    ));
-                                    let t = Triple::new(subject, verb, object);
-                                    triples.push(t);
+                                if let AnyValue::Utf8(tag) = t {
+                                    if let AnyValue::Utf8(datatype) = d {
+                                        let subject = subject_from_str(subject);
+                                        let verb = NamedNode::new_unchecked(verb);
+                                        let object;
+                                        if tag != "" {
+                                            object = Term::Literal(
+                                                Literal::new_language_tagged_literal_unchecked(
+                                                    value, tag,
+                                                ),
+                                            )
+                                        } else {
+                                            object = Term::Literal(Literal::new_typed_literal(
+                                                value,
+                                                NamedNode::new_unchecked(datatype),
+                                            ));
+                                        }
+                                        let t = Triple::new(subject, verb, object);
+                                        triples.push(t);
+                                    } else {
+                                        panic!("Should never happen")
+                                    }
                                 } else {
                                     panic!("Should never happen")
                                 }
@@ -390,11 +424,15 @@ impl Mapping {
         &mut self,
         name: &NamedNode,
         mut df: DataFrame,
+        options: ExpandOptions,
     ) -> Result<MappingReport, MappingError> {
         self.validate_dataframe(&mut df)?;
         if let Some(target_template) = self.template_dataset.get(name) {
-            let columns =
-                find_validate_and_prepare_dataframe_columns(&target_template.signature, &mut df)?;
+            let columns = find_validate_and_prepare_dataframe_columns(
+                &target_template.signature,
+                &mut df,
+                &options,
+            )?;
             let mut result_vec = vec![];
             self._expand(name, df.lazy(), columns, &mut result_vec)?;
             self.process_results(result_vec);
@@ -562,6 +600,7 @@ impl Mapping {
 fn find_validate_and_prepare_dataframe_columns(
     signature: &Signature,
     df: &mut DataFrame,
+    options: &ExpandOptions,
 ) -> Result<HashMap<String, MappedColumn>, MappingError> {
     let mut df_columns = HashSet::new();
     df_columns.extend(df.get_column_names().into_iter().map(|x| x.to_string()));
@@ -580,8 +619,12 @@ fn find_validate_and_prepare_dataframe_columns(
                 //TODO handle blanks;
                 validate_non_blank_parameter(&df, variable_name)?;
             }
-            let column_data_type =
-                infer_validate_and_prepare_column_data_type(df, &parameter, variable_name)?;
+            let column_data_type = infer_validate_and_prepare_column_data_type(
+                df,
+                &parameter,
+                variable_name,
+                options,
+            )?;
 
             map.insert(
                 variable_name.to_string(),
@@ -685,18 +728,19 @@ fn infer_validate_and_prepare_column_data_type(
     dataframe: &mut DataFrame,
     parameter: &Parameter,
     column_name: &str,
+    options: &ExpandOptions,
 ) -> Result<PrimitiveColumn, MappingError> {
     let series = dataframe.column(column_name).unwrap();
     let (new_series, ptype) = if let Some(ptype) = &parameter.ptype {
         (
-            convert_series_if_required(series, ptype).unwrap(),
+            convert_series_if_required(series, ptype, options).unwrap(),
             ptype.clone(),
         )
     } else {
         let column_data_type = dataframe.column(column_name).unwrap().dtype().clone();
         let target_ptype = polars_datatype_to_xsd_datatype(column_data_type);
         (
-            convert_series_if_required(series, &target_ptype).unwrap(),
+            convert_series_if_required(series, &target_ptype, options).unwrap(),
             target_ptype,
         )
     };
@@ -723,6 +767,7 @@ fn infer_rdf_node_type(ptype: &PType) -> RDFNodeType {
 fn convert_series_if_required(
     series: &Series,
     target_ptype: &PType,
+    options: &ExpandOptions,
 ) -> Result<Series, MappingError> {
     let series_data_type = series.dtype();
     let mismatch_error = || {
@@ -736,7 +781,7 @@ fn convert_series_if_required(
     };
     let convert_if_series_list = |inner| {
         if let DataType::List(_) = series_data_type {
-            convert_list_series(series, inner)
+            convert_list_series(series, inner, options)
         } else {
             mismatch_error()
         }
@@ -747,7 +792,7 @@ fn convert_series_if_required(
                 mismatch_error()
             } else {
                 Ok(convert_nonlist_series_to_value_struct_if_required(
-                    series, bt,
+                    series, bt, options,
                 )?)
             }
         }
@@ -760,12 +805,13 @@ fn convert_series_if_required(
 fn convert_list_series(
     series: &Series,
     inner_target_ptype: &PType,
+    options: &ExpandOptions,
 ) -> Result<Series, MappingError> {
     let mut out = series
         .list()
         .unwrap()
         .apply(
-            |x| match { convert_series_if_required(&x, inner_target_ptype) } {
+            |x| match { convert_series_if_required(&x, inner_target_ptype, options) } {
                 Ok(ser) => ser,
                 Err(e) => {
                     panic!("{:?}", e)
@@ -780,6 +826,7 @@ fn convert_list_series(
 fn convert_nonlist_series_to_value_struct_if_required(
     series: &Series,
     nn: &NamedNode,
+    options: &ExpandOptions,
 ) -> Result<Series, MappingError> {
     let series_data_type = series.dtype();
     let mismatch_error = || MappingError {
@@ -875,9 +922,14 @@ fn convert_nonlist_series_to_value_struct_if_required(
     let rdf_node_type = infer_rdf_node_type(&PType::BasicType(nn.clone()));
     if rdf_node_type == RDFNodeType::Literal {
         new_series.rename("lexical_form");
-        //TODO: Allow language to be set perhaps as an argument
+        let mut language_tag = "";
+        if let Some(tags) = &options.language_tags {
+            if let Some(tag) = tags.get(series.name()) {
+                language_tag = tag.as_str();
+            }
+        }
         let language_series = Series::new_empty(&"language_tag", &DataType::Utf8)
-            .extend_constant(AnyValue::Utf8(""), series.len())
+            .extend_constant(AnyValue::Utf8(language_tag), series.len())
             .unwrap();
         let data_type_series = Series::new_empty("datatype_iri", &DataType::Utf8)
             .extend_constant(AnyValue::Utf8(nn.as_str()), series.len())
@@ -1014,8 +1066,14 @@ fn constant_to_expr(
                 let value_series = Series::new_empty("lexical_form", &DataType::Utf8)
                     .extend_constant(AnyValue::Utf8(lit.value.as_str()), 1)
                     .unwrap();
+                let language_tag;
+                if let Some(tag) = &lit.language {
+                    language_tag = tag.as_str();
+                } else {
+                    language_tag = "";
+                }
                 let language_series = Series::new_empty(&"language_tag", &DataType::Utf8)
-                    .extend_constant(AnyValue::Utf8(""), 1)
+                    .extend_constant(AnyValue::Utf8(language_tag), 1)
                     .unwrap();
                 let data_type_series = Series::new_empty("datatype_iri", &DataType::Utf8)
                     .extend_constant(

@@ -578,7 +578,7 @@ fn rdf_literal_lang_tag(r: &str) -> IResult<&str, UnresolvedStottrLiteral> {
         UnresolvedStottrLiteral {
             value: value.to_string(),
             language: Some(language),
-            data_type_iri: None,
+            data_type_iri: Some(ResolvesToNamedNode::NamedNode(xsd::STRING.into_owned())),
         },
     ))
 }
