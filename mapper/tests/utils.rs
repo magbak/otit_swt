@@ -20,7 +20,7 @@ pub fn triples_from_file(file: File) -> HashSet<Triple> {
                     Subject::BlankNode(BlankNode::new_unchecked(bn.to_string()))
                 }
                 rio_api::model::Subject::Triple(_) => {
-                    panic!("Not supported")
+                    unimplemented!("Not supported")
                 }
             };
             let predicate = NamedNode::new_unchecked(x.predicate.to_string());
