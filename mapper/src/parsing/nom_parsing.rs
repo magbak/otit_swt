@@ -1,78 +1,25 @@
 extern crate nom;
 
-use crate::ast::Directive;
-use crate::ast::{ListExpanderType, Prefix, StottrVariable};
-use crate::parsing_ast::{
-    PrefixedName, ResolvesToNamedNode, UnresolvedAnnotation, UnresolvedArgument,
-    UnresolvedBaseTemplate, UnresolvedConstantLiteral, UnresolvedConstantTerm,
-    UnresolvedDefaultValue, UnresolvedInstance, UnresolvedPType, UnresolvedParameter,
-    UnresolvedSignature, UnresolvedStatement, UnresolvedStottrDocument, UnresolvedStottrLiteral,
-    UnresolvedStottrTerm, UnresolvedTemplate,
-};
+#[cfg(test)]
+use nom::{Finish};
+
 use nom::branch::alt;
 use nom::bytes::complete::{escaped, is_not, tag};
-use nom::character::complete::{alpha1, alphanumeric1, char, digit0, digit1, multispace0, one_of};
+use nom::character::complete::char as char_func;
+
+use nom::character::complete::{alpha1, alphanumeric1, digit0, digit1, multispace0, one_of};
 use nom::combinator::opt;
+use nom::{IResult};
 use nom::multi::{count, many0, many1, separated_list0, separated_list1};
 use nom::sequence::tuple;
-use nom::Finish;
-use nom::IResult;
-use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, NamedNode};
-use std::error::Error;
-use std::fmt::{Display, Formatter};
+use oxrdf::vocab::xsd;
+use crate::ast::{Directive, ListExpanderType, Prefix, StottrVariable};
+use crate::parsing::parsing_ast::{PrefixedName, ResolvesToNamedNode, UnresolvedAnnotation, UnresolvedArgument, UnresolvedBaseTemplate, UnresolvedConstantLiteral, UnresolvedConstantTerm, UnresolvedDefaultValue, UnresolvedInstance, UnresolvedParameter, UnresolvedPType, UnresolvedSignature, UnresolvedStatement, UnresolvedStottrDocument, UnresolvedStottrLiteral, UnresolvedStottrTerm, UnresolvedTemplate};
 
 enum DirectiveStatement {
     Directive(Directive),
     Statement(UnresolvedStatement),
-}
-
-#[derive(Debug)]
-pub enum ParsingErrorKind {
-    CouldNotParseEverything(String),
-    NomParserError(String),
-}
-
-#[derive(Debug)]
-pub struct ParsingError {
-    kind: ParsingErrorKind,
-}
-
-impl Display for ParsingError {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        match &self.kind {
-            ParsingErrorKind::CouldNotParseEverything(s) => {
-                write!(
-                    f,
-                    "Could not parse entire string as sttotr document, rest: {}",
-                    s
-                )
-            }
-            ParsingErrorKind::NomParserError(s) => {
-                write!(f, "Nom parser error with code {}", s)
-            }
-        }
-    }
-}
-
-impl Error for ParsingError {}
-
-pub fn whole_stottr_doc(s: &str) -> Result<UnresolvedStottrDocument, Box<dyn Error>> {
-    let result = stottr_doc(s).finish();
-    match result {
-        Ok((rest, doc)) => {
-            if rest != "" {
-                Err(Box::new(ParsingError {
-                    kind: ParsingErrorKind::CouldNotParseEverything(rest.to_string()),
-                }))
-            } else {
-                Ok(doc)
-            }
-        }
-        Err(e) => Err(Box::new(ParsingError {
-            kind: ParsingErrorKind::NomParserError(format!("{:?}", e.code)),
-        })),
-    }
 }
 
 pub(crate) fn stottr_doc(s: &str) -> IResult<&str, UnresolvedStottrDocument> {
@@ -489,7 +436,7 @@ fn turtle_integer(i: &str) -> IResult<&str, UnresolvedStottrLiteral> {
 
 fn turtle_decimal(i: &str) -> IResult<&str, UnresolvedStottrLiteral> {
     let (i, (plus_minus, before, period, after)) =
-        tuple((opt(one_of("+-")), digit0, char('.'), digit1))(i)?;
+        tuple((opt(one_of("+-")), digit0, char_func('.'), digit1))(i)?;
     let mut value = before.to_string();
     value.push(period);
     value += after;
@@ -793,7 +740,7 @@ fn iri_ref(i: &str) -> IResult<&str, NamedNode> {
 fn pname_ns_as_prefixed_name(p: &str) -> IResult<&str, PrefixedName> {
     let (p, prefix) = pname_ns(p)?;
     let out = PrefixedName {
-        prefix: prefix,
+        prefix,
         name: "".to_string(),
     };
     Ok((p, out))
@@ -827,7 +774,7 @@ fn pn_chars_u_as_string(p: &str) -> IResult<&str, String> {
 }
 
 fn pn_chars_u(p: &str) -> IResult<&str, char> {
-    let (p, chrs) = alt((pn_chars_base, char('_')))(p)?;
+    let (p, chrs) = alt((pn_chars_base, char_func('_')))(p)?;
     Ok((p, chrs))
 }
 
@@ -836,11 +783,12 @@ fn pn_chars_as_string(p: &str) -> IResult<&str, String> {
     Ok((p, chrs.to_string()))
 }
 
+//noinspection ALL
 fn pn_chars(p: &str) -> IResult<&str, char> {
     let chars_string = r#"̴̵̶̷̸̡̢̧̨̛̖̗̘̙̜̝̞̟̠̣̤̥̦̩̪̫̬̭̮̯̰̱̲̳̹̺̻̼͇͈͉͍͎̀́̂̃̄̅̆̇̈̉̊̋̌̍̎̏̐̑̒̓̔̽̾̿̀́͂̓̈́͆͊͋͌̕̚ͅ͏͓͔͕͖͙͚͐͑͒͗͛ͣͤͥͦͧͨͩͪͫͬͭͮͯ͘͜͟͢͝͞͠͡‿⁀·"#;
     let (p, chrs) = alt((
         pn_chars_u,
-        char('-'),
+        char_func('-'),
         one_of("0123456789"),
         one_of(chars_string),
     ))(p)?;

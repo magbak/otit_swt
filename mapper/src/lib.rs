@@ -13,12 +13,10 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 mod ast;
 mod constants;
-mod parser;
-mod parsing_ast;
 mod resolver;
+mod parsing;
 
 pub mod templates;
 pub mod document;
 pub mod mapping;
-mod parser_test;
 

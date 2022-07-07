@@ -3,7 +3,7 @@ use crate::ast::{
     Parameter, Signature, Statement, StottrDocument, StottrLiteral, StottrTerm, Template,
 };
 use crate::constants::{OTTR_PREFIX, OTTR_PREFIX_IRI, XSD_PREFIX, XSD_PREFIX_IRI};
-use crate::parsing_ast::{
+use crate::parsing::parsing_ast::{
     ResolvesToNamedNode, UnresolvedAnnotation, UnresolvedArgument, UnresolvedBaseTemplate,
     UnresolvedConstantLiteral, UnresolvedConstantTerm, UnresolvedDefaultValue, UnresolvedInstance,
     UnresolvedPType, UnresolvedParameter, UnresolvedSignature, UnresolvedStatement,

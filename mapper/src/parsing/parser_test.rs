@@ -1,9 +1,9 @@
 #[cfg(test)]
 use crate::ast::{Directive, ListExpanderType, Prefix, StottrVariable};
 #[cfg(test)]
-use crate::parser::whole_stottr_doc;
+use crate::nom_parsing::whole_stottr_doc;
 #[cfg(test)]
-use crate::parsing_ast::{
+use crate::nom_parsing::parsing_ast::{
     PrefixedName, ResolvesToNamedNode, UnresolvedAnnotation, UnresolvedArgument,
     UnresolvedConstantLiteral, UnresolvedConstantTerm, UnresolvedDefaultValue, UnresolvedInstance,
     UnresolvedPType, UnresolvedParameter, UnresolvedSignature, UnresolvedStatement,
