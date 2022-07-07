@@ -49,7 +49,11 @@ fn test_mapper_easy_case(testdata_path: PathBuf) {
 
     let mut mapping = Mapping::from_str(&t_str).unwrap();
     let report = mapping
-        .expand(&NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"), df, Default::default())
+        .expand(
+            &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
+            df,
+            Default::default(),
+        )
         .expect("");
     let mut actual_file_path = testdata_path.clone();
     actual_file_path.push("actual_easy_case.ttl");
@@ -92,7 +96,8 @@ fn test_all_iri_case() {
         .expand(
             &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
             df,
-        Default::default())
+            Default::default(),
+        )
         .expect("");
     let triples = mapping.to_triples();
     //println!("{:?}", triples);
@@ -129,10 +134,7 @@ fn test_string_language_tag_cases() {
 
     let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
     k.rename("Key");
-    let mut my_string = Series::from_iter([
-        "one",
-        "two",
-    ]);
+    let mut my_string = Series::from_iter(["one", "two"]);
     my_string.rename("myString");
     let series = [k, my_string];
     let df = DataFrame::from_iter(series);
@@ -142,7 +144,14 @@ fn test_string_language_tag_cases() {
         .expand(
             &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
             df,
-        ExpandOptions { language_tags: Some(HashMap::from([("myString".to_string(), "bn-BD".to_string())])), ..Default::default() })
+            ExpandOptions {
+                language_tags: Some(HashMap::from([(
+                    "myString".to_string(),
+                    "bn-BD".to_string(),
+                )])),
+                ..Default::default()
+            },
+        )
         .expect("");
     let triples = mapping.to_triples();
     //println!("{:?}", triples);
@@ -152,25 +161,22 @@ fn test_string_language_tag_cases() {
             subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasString"),
             object: Term::Literal(Literal::new_language_tagged_literal_unchecked(
-                "one",
-                "bn-BD",
+                "one", "bn-BD",
             )),
         },
         Triple {
             subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasString"),
             object: Term::Literal(Literal::new_language_tagged_literal_unchecked(
-                "two",
-                "bn-BD",
+                "two", "bn-BD",
             )),
         },
         Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anotherObject")),
-            predicate: NamedNode::new_unchecked("http://example.net/ns#hasString"),
-            object: Term::Literal(Literal::new_language_tagged_literal_unchecked(
-                "",
-                "ar-SA",
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/ns#anotherObject",
             )),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#hasString"),
+            object: Term::Literal(Literal::new_language_tagged_literal_unchecked("", "ar-SA")),
         },
     ]);
     assert_eq!(expected_triples_set, actual_triples_set);
@@ -203,7 +209,8 @@ fn test_const_list_case() {
         .expand(
             &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
             df,
-        Default::default())
+            Default::default(),
+        )
         .expect("");
     let triples = mapping.to_triples();
     //println!("{:?}", triples);
@@ -215,7 +222,8 @@ fn test_const_list_case() {
             object: Term::Literal(Literal::new_typed_literal(
                 "1",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#integer"),
-            )),        },
+            )),
+        },
         Triple {
             subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#OneThing")),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumber"),
@@ -225,14 +233,19 @@ fn test_const_list_case() {
             )),
         },
         Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#AnotherThing")),
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/ns#AnotherThing",
+            )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumber"),
             object: Term::Literal(Literal::new_typed_literal(
                 "1",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#integer"),
-            )),        },
+            )),
+        },
         Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#AnotherThing")),
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/ns#AnotherThing",
+            )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumber"),
             object: Term::Literal(Literal::new_typed_literal(
                 "2",
@@ -269,7 +282,8 @@ ex:Nested [?myVar] :: {
         .expand(
             &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
             df,
-        Default::default())
+            Default::default(),
+        )
         .unwrap();
     let triples = mapping.to_triples();
     //println!("{:?}", triples);
@@ -323,7 +337,10 @@ fn test_mint_iri_templates() {
     let mut mapping = Mapping::from_str(&stottr).unwrap();
     let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
     k.rename("Key");
-    let mut my_iri1 = Series::from_iter(["http://example.net/things#subject1".to_string(), "http://example.net/things#subject2".to_string()]);
+    let mut my_iri1 = Series::from_iter([
+        "http://example.net/things#subject1".to_string(),
+        "http://example.net/things#subject2".to_string(),
+    ]);
     my_iri1.rename("myIRI1");
     let series = [k, my_iri1];
     let df = DataFrame::from_iter(series);
@@ -331,27 +348,34 @@ fn test_mint_iri_templates() {
         .expand(
             &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
             df,
-        ExpandOptions{
-            mint_iris: Some(
-                HashMap::from([("myIRI2".to_string(),
-                MintingOptions{
-                prefix: "http://example.net/things#".to_string(),
-                suffix_generator: SuffixGenerator::Numbering(3),
-                list_length: None
-            })])),
-            ..Default::default() })
+            ExpandOptions {
+                mint_iris: Some(HashMap::from([(
+                    "myIRI2".to_string(),
+                    MintingOptions {
+                        prefix: "http://example.net/things#".to_string(),
+                        suffix_generator: SuffixGenerator::Numbering(3),
+                        list_length: None,
+                    },
+                )])),
+                ..Default::default()
+            },
+        )
         .unwrap();
     let triples = mapping.to_triples();
     //println!("{:?}", triples);
     let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
     let expected_triples_set = HashSet::from([
         Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/things#subject1")),
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/things#subject1",
+            )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#relatesTo"),
             object: Term::NamedNode(NamedNode::new_unchecked("http://example.net/things#3")),
         },
         Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/things#subject2")),
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/things#subject2",
+            )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#relatesTo"),
             object: Term::NamedNode(NamedNode::new_unchecked("http://example.net/things#4")),
         },
@@ -455,7 +479,8 @@ ex:ExampleTemplate [
         .expand(
             &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
             df,
-        Default::default())
+            Default::default(),
+        )
         .unwrap();
     let mut actual_triples = mapping.to_triples();
     let mut expected_triples = vec![
@@ -687,7 +712,8 @@ ex:AnotherExampleTemplate [?object, ?predicate, ?myList] :: {
         .expand(
             &NamedNode::new_unchecked("http://example.net/ns#AnotherExampleTemplate"),
             df,
-        Default::default())
+            Default::default(),
+        )
         .unwrap();
     let triples = mapping.to_triples();
     //println!("{:?}", triples);
@@ -772,7 +798,7 @@ ex:AnotherExampleTemplate [?subject, ?myList1, ?myList2] :: {
         .expand(
             &NamedNode::new_unchecked("http://example.net/ns#AnotherExampleTemplate"),
             df,
-            Default::default()
+            Default::default(),
         )
         .unwrap();
     let triples = mapping.to_triples();

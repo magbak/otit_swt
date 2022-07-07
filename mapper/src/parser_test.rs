@@ -1,12 +1,17 @@
-use mapper::ast::{Directive, ListExpanderType, Prefix, StottrVariable};
-use mapper::parser::whole_stottr_doc;
-use mapper::parsing_ast::{
+#[cfg(test)]
+use crate::ast::{Directive, ListExpanderType, Prefix, StottrVariable};
+#[cfg(test)]
+use crate::parser::whole_stottr_doc;
+#[cfg(test)]
+use crate::parsing_ast::{
     PrefixedName, ResolvesToNamedNode, UnresolvedAnnotation, UnresolvedArgument,
     UnresolvedConstantLiteral, UnresolvedConstantTerm, UnresolvedDefaultValue, UnresolvedInstance,
     UnresolvedPType, UnresolvedParameter, UnresolvedSignature, UnresolvedStatement,
     UnresolvedStottrDocument, UnresolvedStottrLiteral, UnresolvedStottrTerm, UnresolvedTemplate,
 };
+#[cfg(test)]
 use oxrdf::vocab::xsd;
+#[cfg(test)]
 use oxrdf::{BlankNode, NamedNode};
 
 #[test]

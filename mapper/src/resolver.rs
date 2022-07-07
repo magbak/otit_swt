@@ -31,7 +31,11 @@ impl Display for ResolutionError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
             ResolutionErrorType::DuplicatedPrefixDefinition(prefix, def1, def2) => {
-                write!(f, "Prefix {} has two defintions: {} and {}", prefix, def1, def2)
+                write!(
+                    f,
+                    "Prefix {} has two defintions: {} and {}",
+                    prefix, def1, def2
+                )
             }
             ResolutionErrorType::BadCompositeIRIError(iri_err) => {
                 write!(f, "Bad composite IRI {}", iri_err)

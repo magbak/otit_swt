@@ -11,12 +11,14 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-pub mod ast;
+mod ast;
 mod constants;
+mod ntriples_write;
+mod parser;
+mod parsing_ast;
+mod resolver;
+
+pub mod templates;
 pub mod document;
 pub mod mapping;
-mod ntriples_write;
-pub mod parser;
-pub mod parsing_ast;
-pub mod resolver;
-pub mod templates;
+mod parser_test;

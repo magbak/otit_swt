@@ -16,8 +16,8 @@ use oxrdf::{BlankNode, Literal, NamedNode, Subject, Term, Triple};
 use polars::export::rayon::iter::ParallelIterator;
 use polars::lazy::prelude::{col, concat, Expr, LiteralValue};
 use polars::prelude::{
-    concat_lst, concat_str, AnyValue, BooleanChunked, DataFrame, DataType, Field,
-    IntoLazy, LazyFrame, PolarsError, Series, SeriesOps,
+    concat_lst, concat_str, AnyValue, BooleanChunked, DataFrame, DataType, Field, IntoLazy,
+    LazyFrame, PolarsError, Series, SeriesOps,
 };
 use polars::prelude::{IntoSeries, NoEq, StructChunked};
 use polars::toggle_string_cache;
@@ -26,7 +26,7 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::io::Write;
-use std::ops::{Not, Deref};
+use std::ops::{Deref, Not};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -653,10 +653,22 @@ fn find_validate_and_prepare_dataframe_columns(
                 .unwrap()
                 .contains_key(variable_name)
         {
-            mint_iri(df, variable_name, &parameter.ptype, options.mint_iris.as_ref().unwrap().get(variable_name).unwrap());
+            mint_iri(
+                df,
+                variable_name,
+                &parameter.ptype,
+                options
+                    .mint_iris
+                    .as_ref()
+                    .unwrap()
+                    .get(variable_name)
+                    .unwrap(),
+            );
             map.insert(
                 variable_name.to_string(),
-                MappedColumn::PrimitiveColumn(PrimitiveColumn{ rdf_node_type: RDFNodeType::IRI })
+                MappedColumn::PrimitiveColumn(PrimitiveColumn {
+                    rdf_node_type: RDFNodeType::IRI,
+                }),
             );
         } else {
             return Err(MappingError {
