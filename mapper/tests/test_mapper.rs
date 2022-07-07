@@ -4,7 +4,7 @@ extern crate core;
 mod utils;
 
 use crate::utils::triples_from_file;
-use mapper::mapping::{ExpandOptions, Mapping};
+use mapper::mapping::{ExpandOptions, Mapping, MintingOptions, SuffixGenerator};
 use oxrdf::{Literal, NamedNode, Subject, Term, Triple};
 use polars::frame::DataFrame;
 use polars::series::Series;
@@ -129,12 +129,12 @@ fn test_string_language_tag_cases() {
 
     let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
     k.rename("Key");
-    let mut myString = Series::from_iter([
+    let mut my_string = Series::from_iter([
         "one",
         "two",
     ]);
-    myString.rename("myString");
-    let series = [k, myString];
+    my_string.rename("myString");
+    let series = [k, my_string];
     let df = DataFrame::from_iter(series);
 
     let mut mapping = Mapping::from_str(&t_str).unwrap();
@@ -316,7 +316,7 @@ ex:Nested [?myVar] :: {
 fn test_mint_iri_templates() {
     let stottr = r#"
     @prefix ex:<http://example.net/ns#>.
-    ex:ExampleTemplate [?myIRI1 , ?myIRI2] :: {
+    ex:ExampleTemplate [?myIRI1] :: {
     ottr:Triple(?myIRI1, ex:relatesTo, ?myIRI2)
   } .
 "#;
@@ -332,7 +332,13 @@ fn test_mint_iri_templates() {
             &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
             df,
         ExpandOptions{
-            mint_iris: Some(HashMap::from([("myVar2".to_string(), "http://example.net/things#".to_string())])),
+            mint_iris: Some(
+                HashMap::from([("myVar2".to_string(),
+                MintingOptions{
+                prefix: "http://example.net/things#".to_string(),
+                suffix_generator: SuffixGenerator::Numbering(3),
+                list_length: None
+            })])),
             ..Default::default() })
         .unwrap();
     let triples = mapping.to_triples();

@@ -16,7 +16,7 @@ use oxrdf::{BlankNode, Literal, NamedNode, Subject, Term, Triple};
 use polars::export::rayon::iter::ParallelIterator;
 use polars::lazy::prelude::{col, concat, Expr, LiteralValue};
 use polars::prelude::{
-    concat_lst, concat_str, AnyValue, BooleanChunked, DataFrame, DataType, Field, IdxSize,
+    concat_lst, concat_str, AnyValue, BooleanChunked, DataFrame, DataType, Field,
     IntoLazy, LazyFrame, PolarsError, Series, SeriesOps,
 };
 use polars::prelude::{IntoSeries, NoEq, StructChunked};
@@ -26,7 +26,7 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::io::Write;
-use std::ops::{Add, Deref, DerefMut, Not};
+use std::ops::{Not, Deref};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -172,9 +172,9 @@ pub enum ListLength {
 }
 
 pub struct MintingOptions {
-    prefix: String,
-    suffix_generator: SuffixGenerator,
-    list_length: Option<ListLength>,
+    pub prefix: String,
+    pub suffix_generator: SuffixGenerator,
+    pub list_length: Option<ListLength>,
 }
 
 pub struct MappingReport {}
@@ -653,7 +653,7 @@ fn find_validate_and_prepare_dataframe_columns(
                 .unwrap()
                 .contains_key(variable_name)
         {
-            if let Some(ptype) = &parameter.ptype {}
+            mint_iri(df, variable_name, &parameter.ptype, options.mint_iris.as_ref().unwrap().get(variable_name).unwrap())
         } else {
             return Err(MappingError {
                 kind: MappingErrorType::MissingParameterColumn(variable_name.to_string()),
@@ -673,7 +673,7 @@ fn find_validate_and_prepare_dataframe_columns(
 fn mint_iri(
     df: &mut DataFrame,
     variable_name: &str,
-    ptype_opt: Option<PType>,
+    ptype_opt: &Option<PType>,
     minting_options: &MintingOptions,
 ) {
     assert!(!df.get_column_names().contains(&variable_name));
@@ -726,7 +726,7 @@ fn mint_iri_series_same_as_column(
     n_start: usize,
     prefix: &str,
 ) -> Series {
-    if let DataType::List(dt) = same_as.dtype() {
+    if let DataType::List(_) = same_as.dtype() {
         let mut df = DataFrame::new(vec![same_as.clone()]).unwrap();
         let mut inner_list = true;
         let mut col_names = vec![];
