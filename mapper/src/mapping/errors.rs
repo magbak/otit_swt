@@ -1,6 +1,6 @@
-use std::fmt::{Display, Formatter};
-use polars_core::prelude::{DataType, Series};
 use crate::ast::{ConstantTerm, PType};
+use polars_core::prelude::{DataType, Series};
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug)]
 pub enum MappingErrorType {

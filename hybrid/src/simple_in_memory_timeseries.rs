@@ -1,6 +1,7 @@
-use hybrid::combiner::{sparql_aggregate_expression_as_lazy_column_and_expression, Combiner};
-use hybrid::timeseries_database::TimeSeriesQueryable;
-use hybrid::timeseries_query::TimeSeriesQuery;
+use crate::combiner::lazy_aggregate::sparql_aggregate_expression_as_lazy_column_and_expression;
+use crate::combiner::lazy_expressions::lazy_expression;
+use crate::timeseries_database::TimeSeriesQueryable;
+use crate::timeseries_query::TimeSeriesQuery;
 use polars::frame::DataFrame;
 use polars::prelude::{col, concat, lit, Expr, IntoLazy};
 use std::collections::{HashMap, HashSet};
@@ -40,7 +41,7 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
 
                 if tsq.conditions.len() > 0 {
                     for expr in &tsq.conditions {
-                        lf = Combiner::lazy_expression(
+                        lf = lazy_expression(
                             &expr.expression,
                             lf,
                             &columns,
@@ -62,7 +63,7 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
         if let Some(grouping) = &tsq.grouping {
             //Important to do iteration in reversed direction for nested functions
             for (v, expression) in grouping.timeseries_funcs.iter().rev() {
-                out_lf = Combiner::lazy_expression(
+                out_lf = lazy_expression(
                     &expression.expression,
                     out_lf,
                     &columns,

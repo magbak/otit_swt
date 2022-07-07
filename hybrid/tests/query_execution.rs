@@ -1,4 +1,3 @@
-use crate::in_memory_timeseries::InMemoryTimeseriesDatabase;
 use bollard::container::{
     Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
     StartContainerOptions,
@@ -6,6 +5,7 @@ use bollard::container::{
 use bollard::models::{ContainerSummary, HostConfig, PortBinding};
 use bollard::Docker;
 use hybrid::orchestrator::execute_hybrid_query;
+use hybrid::simple_in_memory_timeseries::InMemoryTimeseriesDatabase;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::static_sparql::execute_sparql_query;
 use log::debug;
@@ -23,8 +23,6 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time::sleep;
-
-pub mod in_memory_timeseries;
 
 const OXIGRAPH_SERVER_IMAGE: &str = "oxigraph/oxigraph:v0.3.2";
 const QUERY_ENDPOINT: &str = "http://localhost:7878/query";

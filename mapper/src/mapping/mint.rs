@@ -1,7 +1,7 @@
-use polars_core::prelude::{AnyValue, DataFrame, DataType, Series};
-use uuid::Uuid;
 use crate::ast::PType;
 use crate::mapping::{ListLength, MintingOptions, SuffixGenerator};
+use polars_core::prelude::{AnyValue, DataFrame, DataType, Series};
+use uuid::Uuid;
 
 pub fn mint_iri(
     df: &mut DataFrame,

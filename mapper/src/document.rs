@@ -1,9 +1,9 @@
 use crate::ast::StottrDocument;
+use crate::parsing::whole_stottr_doc;
 use crate::resolver::resolve_document;
 use std::error::Error;
 use std::fs::read_to_string;
 use std::path::Path;
-use crate::parsing::whole_stottr_doc;
 
 pub fn document_from_str(s: &str) -> Result<StottrDocument, Box<dyn Error>> {
     let unresolved = whole_stottr_doc(s)?;

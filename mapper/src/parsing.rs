@@ -1,11 +1,11 @@
-use std::error::Error;
-use nom::Finish;
 use crate::parsing::errors::{ParsingError, ParsingErrorKind};
 use crate::parsing::nom_parsing::stottr_doc;
 use crate::parsing::parsing_ast::UnresolvedStottrDocument;
+use nom::Finish;
+use std::error::Error;
 
-mod nom_parsing;
 mod errors;
+mod nom_parsing;
 pub mod parsing_ast;
 
 pub fn whole_stottr_doc(s: &str) -> Result<UnresolvedStottrDocument, Box<dyn Error>> {

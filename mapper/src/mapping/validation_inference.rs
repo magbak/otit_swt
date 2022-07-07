@@ -1,16 +1,18 @@
-use std::collections::{HashMap, HashSet};
+use crate::ast::{PType, Parameter, Signature};
+use crate::chrono::TimeZone as ChronoTimeZone;
+use crate::constants::{XSD_DATETIME_WITHOUT_TZ_FORMAT, XSD_DATETIME_WITH_TZ_FORMAT};
+use crate::mapping::errors::{MappingError, MappingErrorType};
+use crate::mapping::mint::mint_iri;
+use crate::mapping::ExpandOptions;
 use chrono::{Datelike, Timelike};
-use oxrdf::NamedNode;
 use oxrdf::vocab::xsd;
+use oxrdf::NamedNode;
 use polars_core::export::rayon::prelude::ParallelIterator;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{AnyValue, BooleanChunked, ChunkApply, DataType, IntoSeries, Series, StructChunked, TimeZone};
-use crate::ast::{Parameter, PType, Signature};
-use crate::constants::{XSD_DATETIME_WITH_TZ_FORMAT, XSD_DATETIME_WITHOUT_TZ_FORMAT};
-use crate::mapping::errors::{MappingError, MappingErrorType};
-use crate::mapping::{ExpandOptions};
-use crate::mapping::mint::mint_iri;
-use crate::chrono::TimeZone as ChronoTimeZone;
+use polars_core::prelude::{
+    AnyValue, BooleanChunked, ChunkApply, DataType, IntoSeries, Series, StructChunked, TimeZone,
+};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug)]
 pub struct PrimitiveColumn {

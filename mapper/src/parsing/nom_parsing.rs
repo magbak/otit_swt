@@ -1,21 +1,27 @@
 extern crate nom;
 
 #[cfg(test)]
-use nom::{Finish};
+use nom::Finish;
 
 use nom::branch::alt;
 use nom::bytes::complete::{escaped, is_not, tag};
 use nom::character::complete::char as char_func;
 
+use crate::ast::{Directive, ListExpanderType, Prefix, StottrVariable};
+use crate::parsing::parsing_ast::{
+    PrefixedName, ResolvesToNamedNode, UnresolvedAnnotation, UnresolvedArgument,
+    UnresolvedBaseTemplate, UnresolvedConstantLiteral, UnresolvedConstantTerm,
+    UnresolvedDefaultValue, UnresolvedInstance, UnresolvedPType, UnresolvedParameter,
+    UnresolvedSignature, UnresolvedStatement, UnresolvedStottrDocument, UnresolvedStottrLiteral,
+    UnresolvedStottrTerm, UnresolvedTemplate,
+};
 use nom::character::complete::{alpha1, alphanumeric1, digit0, digit1, multispace0, one_of};
 use nom::combinator::opt;
-use nom::{IResult};
 use nom::multi::{count, many0, many1, separated_list0, separated_list1};
 use nom::sequence::tuple;
-use oxrdf::{BlankNode, NamedNode};
+use nom::IResult;
 use oxrdf::vocab::xsd;
-use crate::ast::{Directive, ListExpanderType, Prefix, StottrVariable};
-use crate::parsing::parsing_ast::{PrefixedName, ResolvesToNamedNode, UnresolvedAnnotation, UnresolvedArgument, UnresolvedBaseTemplate, UnresolvedConstantLiteral, UnresolvedConstantTerm, UnresolvedDefaultValue, UnresolvedInstance, UnresolvedParameter, UnresolvedPType, UnresolvedSignature, UnresolvedStatement, UnresolvedStottrDocument, UnresolvedStottrLiteral, UnresolvedStottrTerm, UnresolvedTemplate};
+use oxrdf::{BlankNode, NamedNode};
 
 enum DirectiveStatement {
     Directive(Directive),

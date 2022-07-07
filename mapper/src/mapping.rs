@@ -1,36 +1,35 @@
-mod mint;
 mod errors;
-mod validation_inference;
-mod ntriples_write;
 mod export_triples;
+mod mint;
+mod ntriples_write;
+mod validation_inference;
 
 use crate::ast::{
-    ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Signature,
-    StottrTerm,
+    ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Signature, StottrTerm,
 };
-use crate::constants::{
-    BLANK_NODE_IRI, NONE_IRI, OTTR_TRIPLE,
-};
+use crate::constants::{BLANK_NODE_IRI, NONE_IRI, OTTR_TRIPLE};
 use crate::document::document_from_str;
-use ntriples_write::write_ntriples;
+use crate::mapping::errors::{MappingError, MappingErrorType};
+use crate::mapping::export_triples::export_triples;
+use crate::mapping::validation_inference::{
+    find_validate_and_prepare_dataframe_columns, MappedColumn, PrimitiveColumn, RDFNodeType,
+};
 use crate::templates::TemplateDataset;
+use ntriples_write::write_ntriples;
 use oxrdf::vocab::xsd;
 use oxrdf::{NamedNode, Triple};
 use polars::lazy::prelude::{col, concat, Expr, LiteralValue};
 use polars::prelude::{
-    AnyValue, concat_lst, concat_str, DataFrame, DataType, Field, IntoLazy,
-    LazyFrame, PolarsError, Series, SeriesOps,
+    concat_lst, concat_str, AnyValue, DataFrame, DataType, Field, IntoLazy, LazyFrame, PolarsError,
+    Series, SeriesOps,
 };
 use polars::prelude::{IntoSeries, NoEq, StructChunked};
 use polars::toggle_string_cache;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::error::Error;
 use std::io::Write;
 use std::ops::{Deref, Not};
 use std::path::Path;
-use crate::mapping::errors::{MappingError, MappingErrorType};
-use crate::mapping::export_triples::export_triples;
-use crate::mapping::validation_inference::{find_validate_and_prepare_dataframe_columns, MappedColumn, PrimitiveColumn, RDFNodeType};
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
@@ -453,7 +452,6 @@ fn create_remapped_lazy_frame(
     }
     Ok((lf, new_map))
 }
-
 
 fn constant_to_expr(
     constant_term: &ConstantTerm,

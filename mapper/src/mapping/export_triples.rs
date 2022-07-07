@@ -1,4 +1,4 @@
-use crate::mapping::{is_blank_node};
+use crate::mapping::is_blank_node;
 use oxrdf::{BlankNode, Literal, NamedNode, Subject, Term, Triple};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::AnyValue;
