@@ -99,7 +99,7 @@ fn test_all_iri_case() {
             Default::default(),
         )
         .expect("");
-    let triples = mapping.to_triples();
+    let triples = mapping.export_triples();
     //println!("{:?}", triples);
     let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
     let expected_triples_set = HashSet::from([
@@ -153,7 +153,7 @@ fn test_string_language_tag_cases() {
             },
         )
         .expect("");
-    let triples = mapping.to_triples();
+    let triples = mapping.export_triples();
     //println!("{:?}", triples);
     let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
     let expected_triples_set = HashSet::from([
@@ -212,7 +212,7 @@ fn test_const_list_case() {
             Default::default(),
         )
         .expect("");
-    let triples = mapping.to_triples();
+    let triples = mapping.export_triples();
     //println!("{:?}", triples);
     let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
     let expected_triples_set = HashSet::from([
@@ -285,7 +285,7 @@ ex:Nested [?myVar] :: {
             Default::default(),
         )
         .unwrap();
-    let triples = mapping.to_triples();
+    let triples = mapping.export_triples();
     //println!("{:?}", triples);
     let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
     let expected_triples_set = HashSet::from([
@@ -361,7 +361,7 @@ fn test_mint_iri_templates() {
             },
         )
         .unwrap();
-    let triples = mapping.to_triples();
+    let triples = mapping.export_triples();
     //println!("{:?}", triples);
     let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
     let expected_triples_set = HashSet::from([
@@ -482,7 +482,7 @@ ex:ExampleTemplate [
             Default::default(),
         )
         .unwrap();
-    let mut actual_triples = mapping.to_triples();
+    let mut actual_triples = mapping.export_triples();
     let mut expected_triples = vec![
         Triple {
             subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
@@ -715,7 +715,7 @@ ex:AnotherExampleTemplate [?object, ?predicate, ?myList] :: {
             Default::default(),
         )
         .unwrap();
-    let triples = mapping.to_triples();
+    let triples = mapping.export_triples();
     //println!("{:?}", triples);
     let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
     let expected_triples_set = HashSet::from([
@@ -801,7 +801,7 @@ ex:AnotherExampleTemplate [?subject, ?myList1, ?myList2] :: {
             Default::default(),
         )
         .unwrap();
-    let triples = mapping.to_triples();
+    let triples = mapping.export_triples();
     //println!("{:?}", triples);
     let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
     let expected_triples_set = HashSet::from([

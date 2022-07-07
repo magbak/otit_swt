@@ -6,4 +6,4 @@ pub const XSD_PREFIX_IRI: &str = "http://www.w3.org/2001/XMLSchema#";
 pub const XSD_DATETIME_WITHOUT_TZ_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.f";
 pub const XSD_DATETIME_WITH_TZ_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 pub const BLANK_NODE_IRI: &str = "BLANK_NODE_IRI";
-pub const NONE_IRI: &str = "BLANK_NODE_IRI";
+pub const NONE_IRI: &str = "NONE_IRI";

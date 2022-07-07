@@ -1,151 +1,40 @@
+mod mint;
+mod errors;
+mod validation_inference;
+mod ntriples_write;
+mod export_triples;
+
 use crate::ast::{
-    ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Parameter, Signature,
+    ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Signature,
     StottrTerm,
 };
-use crate::chrono::TimeZone as ChronoTimeZone;
 use crate::constants::{
-    BLANK_NODE_IRI, NONE_IRI, OTTR_TRIPLE, XSD_DATETIME_WITHOUT_TZ_FORMAT,
-    XSD_DATETIME_WITH_TZ_FORMAT,
+    BLANK_NODE_IRI, NONE_IRI, OTTR_TRIPLE,
 };
 use crate::document::document_from_str;
-use crate::ntriples_write::write_ntriples;
+use ntriples_write::write_ntriples;
 use crate::templates::TemplateDataset;
-use chrono::{Datelike, Timelike};
 use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, Literal, NamedNode, Subject, Term, Triple};
-use polars::export::rayon::iter::ParallelIterator;
 use polars::lazy::prelude::{col, concat, Expr, LiteralValue};
 use polars::prelude::{
-    concat_lst, concat_str, AnyValue, BooleanChunked, DataFrame, DataType, Field, IntoLazy,
+    AnyValue, concat_lst, concat_str, DataFrame, DataType, Field, IntoLazy,
     LazyFrame, PolarsError, Series, SeriesOps,
 };
 use polars::prelude::{IntoSeries, NoEq, StructChunked};
 use polars::toggle_string_cache;
-use polars_core::prelude::{ChunkApply, TimeZone};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::error::Error;
-use std::fmt::{Debug, Display, Formatter};
 use std::io::Write;
 use std::ops::{Deref, Not};
 use std::path::Path;
-use uuid::Uuid;
+use crate::mapping::errors::{MappingError, MappingErrorType};
+use crate::mapping::validation_inference::{find_validate_and_prepare_dataframe_columns, MappedColumn, PrimitiveColumn, RDFNodeType};
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
     object_property_triples: Option<DataFrame>,
     data_property_triples: Option<DataFrame>,
-}
-
-#[derive(Debug)]
-pub enum MappingErrorType {
-    TemplateNotFound(String),
-    MissingKeyColumn,
-    KeyColumnContainsDuplicates(Series),
-    KeyColumnOverlapsExisting(Series),
-    NonOptionalColumnHasNull(String, Series),
-    InvalidKeyColumnDataType(DataType),
-    NonBlankColumnHasBlankNode(String, Series),
-    MissingParameterColumn(String),
-    ContainsIrrelevantColumns(Vec<String>),
-    CouldNotInferStottrDatatypeForColumn(String, DataType),
-    ColumnDataTypeMismatch(String, DataType, PType),
-    PTypeNotSupported(String, PType),
-    UnknownTimeZoneError(String),
-    UnknownVariableError(String),
-    ConstantDoesNotMatchDataType(ConstantTerm, PType, PType),
-    ConstantListHasInconsistentPType(ConstantTerm, PType, PType),
-}
-
-#[derive(Debug)]
-pub struct MappingError {
-    kind: MappingErrorType,
-}
-
-impl Display for MappingError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self.kind {
-            MappingErrorType::TemplateNotFound(t) => {
-                write!(f, "Could not find template: {}", t)
-            }
-            MappingErrorType::MissingKeyColumn => {
-                write!(f, "Could not find Key column")
-            }
-            MappingErrorType::KeyColumnContainsDuplicates(dupes) => {
-                write!(f, "Key column has duplicate entries: {}", dupes)
-            }
-            MappingErrorType::KeyColumnOverlapsExisting(overlapping) => {
-                write!(f, "Key column overlaps existing keys: {}", overlapping)
-            }
-            MappingErrorType::NonOptionalColumnHasNull(col, nullkey) => {
-                write!(
-                    f,
-                    "Column {} which is non-optional has null values for keys: {}",
-                    col, nullkey
-                )
-            }
-            MappingErrorType::InvalidKeyColumnDataType(dt) => {
-                write!(
-                    f,
-                    "Key column has invalid data type: {}, should be Utf8",
-                    dt
-                )
-            }
-            MappingErrorType::NonBlankColumnHasBlankNode(col, blanks) => {
-                write!(f, "Non-blank column {} has blanks {}", col, blanks)
-            }
-            MappingErrorType::MissingParameterColumn(c) => {
-                write!(f, "Expected column {} is missing", c)
-            }
-            MappingErrorType::ContainsIrrelevantColumns(irr) => {
-                write!(f, "Unexpected columns: {}", irr.join(","))
-            }
-            MappingErrorType::CouldNotInferStottrDatatypeForColumn(col, dt) => {
-                write!(
-                    f,
-                    "Could not infer stottr type for column {} with polars datatype {}",
-                    col, dt
-                )
-            }
-            MappingErrorType::ColumnDataTypeMismatch(col, dt, ptype) => {
-                write!(
-                    f,
-                    "Column {} had datatype {} which was incompatible with the stottr datatype {}",
-                    col, dt, ptype
-                )
-            }
-            MappingErrorType::PTypeNotSupported(name, ptype) => {
-                write!(
-                    f,
-                    "Found value {} with unsupported stottr datatype {}",
-                    name, ptype
-                )
-            }
-            MappingErrorType::UnknownTimeZoneError(tz) => {
-                write!(f, "Unknown time zone {}", tz)
-            }
-            MappingErrorType::UnknownVariableError(v) => {
-                write!(
-                    f,
-                    "Could not find variable {}, is the stottr template invalid?",
-                    v
-                )
-            }
-            MappingErrorType::ConstantDoesNotMatchDataType(constant_term, expected, actual) => {
-                write!(
-                    f,
-                    "Expected constant term {:?} to have data type {} but was {}",
-                    constant_term, expected, actual
-                )
-            }
-            MappingErrorType::ConstantListHasInconsistentPType(constant_term, prev, next) => {
-                write!(
-                    f,
-                    "Constant term {:?} has inconsistent data types {} and {}",
-                    constant_term, prev, next
-                )
-            }
-        }
-    }
 }
 
 pub struct ExpandOptions {
@@ -178,24 +67,6 @@ pub struct MintingOptions {
 }
 
 pub struct MappingReport {}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum RDFNodeType {
-    IRI,
-    BlankNode,
-    Literal,
-    None,
-}
-
-#[derive(Clone, Debug)]
-struct PrimitiveColumn {
-    rdf_node_type: RDFNodeType,
-}
-
-#[derive(Clone, Debug)]
-enum MappedColumn {
-    PrimitiveColumn(PrimitiveColumn),
-}
 
 impl Mapping {
     pub fn new(template_dataset: &TemplateDataset) -> Mapping {
@@ -323,7 +194,7 @@ impl Mapping {
         Ok(())
     }
 
-    pub fn to_triples(&mut self) -> Vec<Triple> {
+    pub fn export_triples(&mut self) -> Vec<Triple> {
         let mut triples = vec![];
         if let Some(object_property_triples) = &self.object_property_triples {
             if object_property_triples.height() > 0 {
@@ -613,180 +484,6 @@ impl Mapping {
     }
 }
 
-fn find_validate_and_prepare_dataframe_columns(
-    signature: &Signature,
-    df: &mut DataFrame,
-    options: &ExpandOptions,
-) -> Result<HashMap<String, MappedColumn>, MappingError> {
-    let mut df_columns = HashSet::new();
-    df_columns.extend(df.get_column_names().into_iter().map(|x| x.to_string()));
-    let removed = df_columns.remove("Key");
-    assert!(removed);
-
-    let mut map = HashMap::new();
-    for parameter in &signature.parameter_list {
-        let variable_name = &parameter.stottr_variable.name;
-        if df_columns.contains(variable_name.as_str()) {
-            df_columns.remove(variable_name.as_str());
-            if !parameter.optional {
-                validate_non_optional_parameter(&df, variable_name)?;
-            }
-            if parameter.non_blank {
-                //TODO handle blanks;
-                validate_non_blank_parameter(&df, variable_name)?;
-            }
-            let column_data_type = infer_validate_and_prepare_column_data_type(
-                df,
-                &parameter,
-                variable_name,
-                options,
-            )?;
-
-            map.insert(
-                variable_name.to_string(),
-                MappedColumn::PrimitiveColumn(column_data_type),
-            );
-        } else if options.mint_iris.is_some()
-            && options
-                .mint_iris
-                .as_ref()
-                .unwrap()
-                .contains_key(variable_name)
-        {
-            mint_iri(
-                df,
-                variable_name,
-                &parameter.ptype,
-                options
-                    .mint_iris
-                    .as_ref()
-                    .unwrap()
-                    .get(variable_name)
-                    .unwrap(),
-            );
-            map.insert(
-                variable_name.to_string(),
-                MappedColumn::PrimitiveColumn(PrimitiveColumn {
-                    rdf_node_type: RDFNodeType::IRI,
-                }),
-            );
-        } else {
-            return Err(MappingError {
-                kind: MappingErrorType::MissingParameterColumn(variable_name.to_string()),
-            });
-        }
-    }
-    if !df_columns.is_empty() {
-        return Err(MappingError {
-            kind: MappingErrorType::ContainsIrrelevantColumns(
-                df_columns.iter().map(|x| x.to_string()).collect(),
-            ),
-        });
-    }
-    Ok(map)
-}
-
-fn mint_iri(
-    df: &mut DataFrame,
-    variable_name: &str,
-    ptype_opt: &Option<PType>,
-    minting_options: &MintingOptions,
-) {
-    assert!(!df.get_column_names().contains(&variable_name));
-    let n_start = match minting_options.suffix_generator {
-        SuffixGenerator::Numbering(numbering) => numbering,
-    };
-    let prefix = &minting_options.prefix;
-    let is_list = if let Some(ptype) = ptype_opt {
-        match ptype {
-            PType::BasicType(_) => false,
-            PType::LUBType(_) => true,
-            PType::ListType(_) => true,
-            PType::NEListType(_) => true,
-        }
-    } else {
-        false
-    };
-    let series = if is_list {
-        if let Some(ll) = &minting_options.list_length {
-            match ll {
-                ListLength::Constant(c) => {
-                    let mut dummy_series = Series::new_empty("dummy", &DataType::Null);
-                    dummy_series = dummy_series
-                        .extend_constant(
-                            AnyValue::List(Series::full_null("dummy", *c, &DataType::Null)),
-                            df.height(),
-                        )
-                        .unwrap();
-                    mint_iri_series_same_as_column(&dummy_series, variable_name, n_start, prefix)
-                }
-                ListLength::SameAsColumn(c) => mint_iri_series_same_as_column(
-                    df.column(c).unwrap(),
-                    variable_name,
-                    n_start,
-                    prefix,
-                ),
-            }
-        } else {
-            todo!("Make nice error here")
-        }
-    } else {
-        mint_iri_numbering(variable_name, n_start, df.height(), prefix)
-    };
-    df.with_column(series).unwrap();
-}
-
-fn mint_iri_series_same_as_column(
-    same_as: &Series,
-    variable_name: &str,
-    n_start: usize,
-    prefix: &str,
-) -> Series {
-    if let DataType::List(_) = same_as.dtype() {
-        let mut df = DataFrame::new(vec![same_as.clone()]).unwrap();
-        let mut inner_list = true;
-        let mut col_names = vec![];
-        while inner_list {
-            let row_num_name = Uuid::new_v4().to_string();
-            df = df.with_row_count(&row_num_name, None).unwrap();
-            df = df.explode([same_as.name()]).unwrap();
-            col_names.push(row_num_name);
-            if let DataType::List(_) = df.column(same_as.name()).unwrap().dtype() {
-                //More explosions needed
-            } else {
-                inner_list = false;
-            }
-        }
-        df.with_column(mint_iri_numbering(
-            variable_name,
-            n_start,
-            df.height(),
-            prefix,
-        ))
-        .unwrap();
-        for i in 0..col_names.len() {
-            df = df
-                .groupby(&col_names[0..(col_names.len() - i)])
-                .unwrap()
-                .agg_list()
-                .unwrap();
-            df.rename(&format!("{}_agg_list", variable_name), variable_name)
-                .unwrap();
-        }
-        df.column(variable_name).unwrap().clone()
-    } else {
-        panic!("Should not be called with non-list series");
-    }
-}
-
-fn mint_iri_numbering(variable_name: &str, n_start: usize, length: usize, prefix: &str) -> Series {
-    let new_n_start = n_start + length;
-    let iri_fun = |i| format!("{}{}", prefix, i);
-    let mut iri_series = Series::from_iter((n_start..new_n_start).map(iri_fun));
-    iri_series.rename(variable_name);
-    iri_series
-}
-
 fn create_remapped_lazy_frame(
     instance: &Instance,
     signature: &Signature,
@@ -865,327 +562,6 @@ fn create_remapped_lazy_frame(
     Ok((lf, new_map))
 }
 
-fn infer_validate_and_prepare_column_data_type(
-    dataframe: &mut DataFrame,
-    parameter: &Parameter,
-    column_name: &str,
-    options: &ExpandOptions,
-) -> Result<PrimitiveColumn, MappingError> {
-    let series = dataframe.column(column_name).unwrap();
-    let (new_series, ptype) = if let Some(ptype) = &parameter.ptype {
-        (
-            convert_series_if_required(series, ptype, options).unwrap(),
-            ptype.clone(),
-        )
-    } else {
-        let column_data_type = dataframe.column(column_name).unwrap().dtype().clone();
-        let target_ptype = polars_datatype_to_xsd_datatype(column_data_type);
-        (
-            convert_series_if_required(series, &target_ptype, options).unwrap(),
-            target_ptype,
-        )
-    };
-    dataframe.with_column(new_series).unwrap();
-    let rdf_node_type = infer_rdf_node_type(&ptype);
-    Ok(PrimitiveColumn { rdf_node_type })
-}
-
-fn infer_rdf_node_type(ptype: &PType) -> RDFNodeType {
-    match ptype {
-        PType::BasicType(b) => {
-            if b.as_str() == xsd::ANY_URI {
-                RDFNodeType::IRI
-            } else {
-                RDFNodeType::Literal
-            }
-        }
-        PType::LUBType(l) => infer_rdf_node_type(l),
-        PType::ListType(l) => infer_rdf_node_type(l),
-        PType::NEListType(l) => infer_rdf_node_type(l),
-    }
-}
-
-fn convert_series_if_required(
-    series: &Series,
-    target_ptype: &PType,
-    options: &ExpandOptions,
-) -> Result<Series, MappingError> {
-    let series_data_type = series.dtype();
-    let mismatch_error = || {
-        Err(MappingError {
-            kind: MappingErrorType::ColumnDataTypeMismatch(
-                series.name().to_string(),
-                series_data_type.clone(),
-                target_ptype.clone(),
-            ),
-        })
-    };
-    let convert_if_series_list = |inner| {
-        if let DataType::List(_) = series_data_type {
-            convert_list_series(series, inner, options)
-        } else {
-            mismatch_error()
-        }
-    };
-    match target_ptype {
-        PType::BasicType(bt) => {
-            if let DataType::List(_) = series_data_type {
-                mismatch_error()
-            } else {
-                Ok(convert_nonlist_series_to_value_struct_if_required(
-                    series, bt, options,
-                )?)
-            }
-        }
-        PType::LUBType(inner) => convert_if_series_list(inner),
-        PType::ListType(inner) => convert_if_series_list(inner),
-        PType::NEListType(inner) => convert_if_series_list(inner),
-    }
-}
-
-fn convert_list_series(
-    series: &Series,
-    inner_target_ptype: &PType,
-    options: &ExpandOptions,
-) -> Result<Series, MappingError> {
-    let mut out = series
-        .list()
-        .unwrap()
-        .apply(
-            |x| match { convert_series_if_required(&x, inner_target_ptype, options) } {
-                Ok(ser) => ser,
-                Err(e) => {
-                    panic!("{:?}", e)
-                }
-            },
-        )
-        .into_series();
-    out.rename(series.name());
-    Ok(out)
-}
-
-fn convert_nonlist_series_to_value_struct_if_required(
-    series: &Series,
-    nn: &NamedNode,
-    options: &ExpandOptions,
-) -> Result<Series, MappingError> {
-    let series_data_type = series.dtype();
-    let mismatch_error = || MappingError {
-        kind: MappingErrorType::ColumnDataTypeMismatch(
-            series.name().to_string(),
-            series_data_type.clone(),
-            PType::BasicType(nn.clone()),
-        ),
-    };
-    let mut new_series = if nn.as_str() == xsd::ANY_URI.as_str() {
-        if series_data_type == &DataType::Utf8 {
-            series.clone()
-        } else {
-            return Err(mismatch_error());
-        }
-    } else if nn.as_str() == xsd::BOOLEAN.as_str() {
-        if series_data_type == &DataType::Boolean {
-            series.cast(&DataType::Utf8).unwrap()
-        } else {
-            return Err(mismatch_error());
-        }
-    } else if nn.as_str() == xsd::UNSIGNED_INT.as_str() {
-        if series_data_type == &DataType::UInt32 {
-            series.cast(&DataType::Utf8).unwrap()
-        } else {
-            return Err(mismatch_error());
-        }
-    } else if nn.as_str() == xsd::UNSIGNED_LONG.as_str() {
-        if series_data_type == &DataType::UInt64 {
-            series.cast(&DataType::Utf8).unwrap()
-        } else {
-            return Err(mismatch_error());
-        }
-    } else if nn.as_str() == xsd::INT.as_str() {
-        if series_data_type == &DataType::Int32 {
-            series.cast(&DataType::Utf8).unwrap()
-        } else {
-            return Err(mismatch_error());
-        }
-    } else if nn.as_str() == xsd::LONG.as_str() {
-        if series_data_type == &DataType::Int64 {
-            series.cast(&DataType::Utf8).unwrap()
-        } else {
-            return Err(mismatch_error());
-        }
-    } else if nn.as_str() == xsd::FLOAT.as_str() {
-        if series_data_type == &DataType::Float32 {
-            series.cast(&DataType::Utf8).unwrap()
-        } else {
-            return Err(mismatch_error());
-        }
-    } else if nn.as_str() == xsd::DOUBLE.as_str() {
-        if series_data_type == &DataType::Float64 {
-            series.cast(&DataType::Utf8).unwrap()
-        } else {
-            return Err(mismatch_error());
-        }
-    } else if nn.as_str() == xsd::STRING.as_str() {
-        if series_data_type == &DataType::Utf8 {
-            series.clone()
-        } else {
-            return Err(mismatch_error());
-        }
-    } else if nn.as_str() == xsd::DATE_TIME.as_str() {
-        if let DataType::Datetime(_, tz_opt) = series_data_type {
-            if let Some(tz) = tz_opt {
-                hack_format_timestamp_with_timezone(series, tz)?
-            } else {
-                series
-                    .datetime()
-                    .unwrap()
-                    .strftime(XSD_DATETIME_WITHOUT_TZ_FORMAT)
-                    .into_series()
-            }
-        } else {
-            return Err(mismatch_error());
-        }
-    } else if nn.as_str() == xsd::DATE_TIME_STAMP.as_str() {
-        if let DataType::Datetime(_, Some(tz)) = series_data_type {
-            hack_format_timestamp_with_timezone(series, tz)?
-        } else {
-            return Err(mismatch_error());
-        }
-    } else {
-        return Err(MappingError {
-            kind: MappingErrorType::PTypeNotSupported(
-                series.name().to_string(),
-                PType::BasicType(nn.clone()),
-            ),
-        });
-    };
-    assert_eq!(new_series.dtype(), &DataType::Utf8);
-    let rdf_node_type = infer_rdf_node_type(&PType::BasicType(nn.clone()));
-    if rdf_node_type == RDFNodeType::Literal {
-        new_series.rename("lexical_form");
-        let mut language_tag = "";
-        if let Some(tags) = &options.language_tags {
-            if let Some(tag) = tags.get(series.name()) {
-                language_tag = tag.as_str();
-            }
-        }
-        let language_series = Series::new_empty(&"language_tag", &DataType::Utf8)
-            .extend_constant(AnyValue::Utf8(language_tag), series.len())
-            .unwrap();
-        let data_type_series = Series::new_empty("datatype_iri", &DataType::Utf8)
-            .extend_constant(AnyValue::Utf8(nn.as_str()), series.len())
-            .unwrap();
-        let st = StructChunked::new(
-            series.name(),
-            &[new_series, language_series, data_type_series],
-        )
-        .unwrap();
-        new_series = st.into_series();
-    }
-    Ok(new_series)
-}
-
-fn hack_format_timestamp_with_timezone(
-    series: &Series,
-    tz: &TimeZone,
-) -> Result<Series, MappingError> {
-    let timezone_opt: Result<chrono_tz::Tz, _> = tz.parse();
-    if let Ok(timezone) = timezone_opt {
-        let datetime_strings = Series::from_iter(
-            series
-                .datetime()
-                .unwrap()
-                .as_datetime_iter()
-                .map(|x| x.unwrap())
-                .map(|x| {
-                    format!(
-                        "{}",
-                        timezone
-                            .ymd(x.year(), x.month(), x.day())
-                            .and_hms_nano(x.hour(), x.minute(), x.second(), x.nanosecond())
-                            .format(XSD_DATETIME_WITH_TZ_FORMAT)
-                    )
-                }),
-        );
-
-        Ok(datetime_strings)
-    } else {
-        Err(MappingError {
-            kind: MappingErrorType::UnknownTimeZoneError(tz.to_string()),
-        })
-    }
-}
-
-fn polars_datatype_to_xsd_datatype(datatype: DataType) -> PType {
-    let xsd_nn_ref = match datatype {
-        DataType::Boolean => xsd::BOOLEAN,
-        DataType::UInt32 => xsd::UNSIGNED_INT,
-        DataType::UInt64 => xsd::UNSIGNED_LONG,
-        DataType::Int32 => xsd::INT,
-        DataType::Int64 => xsd::LONG,
-        DataType::Float32 => xsd::FLOAT,
-        DataType::Float64 => xsd::DOUBLE,
-        DataType::Utf8 => xsd::STRING,
-        DataType::Date => xsd::DATE,
-        DataType::Datetime(_, Some(_)) => xsd::DATE_TIME_STAMP,
-        DataType::Datetime(_, None) => xsd::DATE_TIME,
-        DataType::Duration(_) => xsd::DURATION,
-        DataType::List(inner) => {
-            return PType::ListType(Box::new(polars_datatype_to_xsd_datatype(*inner)))
-        }
-        _ => {
-            panic!("Unsupported datatype:{}", datatype)
-        }
-    };
-    PType::BasicType(xsd_nn_ref.into_owned())
-}
-
-fn validate_non_optional_parameter(df: &DataFrame, column_name: &str) -> Result<(), MappingError> {
-    if df.column(column_name).unwrap().is_null().any() {
-        let is_null = df.column(column_name).unwrap().is_null();
-        Err(MappingError {
-            kind: MappingErrorType::NonOptionalColumnHasNull(
-                column_name.to_string(),
-                df.column("Key").unwrap().filter(&is_null).unwrap(),
-            ),
-        })
-    } else {
-        Ok(())
-    }
-}
-
-fn validate_non_blank_parameter(df: &DataFrame, column_name: &str) -> Result<(), MappingError> {
-    let is_blank_node_mask: BooleanChunked = df
-        .column(column_name)
-        .unwrap()
-        .utf8()
-        .map(move |x| {
-            x.par_iter()
-                .map(move |x| x.unwrap_or("").starts_with("_:"))
-                .collect()
-        })
-        .unwrap();
-    if is_blank_node_mask.any() {
-        return Err(MappingError {
-            kind: MappingErrorType::NonBlankColumnHasBlankNode(
-                column_name.to_string(),
-                df.column(column_name)
-                    .unwrap()
-                    .filter(&is_blank_node_mask)
-                    .unwrap(),
-            ),
-        });
-    }
-    Ok(())
-}
-
-fn literal_struct_fields() -> Vec<Field> {
-    vec![
-        Field::new("lexical_form", DataType::Utf8),
-        Field::new("language_tag", DataType::Utf8),
-        Field::new("datatype_iri", DataType::Utf8),
-    ]
-}
 
 fn constant_to_expr(
     constant_term: &ConstantTerm,
@@ -1325,4 +701,12 @@ fn object_term_from_str(s: &str) -> Term {
 
 fn is_blank_node(s: &str) -> bool {
     s.starts_with("_:")
+}
+
+fn literal_struct_fields() -> Vec<Field> {
+    vec![
+        Field::new("lexical_form", DataType::Utf8),
+        Field::new("language_tag", DataType::Utf8),
+        Field::new("datatype_iri", DataType::Utf8),
+    ]
 }
