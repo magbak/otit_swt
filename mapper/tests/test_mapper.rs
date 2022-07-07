@@ -316,7 +316,7 @@ ex:Nested [?myVar] :: {
 fn test_mint_iri_templates() {
     let stottr = r#"
     @prefix ex:<http://example.net/ns#>.
-    ex:ExampleTemplate [?myIRI1] :: {
+    ex:ExampleTemplate [?myIRI1, ?myIRI2] :: {
     ottr:Triple(?myIRI1, ex:relatesTo, ?myIRI2)
   } .
 "#;
@@ -333,7 +333,7 @@ fn test_mint_iri_templates() {
             df,
         ExpandOptions{
             mint_iris: Some(
-                HashMap::from([("myVar2".to_string(),
+                HashMap::from([("myIRI2".to_string(),
                 MintingOptions{
                 prefix: "http://example.net/things#".to_string(),
                 suffix_generator: SuffixGenerator::Numbering(3),
@@ -346,36 +346,14 @@ fn test_mint_iri_templates() {
     let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
     let expected_triples_set = HashSet::from([
         Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
-            predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumber"),
-            object: Term::Literal(Literal::new_typed_literal(
-                "1",
-                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
-            )),
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/things#subject1")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#relatesTo"),
+            object: Term::NamedNode(NamedNode::new_unchecked("http://example.net/things#3")),
         },
         Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
-            predicate: NamedNode::new_unchecked("http://example.net/ns#hasNumber"),
-            object: Term::Literal(Literal::new_typed_literal(
-                "2",
-                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
-            )),
-        },
-        Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
-            predicate: NamedNode::new_unchecked("http://example.net/ns#hasOtherNumber"),
-            object: Term::Literal(Literal::new_typed_literal(
-                "3",
-                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
-            )),
-        },
-        Triple {
-            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#anObject")),
-            predicate: NamedNode::new_unchecked("http://example.net/ns#hasOtherNumber"),
-            object: Term::Literal(Literal::new_typed_literal(
-                "4",
-                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
-            )),
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/things#subject2")),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#relatesTo"),
+            object: Term::NamedNode(NamedNode::new_unchecked("http://example.net/things#4")),
         },
     ]);
     assert_eq!(expected_triples_set, actual_triples_set);

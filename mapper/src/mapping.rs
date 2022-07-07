@@ -653,7 +653,11 @@ fn find_validate_and_prepare_dataframe_columns(
                 .unwrap()
                 .contains_key(variable_name)
         {
-            mint_iri(df, variable_name, &parameter.ptype, options.mint_iris.as_ref().unwrap().get(variable_name).unwrap())
+            mint_iri(df, variable_name, &parameter.ptype, options.mint_iris.as_ref().unwrap().get(variable_name).unwrap());
+            map.insert(
+                variable_name.to_string(),
+                MappedColumn::PrimitiveColumn(PrimitiveColumn{ rdf_node_type: RDFNodeType::IRI })
+            );
         } else {
             return Err(MappingError {
                 kind: MappingErrorType::MissingParameterColumn(variable_name.to_string()),
