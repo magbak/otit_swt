@@ -145,7 +145,7 @@ pub enum StottrTerm {
     List(Vec<StottrTerm>),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct StottrDocument {
     pub directives: Vec<Directive>,
     pub statements: Vec<Statement>,

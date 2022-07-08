@@ -16,6 +16,7 @@ mod constants;
 mod parsing;
 mod resolver;
 
+pub mod errors;
 pub mod document;
 pub mod mapping;
 pub mod templates;

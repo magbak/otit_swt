@@ -1,9 +1,12 @@
 use crate::ast::{ConstantTerm, PType};
 use polars_core::prelude::{DataType, Series};
 use std::fmt::{Display, Formatter};
+use oxrdf::IriParseError;
+use thiserror::Error;
 
-#[derive(Debug)]
-pub enum MappingErrorType {
+#[derive(Error, Debug)]
+pub enum MappingError {
+    InvalidTemplateNameError(#[from] IriParseError),
     TemplateNotFound(String),
     MissingKeyColumn,
     KeyColumnContainsDuplicates(Series),
@@ -22,93 +25,93 @@ pub enum MappingErrorType {
     ConstantListHasInconsistentPType(ConstantTerm, PType, PType),
 }
 
-#[derive(Debug)]
-pub struct MappingError {
-    pub kind: MappingErrorType,
-}
-
 impl Display for MappingError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self.kind {
-            MappingErrorType::TemplateNotFound(t) => {
+        match self {
+            MappingError::TemplateNotFound(t) => {
                 write!(f, "Could not find template: {}", t)
             }
-            MappingErrorType::MissingKeyColumn => {
+            MappingError::MissingKeyColumn => {
                 write!(f, "Could not find Key column")
             }
-            MappingErrorType::KeyColumnContainsDuplicates(dupes) => {
+            MappingError::KeyColumnContainsDuplicates(dupes) => {
                 write!(f, "Key column has duplicate entries: {}", dupes)
             }
-            MappingErrorType::KeyColumnOverlapsExisting(overlapping) => {
+            MappingError::KeyColumnOverlapsExisting(overlapping) => {
                 write!(f, "Key column overlaps existing keys: {}", overlapping)
             }
-            MappingErrorType::NonOptionalColumnHasNull(col, nullkey) => {
+            MappingError::NonOptionalColumnHasNull(col, nullkey) => {
                 write!(
                     f,
                     "Column {} which is non-optional has null values for keys: {}",
                     col, nullkey
                 )
             }
-            MappingErrorType::InvalidKeyColumnDataType(dt) => {
+            MappingError::InvalidKeyColumnDataType(dt) => {
                 write!(
                     f,
                     "Key column has invalid data type: {}, should be Utf8",
                     dt
                 )
             }
-            MappingErrorType::NonBlankColumnHasBlankNode(col, blanks) => {
+            MappingError::NonBlankColumnHasBlankNode(col, blanks) => {
                 write!(f, "Non-blank column {} has blanks {}", col, blanks)
             }
-            MappingErrorType::MissingParameterColumn(c) => {
+            MappingError::MissingParameterColumn(c) => {
                 write!(f, "Expected column {} is missing", c)
             }
-            MappingErrorType::ContainsIrrelevantColumns(irr) => {
+            MappingError::ContainsIrrelevantColumns(irr) => {
                 write!(f, "Unexpected columns: {}", irr.join(","))
             }
-            MappingErrorType::CouldNotInferStottrDatatypeForColumn(col, dt) => {
+            MappingError::CouldNotInferStottrDatatypeForColumn(col, dt) => {
                 write!(
                     f,
                     "Could not infer stottr type for column {} with polars datatype {}",
                     col, dt
                 )
             }
-            MappingErrorType::ColumnDataTypeMismatch(col, dt, ptype) => {
+            MappingError::ColumnDataTypeMismatch(col, dt, ptype) => {
                 write!(
                     f,
                     "Column {} had datatype {} which was incompatible with the stottr datatype {}",
                     col, dt, ptype
                 )
             }
-            MappingErrorType::PTypeNotSupported(name, ptype) => {
+            MappingError::PTypeNotSupported(name, ptype) => {
                 write!(
                     f,
                     "Found value {} with unsupported stottr datatype {}",
                     name, ptype
                 )
             }
-            MappingErrorType::UnknownTimeZoneError(tz) => {
+            MappingError::UnknownTimeZoneError(tz) => {
                 write!(f, "Unknown time zone {}", tz)
             }
-            MappingErrorType::UnknownVariableError(v) => {
+            MappingError::UnknownVariableError(v) => {
                 write!(
                     f,
                     "Could not find variable {}, is the stottr template invalid?",
                     v
                 )
             }
-            MappingErrorType::ConstantDoesNotMatchDataType(constant_term, expected, actual) => {
+            MappingError::ConstantDoesNotMatchDataType(constant_term, expected, actual) => {
                 write!(
                     f,
                     "Expected constant term {:?} to have data type {} but was {}",
                     constant_term, expected, actual
                 )
             }
-            MappingErrorType::ConstantListHasInconsistentPType(constant_term, prev, next) => {
+            MappingError::ConstantListHasInconsistentPType(constant_term, prev, next) => {
                 write!(
                     f,
                     "Constant term {:?} has inconsistent data types {} and {}",
                     constant_term, prev, next
                 )
+            }
+            MappingError::InvalidTemplateNameError(t) => {
+                write!(f,
+                "Invalid template name {}",
+                t)
             }
         }
     }

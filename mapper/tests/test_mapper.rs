@@ -50,7 +50,7 @@ fn test_mapper_easy_case(testdata_path: PathBuf) {
     let mut mapping = Mapping::from_str(&t_str).unwrap();
     let report = mapping
         .expand(
-            &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
+            "http://example.net/ns#ExampleTemplate",
             df,
             Default::default(),
         )
@@ -94,7 +94,7 @@ fn test_all_iri_case() {
     let mut mapping = Mapping::from_str(&t_str).unwrap();
     let report = mapping
         .expand(
-            &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
+            "http://example.net/ns#ExampleTemplate",
             df,
             Default::default(),
         )
@@ -142,7 +142,7 @@ fn test_string_language_tag_cases() {
     let mut mapping = Mapping::from_str(&t_str).unwrap();
     let report = mapping
         .expand(
-            &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
+            "http://example.net/ns#ExampleTemplate",
             df,
             ExpandOptions {
                 language_tags: Some(HashMap::from([(
@@ -207,7 +207,7 @@ fn test_const_list_case() {
     let mut mapping = Mapping::from_str(&t_str).unwrap();
     let report = mapping
         .expand(
-            &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
+            "http://example.net/ns#ExampleTemplate",
             df,
             Default::default(),
         )
@@ -280,7 +280,7 @@ ex:Nested [?myVar] :: {
     let df = DataFrame::from_iter(series);
     let report = mapping
         .expand(
-            &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
+            "http://example.net/ns#ExampleTemplate",
             df,
             Default::default(),
         )
@@ -346,7 +346,7 @@ fn test_mint_iri_templates() {
     let df = DataFrame::from_iter(series);
     let report = mapping
         .expand(
-            &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
+            "http://example.net/ns#ExampleTemplate",
             df,
             ExpandOptions {
                 mint_iris: Some(HashMap::from([(
@@ -477,7 +477,7 @@ ex:ExampleTemplate [
     let df = DataFrame::from_iter(series);
     let report = mapping
         .expand(
-            &NamedNode::new_unchecked("http://example.net/ns#ExampleTemplate"),
+            "http://example.net/ns#ExampleTemplate",
             df,
             Default::default(),
         )
@@ -710,7 +710,7 @@ ex:AnotherExampleTemplate [?object, ?predicate, ?myList] :: {
     //println!("{df}");
     let report = mapping
         .expand(
-            &NamedNode::new_unchecked("http://example.net/ns#AnotherExampleTemplate"),
+            "http://example.net/ns#AnotherExampleTemplate",
             df,
             Default::default(),
         )
@@ -796,7 +796,7 @@ ex:AnotherExampleTemplate [?subject, ?myList1, ?myList2] :: {
     //println!("{df}");
     let report = mapping
         .expand(
-            &NamedNode::new_unchecked("http://example.net/ns#AnotherExampleTemplate"),
+            "http://example.net/ns#AnotherExampleTemplate",
             df,
             Default::default(),
         )

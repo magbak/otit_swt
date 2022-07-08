@@ -1,4 +1,4 @@
-mod errors;
+pub mod errors;
 mod export_triples;
 mod mint;
 mod ntriples_write;
@@ -9,7 +9,7 @@ use crate::ast::{
 };
 use crate::constants::{BLANK_NODE_IRI, NONE_IRI, OTTR_TRIPLE};
 use crate::document::document_from_str;
-use crate::mapping::errors::{MappingError, MappingErrorType};
+use crate::mapping::errors::{MappingError};
 use crate::mapping::export_triples::export_triples;
 use crate::mapping::validation_inference::{
     find_validate_and_prepare_dataframe_columns, MappedColumn, PrimitiveColumn, RDFNodeType,
@@ -200,26 +200,25 @@ impl Mapping {
 
     pub fn expand(
         &mut self,
-        name: &NamedNode,
+        template: &str,
         mut df: DataFrame,
         options: ExpandOptions,
     ) -> Result<MappingReport, MappingError> {
+        let name = NamedNode::new(template).map_err(MappingError::from)?;
         self.validate_dataframe(&mut df)?;
-        if let Some(target_template) = self.template_dataset.get(name) {
+        if let Some(target_template) = self.template_dataset.get(&name) {
             let columns = find_validate_and_prepare_dataframe_columns(
                 &target_template.signature,
                 &mut df,
                 &options,
             )?;
             let mut result_vec = vec![];
-            self._expand(name, df.lazy(), columns, &mut result_vec)?;
+            self._expand(&name, df.lazy(), columns, &mut result_vec)?;
             self.process_results(result_vec);
 
             Ok(MappingReport {})
         } else {
-            Err(MappingError {
-                kind: MappingErrorType::TemplateNotFound(name.as_str().to_string()),
-            })
+            Err(MappingError::TemplateNotFound(name.as_str().to_string()))
         }
     }
 
@@ -256,17 +255,13 @@ impl Mapping {
                 Ok(())
             }
         } else {
-            Err(MappingError {
-                kind: MappingErrorType::TemplateNotFound(name.as_str().to_string()),
-            })
+            Err(MappingError::TemplateNotFound(name.as_str().to_string()))
         }
     }
 
     fn validate_dataframe(&mut self, df: &mut DataFrame) -> Result<(), MappingError> {
         if !df.get_column_names().contains(&"Key") {
-            return Err(MappingError {
-                kind: MappingErrorType::MissingKeyColumn,
-            });
+            return Err(MappingError::MissingKeyColumn);
         }
         if self
             .object_property_triples
@@ -277,18 +272,14 @@ impl Mapping {
         {
             let key_datatype = df.column("Key").unwrap().dtype().clone();
             if key_datatype != DataType::Utf8 {
-                return Err(MappingError {
-                    kind: MappingErrorType::InvalidKeyColumnDataType(key_datatype.clone()),
-                });
+                return Err(MappingError::InvalidKeyColumnDataType(key_datatype.clone()));
             }
             if df.column("Key").unwrap().is_duplicated().unwrap().any() {
                 let is_duplicated = df.column("Key").unwrap().is_duplicated().unwrap();
                 let dupes = df.filter(&is_duplicated).unwrap().clone();
-                return Err(MappingError {
-                    kind: MappingErrorType::KeyColumnContainsDuplicates(
+                return Err(MappingError::KeyColumnContainsDuplicates(
                         dupes.column("Key").unwrap().clone(),
-                    ),
-                });
+                    ));
             }
             toggle_string_cache(true);
             let df_keys = df
@@ -308,15 +299,13 @@ impl Mapping {
             toggle_string_cache(false);
 
             if overlapping_keys.any() {
-                return Err(MappingError {
-                    kind: MappingErrorType::KeyColumnOverlapsExisting(
+                return Err(MappingError::KeyColumnOverlapsExisting(
                         df.column("Key")
                             .unwrap()
                             .filter(&overlapping_keys)
                             .unwrap()
                             .clone(),
-                    ),
-                });
+                    ));
             }
         }
         Ok(())
@@ -401,9 +390,7 @@ fn create_remapped_lazy_frame(
                 if let Some(c) = columns.get(&v.name) {
                     new_map.insert(target.stottr_variable.name.clone(), c.clone());
                 } else {
-                    return Err(MappingError {
-                        kind: MappingErrorType::UnknownVariableError(v.name.clone()),
-                    });
+                    return Err(MappingError::UnknownVariableError(v.name.clone()));
                 }
             }
             StottrTerm::ConstantTerm(ct) => {
@@ -516,13 +503,11 @@ fn constant_to_expr(
                 if last_ptype.is_none() {
                     last_ptype = Some(actual_ptype);
                 } else if last_ptype.as_ref().unwrap() != &actual_ptype {
-                    return Err(MappingError {
-                        kind: MappingErrorType::ConstantListHasInconsistentPType(
+                    return Err(MappingError::ConstantListHasInconsistentPType(
                             constant_term.clone(),
                             last_ptype.as_ref().unwrap().clone(),
                             actual_ptype.clone(),
-                        ),
-                    });
+                        ));
                 }
                 last_rdf_node_type = Some(rdf_node_type);
                 expressions.push(constant_expr);
@@ -561,13 +546,11 @@ fn constant_to_expr(
     };
     if let Some(ptype_in) = ptype_opt {
         if ptype_in != &ptype {
-            return Err(MappingError {
-                kind: MappingErrorType::ConstantDoesNotMatchDataType(
+            return Err(MappingError::ConstantDoesNotMatchDataType(
                     constant_term.clone(),
                     ptype_in.clone(),
                     ptype.clone(),
-                ),
-            });
+                ));
         }
     }
     Ok((expr, ptype, rdf_node_type))
