@@ -70,7 +70,17 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
     }
 }
 
-pub fn to_rust_df(rb: &[&PyAny]) -> PyResult<DataFrame> {
+pub fn polars_df_to_rust_df(df: &PyAny) -> PyResult<DataFrame> {
+    let arr = df.call_method0("to_arrow")?;
+    let batches = arr.call_method1("to_batches", (u32::MAX,))?;
+    let batches_len = batches.call_method0("__len__")?;
+    let l:u32 = batches_len.extract()?;
+    assert_eq!(l, 1);
+    let batch = batches.call_method1("__getitem__", (0,))?;
+    array_to_rust_df(&[batch])
+}
+
+pub fn array_to_rust_df(rb: &[&PyAny]) -> PyResult<DataFrame> {
     let schema = rb
         .get(0)
         .ok_or_else(|| PyMapperError::Other("empty table".into()))?

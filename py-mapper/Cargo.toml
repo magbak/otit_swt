@@ -16,3 +16,6 @@ simple-error = "0.2.3"
 [lib]
 name = "otit_swt_mapper"
 crate-type = ["cdylib"]
+
+[package.metadata.maturin]
+python-source = "python"
