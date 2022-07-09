@@ -1,5 +1,5 @@
 pub mod errors;
-mod export_triples;
+pub mod export_triples;
 mod mint;
 mod ntriples_write;
 mod validation_inference;
@@ -10,14 +10,13 @@ use crate::ast::{
 use crate::constants::{BLANK_NODE_IRI, NONE_IRI, OTTR_TRIPLE};
 use crate::document::document_from_str;
 use crate::mapping::errors::{MappingError};
-use crate::mapping::export_triples::export_triples;
 use crate::mapping::validation_inference::{
     find_validate_and_prepare_dataframe_columns, MappedColumn, PrimitiveColumn, RDFNodeType,
 };
 use crate::templates::TemplateDataset;
 use ntriples_write::write_ntriples;
 use oxrdf::vocab::xsd;
-use oxrdf::{NamedNode, Triple};
+use oxrdf::{NamedNode};
 use polars::lazy::prelude::{col, concat, Expr, LiteralValue};
 use polars::prelude::{
     concat_lst, concat_str, AnyValue, DataFrame, DataType, Field, IntoLazy, LazyFrame, PolarsError,
@@ -192,10 +191,6 @@ impl Mapping {
         out_df.as_single_chunk_par();
         write_ntriples(buffer, &out_df, 1024).unwrap();
         Ok(())
-    }
-
-    pub fn export_triples(&mut self) -> Vec<Triple> {
-        export_triples(&self.object_property_triples, &self.data_property_triples)
     }
 
     pub fn expand(
