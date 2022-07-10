@@ -1,2 +1,2 @@
 polars
-arrow
+pyarrow
