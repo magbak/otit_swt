@@ -34,6 +34,6 @@ jobs:
 
     - name: pytest
       run: |
-        source .venv/bin/activate
+        source ../.venv/bin/activate
         pytest
       working-directory: ./py-mapper/tests
