@@ -35,22 +35,26 @@ jobs:
     - name: Run rust tests
       run: cargo test --verbose --all
 
-    - name: Change to python folder
-      run: cd py-mapper
-
     - name: Install dependencies
       run: |
+        pwd
         python -m venv .venv
         source .venv/bin/activate
-        python -m pip install --upgrade pip
+        pip install --upgrade pip
         pip install maturin
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      working-directory: ./py-mapper
 
     - name: Build install package
       run: |
+        pwd
+        source .venv/bin/activate
+        cwd
         maturin develop
+      working-directory: ./py-mapper
 
     - name: pytest
       run: |
         cd tests
         pytest
+      working-directory: ./py-mapper/tests
