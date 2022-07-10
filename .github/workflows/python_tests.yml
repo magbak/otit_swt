@@ -34,6 +34,5 @@ jobs:
 
     - name: pytest
       run: |
-        cd tests
         pytest
       working-directory: ./py-mapper/tests
