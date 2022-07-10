@@ -1,4 +1,4 @@
-name: All tests
+name: Rust tests
 
 on:
   push:
@@ -34,27 +34,3 @@ jobs:
       run: cargo build --verbose --all
     - name: Run rust tests
       run: cargo test --verbose --all
-
-    - name: Install dependencies
-      run: |
-        pwd
-        python -m venv .venv
-        source .venv/bin/activate
-        pip install --upgrade pip
-        pip install maturin
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      working-directory: ./py-mapper
-
-    - name: Build install package
-      run: |
-        pwd
-        source .venv/bin/activate
-        cwd
-        maturin develop
-      working-directory: ./py-mapper
-
-    - name: pytest
-      run: |
-        cd tests
-        pytest
-      working-directory: ./py-mapper/tests
