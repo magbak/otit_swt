@@ -1,5 +1,5 @@
 import polars as pl
-from otit_swt_mapper import Mapping
+from otit_swt_mapper import Mapping, to_graph
 
 
 def test_create_mapping_from_polars_df():
@@ -20,3 +20,5 @@ def test_create_mapping_from_polars_df():
         '<http://example.net/ns#myObject> <http://example.net/ns#hasValue> "1"^^<http://www.w3.org/2001/XMLSchema#long>',
         '<http://example.net/ns#myObject> <http://example.net/ns#hasValue> "2"^^<http://www.w3.org/2001/XMLSchema#long>']
     assert actual_triples_strs == expected_triples_strs
+
+    print([t for t in to_graph(mapping)])
