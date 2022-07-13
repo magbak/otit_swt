@@ -1,8 +1,8 @@
-use thiserror::Error;
 use crate::mapping::errors::MappingError;
 use crate::parsing::errors::ParsingError;
 use crate::resolver::ResolutionError;
 use crate::templates::TypingError;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum MapperError {
@@ -15,5 +15,5 @@ pub enum MapperError {
     #[error(transparent)]
     TypingError(#[from] TypingError),
     #[error(transparent)]
-    MappingError(#[from] MappingError)
+    MappingError(#[from] MappingError),
 }

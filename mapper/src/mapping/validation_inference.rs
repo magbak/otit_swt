@@ -1,7 +1,7 @@
 use crate::ast::{PType, Parameter, Signature};
 use crate::chrono::TimeZone as ChronoTimeZone;
 use crate::constants::{XSD_DATETIME_WITHOUT_TZ_FORMAT, XSD_DATETIME_WITH_TZ_FORMAT};
-use crate::mapping::errors::{MappingError};
+use crate::mapping::errors::MappingError;
 use crate::mapping::mint::mint_iri;
 use crate::mapping::ExpandOptions;
 use chrono::{Datelike, Timelike};
@@ -90,13 +90,15 @@ pub fn find_validate_and_prepare_dataframe_columns(
                 }),
             );
         } else {
-            return Err(MappingError::MissingParameterColumn(variable_name.to_string()));
+            return Err(MappingError::MissingParameterColumn(
+                variable_name.to_string(),
+            ));
         }
     }
     if !df_columns.is_empty() {
         return Err(MappingError::ContainsIrrelevantColumns(
-                df_columns.iter().map(|x| x.to_string()).collect(),
-            ));
+            df_columns.iter().map(|x| x.to_string()).collect(),
+        ));
     }
     Ok(map)
 }
@@ -148,13 +150,11 @@ fn convert_series_if_required(
 ) -> Result<Series, MappingError> {
     let series_data_type = series.dtype();
     let mismatch_error = || {
-        Err(
-            MappingError::ColumnDataTypeMismatch(
-                series.name().to_string(),
-                series_data_type.clone(),
-                target_ptype.clone(),
-            )
-        )
+        Err(MappingError::ColumnDataTypeMismatch(
+            series.name().to_string(),
+            series_data_type.clone(),
+            target_ptype.clone(),
+        ))
     };
     let convert_if_series_list = |inner| {
         if let DataType::List(_) = series_data_type {
@@ -206,12 +206,13 @@ fn convert_nonlist_series_to_value_struct_if_required(
     options: &ExpandOptions,
 ) -> Result<Series, MappingError> {
     let series_data_type = series.dtype();
-    let mismatch_error = || 
+    let mismatch_error = || {
         MappingError::ColumnDataTypeMismatch(
             series.name().to_string(),
             series_data_type.clone(),
             PType::BasicType(nn.clone()),
-        );
+        )
+    };
     let mut new_series = if nn.as_str() == xsd::ANY_URI.as_str() {
         if series_data_type == &DataType::Utf8 {
             series.clone()
@@ -288,9 +289,9 @@ fn convert_nonlist_series_to_value_struct_if_required(
         }
     } else {
         return Err(MappingError::PTypeNotSupported(
-                series.name().to_string(),
-                PType::BasicType(nn.clone()),
-            ));
+            series.name().to_string(),
+            PType::BasicType(nn.clone()),
+        ));
     };
     assert_eq!(new_series.dtype(), &DataType::Utf8);
     let rdf_node_type = infer_rdf_node_type(&PType::BasicType(nn.clone()));
@@ -375,9 +376,9 @@ fn validate_non_optional_parameter(df: &DataFrame, column_name: &str) -> Result<
     if df.column(column_name).unwrap().is_null().any() {
         let is_null = df.column(column_name).unwrap().is_null();
         Err(MappingError::NonOptionalColumnHasNull(
-                column_name.to_string(),
-                df.column("Key").unwrap().filter(&is_null).unwrap(),
-            ))
+            column_name.to_string(),
+            df.column("Key").unwrap().filter(&is_null).unwrap(),
+        ))
     } else {
         Ok(())
     }
@@ -396,12 +397,12 @@ fn validate_non_blank_parameter(df: &DataFrame, column_name: &str) -> Result<(),
         .unwrap();
     if is_blank_node_mask.any() {
         return Err(MappingError::NonBlankColumnHasBlankNode(
-                column_name.to_string(),
-                df.column(column_name)
-                    .unwrap()
-                    .filter(&is_blank_node_mask)
-                    .unwrap(),
-            ));
+            column_name.to_string(),
+            df.column(column_name)
+                .unwrap()
+                .filter(&is_blank_node_mask)
+                .unwrap(),
+        ));
     }
     Ok(())
 }

@@ -1,10 +1,10 @@
-use std::collections::HashSet;
-use oxrdf::Variable;
-use spargebra::algebra::Expression;
+use super::StaticQueryRewriter;
 use crate::change_types::ChangeType;
 use crate::query_context::{Context, PathEntry};
 use crate::rewriting::expressions::ExReturn;
-use super::StaticQueryRewriter;
+use oxrdf::Variable;
+use spargebra::algebra::Expression;
+use std::collections::HashSet;
 
 impl StaticQueryRewriter {
     pub fn rewrite_coalesce_expression(
@@ -30,8 +30,7 @@ impl StaticQueryRewriter {
             exr.with_pushups(e);
         }
         if rewritten.iter().all(|x| {
-            x.expression.is_some()
-                && x.change_type.as_ref().unwrap() == &ChangeType::NoChange
+            x.expression.is_some() && x.change_type.as_ref().unwrap() == &ChangeType::NoChange
         }) {
             {
                 exr.with_expression(Expression::Coalesce(
@@ -40,7 +39,7 @@ impl StaticQueryRewriter {
                         .map(|x| x.expression.take().unwrap())
                         .collect(),
                 ))
-                    .with_change_type(ChangeType::NoChange);
+                .with_change_type(ChangeType::NoChange);
                 return exr;
             }
         }

@@ -9,14 +9,14 @@ use crate::ast::{
 };
 use crate::constants::{BLANK_NODE_IRI, NONE_IRI, OTTR_TRIPLE};
 use crate::document::document_from_str;
-use crate::mapping::errors::{MappingError};
+use crate::mapping::errors::MappingError;
 use crate::mapping::validation_inference::{
     find_validate_and_prepare_dataframe_columns, MappedColumn, PrimitiveColumn, RDFNodeType,
 };
 use crate::templates::TemplateDataset;
 use ntriples_write::write_ntriples;
 use oxrdf::vocab::xsd;
-use oxrdf::{NamedNode};
+use oxrdf::NamedNode;
 use polars::lazy::prelude::{col, concat, Expr, LiteralValue};
 use polars::prelude::{
     concat_lst, concat_str, AnyValue, DataFrame, DataType, Field, IntoLazy, LazyFrame, PolarsError,
@@ -273,8 +273,8 @@ impl Mapping {
                 let is_duplicated = df.column("Key").unwrap().is_duplicated().unwrap();
                 let dupes = df.filter(&is_duplicated).unwrap().clone();
                 return Err(MappingError::KeyColumnContainsDuplicates(
-                        dupes.column("Key").unwrap().clone(),
-                    ));
+                    dupes.column("Key").unwrap().clone(),
+                ));
             }
             toggle_string_cache(true);
             let df_keys = df
@@ -295,12 +295,12 @@ impl Mapping {
 
             if overlapping_keys.any() {
                 return Err(MappingError::KeyColumnOverlapsExisting(
-                        df.column("Key")
-                            .unwrap()
-                            .filter(&overlapping_keys)
-                            .unwrap()
-                            .clone(),
-                    ));
+                    df.column("Key")
+                        .unwrap()
+                        .filter(&overlapping_keys)
+                        .unwrap()
+                        .clone(),
+                ));
             }
         }
         Ok(())
@@ -499,10 +499,10 @@ fn constant_to_expr(
                     last_ptype = Some(actual_ptype);
                 } else if last_ptype.as_ref().unwrap() != &actual_ptype {
                     return Err(MappingError::ConstantListHasInconsistentPType(
-                            constant_term.clone(),
-                            last_ptype.as_ref().unwrap().clone(),
-                            actual_ptype.clone(),
-                        ));
+                        constant_term.clone(),
+                        last_ptype.as_ref().unwrap().clone(),
+                        actual_ptype.clone(),
+                    ));
                 }
                 last_rdf_node_type = Some(rdf_node_type);
                 expressions.push(constant_expr);
@@ -542,10 +542,10 @@ fn constant_to_expr(
     if let Some(ptype_in) = ptype_opt {
         if ptype_in != &ptype {
             return Err(MappingError::ConstantDoesNotMatchDataType(
-                    constant_term.clone(),
-                    ptype_in.clone(),
-                    ptype.clone(),
-                ));
+                constant_term.clone(),
+                ptype_in.clone(),
+                ptype.clone(),
+            ));
         }
     }
     Ok((expr, ptype, rdf_node_type))

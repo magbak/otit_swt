@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use oxrdf::{Literal, Variable};
-use oxrdf::vocab::xsd;
-use spargebra::term::{TermPattern, TriplePattern};
-use crate::costants::{REPLACE_STR_LITERAL, REPLACE_VARIABLE_NAME};
 use super::Translator;
+use crate::costants::{REPLACE_STR_LITERAL, REPLACE_VARIABLE_NAME};
+use oxrdf::vocab::xsd;
+use oxrdf::{Literal, Variable};
+use spargebra::term::{TermPattern, TriplePattern};
+use std::collections::HashMap;
 
 pub enum TemplateType {
     TypeTemplate,

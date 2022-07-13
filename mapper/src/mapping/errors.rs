@@ -1,7 +1,7 @@
 use crate::ast::{ConstantTerm, PType};
+use oxrdf::IriParseError;
 use polars_core::prelude::{DataType, Series};
 use std::fmt::{Display, Formatter};
-use oxrdf::IriParseError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -109,9 +109,7 @@ impl Display for MappingError {
                 )
             }
             MappingError::InvalidTemplateNameError(t) => {
-                write!(f,
-                "Invalid template name {}",
-                t)
+                write!(f, "Invalid template name {}", t)
             }
         }
     }

@@ -28,8 +28,14 @@ impl StaticQueryRewriter {
         variables_in_scope: &HashSet<Variable>,
         context: &Context,
     ) -> ExReturn {
-        let (left_path_entry, right_path_entry, binary_expression):(_,_,fn(Box<_>, Box<_>) -> Expression) = match { operation } {
-            BinaryOrdinaryOperator::Add => (PathEntry::AddLeft, PathEntry::AddRight, Expression::Add),
+        let (left_path_entry, right_path_entry, binary_expression): (
+            _,
+            _,
+            fn(Box<_>, Box<_>) -> Expression,
+        ) = match { operation } {
+            BinaryOrdinaryOperator::Add => {
+                (PathEntry::AddLeft, PathEntry::AddRight, Expression::Add)
+            }
             BinaryOrdinaryOperator::Subtract => (
                 PathEntry::SubtractLeft,
                 PathEntry::SubtractRight,

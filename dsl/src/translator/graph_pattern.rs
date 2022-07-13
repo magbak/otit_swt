@@ -3,11 +3,11 @@ use crate::ast::{
     BooleanOperator, GraphPathPattern, LiteralData, PathElementOrConnective, PathOrLiteralData,
 };
 use crate::costants::LIKE_FUNCTION;
-use crate::translator::{VariablePathExpression};
+use crate::translator::triples_template::TemplateType;
+use crate::translator::VariablePathExpression;
 use oxrdf::vocab::xsd;
 use oxrdf::{Literal, NamedNode, Variable};
 use spargebra::algebra::{Expression, Function};
-use crate::translator::triples_template::TemplateType;
 
 pub enum VariableOrLiteral {
     Variable(Variable),

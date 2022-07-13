@@ -1,9 +1,9 @@
-use std::collections::HashSet;
-use oxrdf::{NamedNode, Variable};
-use spargebra::algebra::{AggregateExpression, Expression, GraphPattern};
+use super::Translator;
 use crate::ast::TsQuery;
 use crate::costants::{NEST, TIMESTAMP_VARIABLE_NAME};
-use super::Translator;
+use oxrdf::{NamedNode, Variable};
+use spargebra::algebra::{AggregateExpression, Expression, GraphPattern};
+use std::collections::HashSet;
 
 impl Translator {
     pub fn add_group(

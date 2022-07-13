@@ -1,8 +1,8 @@
 use super::Translator;
 use crate::ast::{Connective, ElementConstraint, PathElement, PathElementOrConnective};
+use crate::translator::triples_template::TemplateType;
 use oxrdf::{NamedNode, Variable};
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
-use crate::translator::triples_template::TemplateType;
 
 impl Translator {
     pub fn translate_path(

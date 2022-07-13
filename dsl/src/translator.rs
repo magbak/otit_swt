@@ -1,16 +1,13 @@
 mod aggregation;
-mod group;
 mod graph_pattern;
+mod group;
 mod path;
-mod triples_template;
 mod timestamp_conditions;
+mod triples_template;
 
 use crate::ast::TsQuery;
 use crate::connective_mapping::ConnectiveMapping;
-use crate::costants::{
-    HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE,
-    TIMESTAMP_VARIABLE_NAME,
-};
+use crate::costants::{HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, TIMESTAMP_VARIABLE_NAME};
 use oxrdf::{NamedNode, Variable};
 use spargebra::algebra::{Expression, GraphPattern};
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
@@ -169,7 +166,6 @@ impl Translator {
         inner_gp
     }
 
-
     fn add_conditions(&mut self, mut inner_gp: GraphPattern) -> GraphPattern {
         if !self.conditions.is_empty() {
             let mut conjuction = self.conditions.remove(0);
@@ -210,7 +206,6 @@ impl Translator {
         }
         inner_gp
     }
-
 
     fn add_triple_pattern(&mut self, triple_pattern: TriplePattern, optional_index: Option<usize>) {
         if let Some(i) = optional_index {

@@ -1,9 +1,9 @@
-use oxrdf::{Literal, Variable};
-use oxrdf::vocab::xsd;
-use spargebra::algebra::Expression;
+use super::Translator;
 use crate::ast::TsQuery;
 use crate::costants::{TIMESTAMP_VARIABLE_NAME, XSD_DATETIME_FORMAT};
-use super::Translator;
+use oxrdf::vocab::xsd;
+use oxrdf::{Literal, Variable};
+use spargebra::algebra::Expression;
 
 impl Translator {
     pub fn add_timestamp_conditions(&mut self, ts_query: &TsQuery) {

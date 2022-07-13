@@ -19,8 +19,7 @@ pub fn whole_stottr_doc(s: &str) -> Result<UnresolvedStottrDocument, ParsingErro
                 Ok(doc)
             }
         }
-        Err(e) => Err(
-            ParsingError {
+        Err(e) => Err(ParsingError {
             kind: ParsingErrorKind::NomParserError(format!("{:?}", e.code)),
         }),
     }
