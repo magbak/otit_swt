@@ -39,7 +39,7 @@ pub async fn execute_hybrid_query(
         &mut time_series_queries,
         &variable_constraints,
     );
-    let mut time_series = execute_time_series_queries(time_series_database, time_series_queries)?;
+    let mut time_series = execute_time_series_queries(time_series_database, time_series_queries).await?;
     debug!("Time series: {:?}", time_series);
     let mut combiner = Combiner::new();
     let lazy_frame = combiner.combine_static_and_time_series_results(
@@ -73,13 +73,13 @@ fn complete_time_series_queries(
     }
 }
 
-fn execute_time_series_queries(
-    time_series_database: Box<dyn TimeSeriesQueryable>,
+async fn execute_time_series_queries(
+    mut time_series_database: Box<dyn TimeSeriesQueryable>,
     time_series_queries: Vec<TimeSeriesQuery>,
 ) -> Result<Vec<(TimeSeriesQuery, DataFrame)>, Box<dyn Error>> {
     let mut out = vec![];
     for tsq in time_series_queries {
-        let df_res = time_series_database.execute(&tsq);
+        let df_res = time_series_database.execute(&tsq).await;
         match df_res {
             Ok(df) => {
                 match tsq.validate(&df) {

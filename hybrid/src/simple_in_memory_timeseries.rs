@@ -6,13 +6,15 @@ use polars::frame::DataFrame;
 use polars::prelude::{col, concat, lit, Expr, IntoLazy};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
+use async_trait::async_trait;
 
 pub struct InMemoryTimeseriesDatabase {
     pub frames: HashMap<String, DataFrame>,
 }
 
+#[async_trait]
 impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
-    fn execute(&self, tsq: &TimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
+    async fn execute(&mut self, tsq: &TimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
         assert!(tsq.ids.is_some() && !tsq.ids.as_ref().unwrap().is_empty());
         let mut lfs = vec![];
         let mut columns: HashSet<String> = HashSet::new();
