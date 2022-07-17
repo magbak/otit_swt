@@ -14,7 +14,9 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::path::PathBuf;
 
-use crate::common::{add_sparql_testdata, compare_all_solutions, QUERY_ENDPOINT, start_sparql_container};
+use crate::common::{
+    add_sparql_testdata, compare_all_solutions, start_sparql_container, QUERY_ENDPOINT,
+};
 
 #[fixture]
 fn use_logger() {
@@ -67,7 +69,6 @@ fn inmem_time_series_database(testdata_path: PathBuf) -> InMemoryTimeseriesDatab
     }
     InMemoryTimeseriesDatabase { frames }
 }
-
 
 #[rstest]
 #[tokio::test]

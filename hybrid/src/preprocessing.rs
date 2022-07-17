@@ -1,4 +1,4 @@
-use crate::constants::{HAS_DATA_POINT, HAS_DATATYPE, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE};
+use crate::constants::{HAS_DATATYPE, HAS_DATA_POINT, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE};
 use crate::constraints::{Constraint, VariableConstraints};
 use crate::find_query_variables::{
     find_all_used_variables_in_aggregate_expression, find_all_used_variables_in_expression,

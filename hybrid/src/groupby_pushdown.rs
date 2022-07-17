@@ -209,7 +209,7 @@ fn find_groupby_pushdowns_in_graph_pattern(
                                     .as_ref()
                                     .unwrap()
                                     .equivalent(v, context)
-                        },
+                        }
                         Constraint::ExternalTimeseriesDatatype => {
                             tsq.datatype_variable.is_some()
                                 && tsq

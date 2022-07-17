@@ -24,6 +24,7 @@ use arrow_format::flight::service::flight_service_client::FlightServiceClient;
 use async_trait::async_trait;
 use flight_sql::CommandStatementQuery;
 use oxrdf::vocab::xsd;
+use oxrdf::{NamedNode, Variable};
 use polars::export::chrono;
 use polars::frame::DataFrame;
 use polars_core::utils::accumulate_dataframes_vertical;
@@ -34,7 +35,6 @@ use spargebra::algebra::Expression;
 use std::error::Error;
 use std::fmt::{Display, Formatter, Write};
 use std::str::FromStr;
-use oxrdf::{NamedNode, Variable};
 use thiserror::Error;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
@@ -93,10 +93,10 @@ impl ArrowFlightSQLDatabase {
         Ok(ArrowFlightSQLDatabase {
             client,
             time_series_table: Name::Table(time_series_table.to_string()),
-            value_columns: value_columns.iter().map(|(c, dt)| {
-                (Name::Column(c.to_string())
-                , (*dt).clone())}
-            ).collect(),
+            value_columns: value_columns
+                .iter()
+                .map(|(c, dt)| (Name::Column(c.to_string()), (*dt).clone()))
+                .collect(),
             timestamp_column: Name::Column(timestamp_column.to_string()),
             identifier_column: Name::Column(identifier_column.to_string()),
         })
@@ -108,18 +108,17 @@ impl ArrowFlightSQLDatabase {
         if let Some(tsq_datatype) = &tsq.datatype {
             for (name, datatype) in &self.value_columns {
                 if tsq_datatype.as_str() == datatype.as_str() {
-                    query.expr_as(
-                        SeaExpr::col(name.clone()),
-                        Alias::new("value")
-                    );
+                    query.expr_as(SeaExpr::col(name.clone()), Alias::new("value"));
                     use_value = Some(name.clone());
                 }
             }
             if use_value.is_none() {
-                return Err(ArrowFlightSQLError::DatatypeNotSupported(tsq_datatype.as_str().to_string()))
+                return Err(ArrowFlightSQLError::DatatypeNotSupported(
+                    tsq_datatype.as_str().to_string(),
+                ));
             }
         } else {
-            return Err(ArrowFlightSQLError::MissingTimeseriesQueryDatatype)
+            return Err(ArrowFlightSQLError::MissingTimeseriesQueryDatatype);
         }
         query
             .expr_as(
@@ -144,7 +143,12 @@ impl ArrowFlightSQLDatabase {
         let value_variable = &tsq.value_variable.as_ref().unwrap().variable;
 
         for c in &tsq.conditions {
-            query.and_where(self.sparql_expression_to_sql_expression(&c.expression, &use_value.as_ref().unwrap(), timestamp_variable, value_variable)?);
+            query.and_where(self.sparql_expression_to_sql_expression(
+                &c.expression,
+                &use_value.as_ref().unwrap(),
+                timestamp_variable,
+                value_variable,
+            )?);
         }
         //TODO:Grouping/aggregation
         Ok(query.to_string(PostgresQueryBuilder))
@@ -159,8 +163,18 @@ impl ArrowFlightSQLDatabase {
     ) -> Result<SimpleExpr, ArrowFlightSQLError> {
         Ok(match e {
             Expression::Or(left, right) => self
-                .sparql_expression_to_sql_expression(left,use_value, timestamp_variable, value_variable)?
-                .or(self.sparql_expression_to_sql_expression(right,use_value, timestamp_variable, value_variable)?),
+                .sparql_expression_to_sql_expression(
+                    left,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?
+                .or(self.sparql_expression_to_sql_expression(
+                    right,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?),
             Expression::Literal(l) => {
                 let v = l.value();
                 match l.datatype() {
@@ -189,39 +203,104 @@ impl ArrowFlightSQLDatabase {
                 }
             }
             Expression::And(left, right) => self
-                .sparql_expression_to_sql_expression(left,use_value, timestamp_variable, value_variable)?
-                .and(self.sparql_expression_to_sql_expression(right,use_value, timestamp_variable, value_variable)?),
+                .sparql_expression_to_sql_expression(
+                    left,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?
+                .and(self.sparql_expression_to_sql_expression(
+                    right,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?),
             Expression::Equal(left, right) => self
-                .sparql_expression_to_sql_expression(left,use_value, timestamp_variable, value_variable)?
-                .equals(self.sparql_expression_to_sql_expression(right,use_value, timestamp_variable, value_variable)?),
+                .sparql_expression_to_sql_expression(
+                    left,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?
+                .equals(self.sparql_expression_to_sql_expression(
+                    right,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?),
             Expression::Greater(left, right) => SimpleExpr::Binary(
-                Box::new(self.sparql_expression_to_sql_expression(left,use_value, timestamp_variable, value_variable)?),
+                Box::new(self.sparql_expression_to_sql_expression(
+                    left,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?),
                 BinOper::GreaterThan,
-                Box::new(self.sparql_expression_to_sql_expression(right,use_value, timestamp_variable, value_variable)?),
+                Box::new(self.sparql_expression_to_sql_expression(
+                    right,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?),
             ),
             Expression::GreaterOrEqual(left, right) => SimpleExpr::Binary(
-                Box::new(self.sparql_expression_to_sql_expression(left,use_value, timestamp_variable, value_variable)?),
+                Box::new(self.sparql_expression_to_sql_expression(
+                    left,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?),
                 BinOper::GreaterThanOrEqual,
-                Box::new(self.sparql_expression_to_sql_expression(right,use_value, timestamp_variable, value_variable)?),
+                Box::new(self.sparql_expression_to_sql_expression(
+                    right,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?),
             ),
             Expression::Less(left, right) => {
                 SimpleExpr::Binary(
-                    Box::new(self.sparql_expression_to_sql_expression(right,use_value, timestamp_variable, value_variable)?),
+                    Box::new(self.sparql_expression_to_sql_expression(
+                        right,
+                        use_value,
+                        timestamp_variable,
+                        value_variable,
+                    )?),
                     BinOper::GreaterThan,
-                    Box::new(self.sparql_expression_to_sql_expression(left,use_value, timestamp_variable, value_variable)?),
+                    Box::new(self.sparql_expression_to_sql_expression(
+                        left,
+                        use_value,
+                        timestamp_variable,
+                        value_variable,
+                    )?),
                 ) //Note flipped directions
             }
             Expression::LessOrEqual(left, right) => {
                 SimpleExpr::Binary(
-                    Box::new(self.sparql_expression_to_sql_expression(right,use_value, timestamp_variable, value_variable)?),
+                    Box::new(self.sparql_expression_to_sql_expression(
+                        right,
+                        use_value,
+                        timestamp_variable,
+                        value_variable,
+                    )?),
                     BinOper::GreaterThanOrEqual,
-                    Box::new(self.sparql_expression_to_sql_expression(left,use_value, timestamp_variable, value_variable)?),
+                    Box::new(self.sparql_expression_to_sql_expression(
+                        left,
+                        use_value,
+                        timestamp_variable,
+                        value_variable,
+                    )?),
                 ) //Note flipped directions
             }
             Expression::In(left, right) => {
-                let simple_right = right
-                    .iter()
-                    .map(|x| self.sparql_expression_to_sql_expression(x, use_value, timestamp_variable, value_variable));
+                let simple_right = right.iter().map(|x| {
+                    self.sparql_expression_to_sql_expression(
+                        x,
+                        use_value,
+                        timestamp_variable,
+                        value_variable,
+                    )
+                });
                 let mut simple_right_values = vec![];
                 for v in simple_right {
                     if let Ok(SimpleExpr::Value(v)) = v {
@@ -234,31 +313,92 @@ impl ArrowFlightSQLDatabase {
                         ));
                     }
                 }
-                SeaExpr::expr(self.sparql_expression_to_sql_expression(left,use_value, timestamp_variable, value_variable)?)
-                    .is_in(simple_right_values)
+                SeaExpr::expr(self.sparql_expression_to_sql_expression(
+                    left,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?)
+                .is_in(simple_right_values)
             }
             Expression::Add(left, right) => self
-                .sparql_expression_to_sql_expression(left,use_value, timestamp_variable, value_variable)?
-                .add(self.sparql_expression_to_sql_expression(right,use_value, timestamp_variable, value_variable)?),
+                .sparql_expression_to_sql_expression(
+                    left,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?
+                .add(self.sparql_expression_to_sql_expression(
+                    right,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?),
             Expression::Subtract(left, right) => self
-                .sparql_expression_to_sql_expression(left,use_value, timestamp_variable, value_variable)?
-                .sub(self.sparql_expression_to_sql_expression(right,use_value, timestamp_variable, value_variable)?),
+                .sparql_expression_to_sql_expression(
+                    left,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?
+                .sub(self.sparql_expression_to_sql_expression(
+                    right,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?),
             Expression::Multiply(left, right) => SimpleExpr::Binary(
-                Box::new(self.sparql_expression_to_sql_expression(left,use_value, timestamp_variable, value_variable)?),
+                Box::new(self.sparql_expression_to_sql_expression(
+                    left,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?),
                 BinOper::Mul,
-                Box::new(self.sparql_expression_to_sql_expression(right,use_value, timestamp_variable, value_variable)?),
+                Box::new(self.sparql_expression_to_sql_expression(
+                    right,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?),
             ),
             Expression::Divide(left, right) => SimpleExpr::Binary(
-                Box::new(self.sparql_expression_to_sql_expression(left,use_value, timestamp_variable, value_variable)?),
+                Box::new(self.sparql_expression_to_sql_expression(
+                    left,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?),
                 BinOper::Div,
-                Box::new(self.sparql_expression_to_sql_expression(right,use_value, timestamp_variable, value_variable)?),
+                Box::new(self.sparql_expression_to_sql_expression(
+                    right,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?),
             ),
-            Expression::UnaryPlus(inner) => self.sparql_expression_to_sql_expression(inner,use_value, timestamp_variable, value_variable)?,
-            Expression::UnaryMinus(inner) => SimpleExpr::Value(Value::Double(Some(0.0)))
-                .sub(self.sparql_expression_to_sql_expression(inner,use_value, timestamp_variable, value_variable)?),
+            Expression::UnaryPlus(inner) => self.sparql_expression_to_sql_expression(
+                inner,
+                use_value,
+                timestamp_variable,
+                value_variable,
+            )?,
+            Expression::UnaryMinus(inner) => SimpleExpr::Value(Value::Double(Some(0.0))).sub(
+                self.sparql_expression_to_sql_expression(
+                    inner,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?,
+            ),
             Expression::Not(inner) => SimpleExpr::Unary(
                 UnOper::Not,
-                Box::new(self.sparql_expression_to_sql_expression(inner,use_value, timestamp_variable, value_variable)?),
+                Box::new(self.sparql_expression_to_sql_expression(
+                    inner,
+                    use_value,
+                    timestamp_variable,
+                    value_variable,
+                )?),
             ),
             Expression::FunctionCall(_, _) => {
                 todo!("")

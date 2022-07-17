@@ -2,11 +2,11 @@ use crate::combiner::lazy_aggregate::sparql_aggregate_expression_as_lazy_column_
 use crate::combiner::lazy_expressions::lazy_expression;
 use crate::timeseries_database::TimeSeriesQueryable;
 use crate::timeseries_query::TimeSeriesQuery;
+use async_trait::async_trait;
 use polars::frame::DataFrame;
 use polars::prelude::{col, concat, lit, Expr, IntoLazy};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
-use async_trait::async_trait;
 
 pub struct InMemoryTimeseriesDatabase {
     pub frames: HashMap<String, DataFrame>,

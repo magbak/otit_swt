@@ -349,8 +349,8 @@ fn test_fix_dropped_triple() {
                 PathEntry::BGP,
             ]),
         )),
-        datatype_variable: None,//TODO:Fix??
-        datatype: None,//TODO:Fix??
+        datatype_variable: None, //TODO:Fix??
+        datatype: None,          //TODO:Fix??
         timestamp_variable: Some(VariableInContext::new(
             Variable::new_unchecked("t"),
             Context::from_path(vec![
@@ -443,7 +443,7 @@ fn test_property_path_expression() {
                 ]),
             )),
             datatype_variable: None, //TODO:Fix??
-            datatype: None, //TODO:Fix??
+            datatype: None,          //TODO:Fix??
             timestamp_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("t"),
                 Context::from_path(vec![
@@ -483,7 +483,7 @@ fn test_property_path_expression() {
                 ]),
             )),
             datatype_variable: None, //TODO:Fix??
-            datatype: None, //TODO:Fix??
+            datatype: None,          //TODO:Fix??
             timestamp_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("t"),
                 Context::from_path(vec![

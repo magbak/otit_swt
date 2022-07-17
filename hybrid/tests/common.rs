@@ -1,26 +1,24 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
 use bollard::container::{
     Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
     StartContainerOptions,
 };
 use bollard::models::{ContainerSummary, HostConfig, PortBinding};
 use bollard::Docker;
-use std::time::Duration;
+use oxrdf::Term;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::StatusCode;
-use tokio::time::sleep;
-use std::cmp::Ordering;
-use std::fs;
-use oxrdf::Term;
 use sparesults::QuerySolution;
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
+use std::time::Duration;
+use tokio::time::sleep;
 
 const OXIGRAPH_SERVER_IMAGE: &str = "oxigraph/oxigraph:v0.3.2";
 const UPDATE_ENDPOINT: &str = "http://localhost:7878/update";
 
 pub const QUERY_ENDPOINT: &str = "http://localhost:7878/query";
-
-
 
 pub async fn find_container(docker: &Docker, container_name: &str) -> Option<ContainerSummary> {
     let list = docker
@@ -108,7 +106,7 @@ pub async fn start_sparql_container() {
         .contains("Up"));
 }
 
-pub async fn add_sparql_testdata(testdata_path:PathBuf) {
+pub async fn add_sparql_testdata(testdata_path: PathBuf) {
     let testdata_update_string =
         fs::read_to_string(testdata_path.as_path()).expect("Read testdata.sparql problem");
 

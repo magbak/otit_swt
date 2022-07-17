@@ -3,13 +3,13 @@ use crate::query_context::{
     AggregateExpressionInContext, Context, ExpressionInContext, PathEntry, VariableInContext,
 };
 use crate::rewriting::hash_graph_pattern;
+use oxrdf::NamedNode;
 use polars::frame::DataFrame;
 use spargebra::algebra::{AggregateExpression, Expression, GraphPattern};
 use spargebra::term::Variable;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use oxrdf::NamedNode;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Grouping {

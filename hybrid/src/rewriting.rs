@@ -6,7 +6,7 @@ mod project_static;
 mod pushups;
 
 use crate::change_types::ChangeType;
-use crate::constants::{HAS_DATA_POINT, HAS_DATATYPE, HAS_TIMESTAMP, HAS_VALUE};
+use crate::constants::{HAS_DATATYPE, HAS_DATA_POINT, HAS_TIMESTAMP, HAS_VALUE};
 use crate::constraints::{Constraint, VariableConstraints};
 use crate::query_context::PathEntry::ExtendExpression;
 use crate::query_context::{Context, PathEntry, VariableInContext};
