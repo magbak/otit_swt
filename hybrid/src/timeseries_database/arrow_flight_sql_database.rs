@@ -19,32 +19,30 @@ pub mod flight_sql {
 use crate::timeseries_database::TimeSeriesQueryable;
 use crate::timeseries_query::TimeSeriesQuery;
 use arrow2::io::flight as flight2;
-use arrow_format::flight::data::FlightDescriptor;
+use arrow_format::flight::data::{BasicAuth, FlightDescriptor, HandshakeRequest};
 use arrow_format::flight::service::flight_service_client::FlightServiceClient;
 use async_trait::async_trait;
 use flight_sql::CommandStatementQuery;
-use oxrdf::vocab::xsd;
-use oxrdf::{NamedNode, Variable};
-use polars::export::chrono;
+
 use polars::frame::DataFrame;
 use polars_core::utils::accumulate_dataframes_vertical;
 use prost::Message;
-use sea_query::{Alias, BinOper, PostgresQueryBuilder, Query, SimpleExpr};
-use sea_query::{Expr as SeaExpr, Iden, UnOper, Value};
-use spargebra::algebra::Expression;
+
+use crate::timeseries_database::timeseries_sql_rewrite::{
+    TimeSeriesQueryToSQLError, TimeSeriesTable,
+};
 use std::error::Error;
-use std::fmt::{Display, Formatter, Write};
-use std::str::FromStr;
+use std::fmt::{Display, Formatter};
 use thiserror::Error;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
-use tonic::Status;
+use tonic::{Status};
 
 #[derive(Error, Debug)]
 pub enum ArrowFlightSQLError {
     TonicStatus(#[from] Status),
     TransportError(#[from] tonic::transport::Error),
-    TranslationError(String),
+    TranslationError(#[from] TimeSeriesQueryToSQLError),
     DatatypeNotSupported(String),
     MissingTimeseriesQueryDatatype,
 }
@@ -73,339 +71,32 @@ impl Display for ArrowFlightSQLError {
 
 pub struct ArrowFlightSQLDatabase {
     client: FlightServiceClient<Channel>,
-    time_series_table: Name,
-    value_columns: Vec<(Name, NamedNode)>, //Column name, Datatype
-    timestamp_column: Name,
-    identifier_column: Name,
+    time_series_tables: Vec<TimeSeriesTable>,
 }
 
 impl ArrowFlightSQLDatabase {
     pub async fn new(
         endpoint: &str,
-        time_series_table: &str,
-        value_columns: Vec<(&str, &NamedNode)>,
-        timestamp_column: &str,
-        identifier_column: &str,
+        time_series_tables: Vec<TimeSeriesTable>,
     ) -> Result<ArrowFlightSQLDatabase, ArrowFlightSQLError> {
-        let client = FlightServiceClient::connect(endpoint.to_string())
+        let mut client = FlightServiceClient::connect(endpoint.to_string())
             .await
             .map_err(ArrowFlightSQLError::from)?;
+        let basic_auth = BasicAuth{ username: "dremio".to_string(), password: "dremio123".to_string() };
+        let mut authvec = vec![];
+        basic_auth.encode(&mut authvec).unwrap();
+        let handshake_request = HandshakeRequest{ protocol_version: 0, payload: authvec };
+        let handshake_request_streaming = tokio_stream::iter(vec![handshake_request]);
+        let hands = client.handshake(handshake_request_streaming).await.unwrap();
+        let mut stream_hands = hands.into_inner();
+        for h in stream_hands.next().await {
+            let h_ok = h.unwrap();
+            println!("{:?}", h_ok.payload);
+        }
+
         Ok(ArrowFlightSQLDatabase {
             client,
-            time_series_table: Name::Table(time_series_table.to_string()),
-            value_columns: value_columns
-                .iter()
-                .map(|(c, dt)| (Name::Column(c.to_string()), (*dt).clone()))
-                .collect(),
-            timestamp_column: Name::Column(timestamp_column.to_string()),
-            identifier_column: Name::Column(identifier_column.to_string()),
-        })
-    }
-
-    pub fn create_query(&self, tsq: &TimeSeriesQuery) -> Result<String, ArrowFlightSQLError> {
-        let mut query = Query::select();
-        let mut use_value = None;
-        if let Some(tsq_datatype) = &tsq.datatype {
-            for (name, datatype) in &self.value_columns {
-                if tsq_datatype.as_str() == datatype.as_str() {
-                    query.expr_as(SeaExpr::col(name.clone()), Alias::new("value"));
-                    use_value = Some(name.clone());
-                }
-            }
-            if use_value.is_none() {
-                return Err(ArrowFlightSQLError::DatatypeNotSupported(
-                    tsq_datatype.as_str().to_string(),
-                ));
-            }
-        } else {
-            return Err(ArrowFlightSQLError::MissingTimeseriesQueryDatatype);
-        }
-        query
-            .expr_as(
-                SeaExpr::col(self.identifier_column.clone()),
-                Alias::new("id"),
-            )
-            .expr_as(
-                SeaExpr::col(self.timestamp_column.clone()),
-                Alias::new("timestamp"),
-            )
-            .from(self.time_series_table.clone());
-
-        if let Some(ids) = &tsq.ids {
-            query.and_where(
-                SeaExpr::col(self.identifier_column.clone()).is_in(
-                    ids.iter()
-                        .map(|x| Value::String(Some(Box::new(x.to_string())))),
-                ),
-            );
-        }
-        let timestamp_variable = &tsq.timestamp_variable.as_ref().unwrap().variable;
-        let value_variable = &tsq.value_variable.as_ref().unwrap().variable;
-
-        for c in &tsq.conditions {
-            query.and_where(self.sparql_expression_to_sql_expression(
-                &c.expression,
-                &use_value.as_ref().unwrap(),
-                timestamp_variable,
-                value_variable,
-            )?);
-        }
-        //TODO:Grouping/aggregation
-        Ok(query.to_string(PostgresQueryBuilder))
-    }
-
-    fn sparql_expression_to_sql_expression(
-        &self,
-        e: &Expression,
-        use_value: &Name,
-        timestamp_variable: &Variable,
-        value_variable: &Variable,
-    ) -> Result<SimpleExpr, ArrowFlightSQLError> {
-        Ok(match e {
-            Expression::Or(left, right) => self
-                .sparql_expression_to_sql_expression(
-                    left,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?
-                .or(self.sparql_expression_to_sql_expression(
-                    right,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?),
-            Expression::Literal(l) => {
-                let v = l.value();
-                match l.datatype() {
-                    xsd::DOUBLE => SimpleExpr::Value(Value::Double(Some(v.parse().unwrap()))),
-                    xsd::DATE_TIME => SimpleExpr::Value(Value::ChronoDateTimeWithTimeZone(Some(
-                        Box::new(chrono::DateTime::from_str(v).unwrap()),
-                    ))),
-                    _ => {
-                        return Err(ArrowFlightSQLError::TranslationError(format!(
-                            "Unknown datatype: {}",
-                            l.datatype()
-                        )))
-                    }
-                }
-            }
-            Expression::Variable(v) => {
-                if v.as_str() == &self.timestamp_column.to_string() {
-                    SeaExpr::col(self.timestamp_column.clone()).into_simple_expr()
-                } else if v.as_str() == use_value.to_string() {
-                    SeaExpr::col(use_value.clone()).into_simple_expr()
-                } else {
-                    return Err(ArrowFlightSQLError::TranslationError(format!(
-                        "Unknown variable: {}",
-                        v
-                    )));
-                }
-            }
-            Expression::And(left, right) => self
-                .sparql_expression_to_sql_expression(
-                    left,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?
-                .and(self.sparql_expression_to_sql_expression(
-                    right,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?),
-            Expression::Equal(left, right) => self
-                .sparql_expression_to_sql_expression(
-                    left,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?
-                .equals(self.sparql_expression_to_sql_expression(
-                    right,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?),
-            Expression::Greater(left, right) => SimpleExpr::Binary(
-                Box::new(self.sparql_expression_to_sql_expression(
-                    left,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?),
-                BinOper::GreaterThan,
-                Box::new(self.sparql_expression_to_sql_expression(
-                    right,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?),
-            ),
-            Expression::GreaterOrEqual(left, right) => SimpleExpr::Binary(
-                Box::new(self.sparql_expression_to_sql_expression(
-                    left,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?),
-                BinOper::GreaterThanOrEqual,
-                Box::new(self.sparql_expression_to_sql_expression(
-                    right,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?),
-            ),
-            Expression::Less(left, right) => {
-                SimpleExpr::Binary(
-                    Box::new(self.sparql_expression_to_sql_expression(
-                        right,
-                        use_value,
-                        timestamp_variable,
-                        value_variable,
-                    )?),
-                    BinOper::GreaterThan,
-                    Box::new(self.sparql_expression_to_sql_expression(
-                        left,
-                        use_value,
-                        timestamp_variable,
-                        value_variable,
-                    )?),
-                ) //Note flipped directions
-            }
-            Expression::LessOrEqual(left, right) => {
-                SimpleExpr::Binary(
-                    Box::new(self.sparql_expression_to_sql_expression(
-                        right,
-                        use_value,
-                        timestamp_variable,
-                        value_variable,
-                    )?),
-                    BinOper::GreaterThanOrEqual,
-                    Box::new(self.sparql_expression_to_sql_expression(
-                        left,
-                        use_value,
-                        timestamp_variable,
-                        value_variable,
-                    )?),
-                ) //Note flipped directions
-            }
-            Expression::In(left, right) => {
-                let simple_right = right.iter().map(|x| {
-                    self.sparql_expression_to_sql_expression(
-                        x,
-                        use_value,
-                        timestamp_variable,
-                        value_variable,
-                    )
-                });
-                let mut simple_right_values = vec![];
-                for v in simple_right {
-                    if let Ok(SimpleExpr::Value(v)) = v {
-                        simple_right_values.push(v);
-                    } else if let Err(e) = v {
-                        return Err(e);
-                    } else {
-                        return Err(ArrowFlightSQLError::TranslationError(
-                            "Expected value in IN-expression".to_string(),
-                        ));
-                    }
-                }
-                SeaExpr::expr(self.sparql_expression_to_sql_expression(
-                    left,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?)
-                .is_in(simple_right_values)
-            }
-            Expression::Add(left, right) => self
-                .sparql_expression_to_sql_expression(
-                    left,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?
-                .add(self.sparql_expression_to_sql_expression(
-                    right,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?),
-            Expression::Subtract(left, right) => self
-                .sparql_expression_to_sql_expression(
-                    left,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?
-                .sub(self.sparql_expression_to_sql_expression(
-                    right,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?),
-            Expression::Multiply(left, right) => SimpleExpr::Binary(
-                Box::new(self.sparql_expression_to_sql_expression(
-                    left,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?),
-                BinOper::Mul,
-                Box::new(self.sparql_expression_to_sql_expression(
-                    right,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?),
-            ),
-            Expression::Divide(left, right) => SimpleExpr::Binary(
-                Box::new(self.sparql_expression_to_sql_expression(
-                    left,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?),
-                BinOper::Div,
-                Box::new(self.sparql_expression_to_sql_expression(
-                    right,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?),
-            ),
-            Expression::UnaryPlus(inner) => self.sparql_expression_to_sql_expression(
-                inner,
-                use_value,
-                timestamp_variable,
-                value_variable,
-            )?,
-            Expression::UnaryMinus(inner) => SimpleExpr::Value(Value::Double(Some(0.0))).sub(
-                self.sparql_expression_to_sql_expression(
-                    inner,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?,
-            ),
-            Expression::Not(inner) => SimpleExpr::Unary(
-                UnOper::Not,
-                Box::new(self.sparql_expression_to_sql_expression(
-                    inner,
-                    use_value,
-                    timestamp_variable,
-                    value_variable,
-                )?),
-            ),
-            Expression::FunctionCall(_, _) => {
-                todo!("")
-            }
-            _ => {
-                unimplemented!("")
-            }
+            time_series_tables,
         })
     }
 
@@ -486,31 +177,24 @@ impl ArrowFlightSQLDatabase {
 #[async_trait]
 impl TimeSeriesQueryable for ArrowFlightSQLDatabase {
     async fn execute(&mut self, tsq: &TimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
-        let query_string = self.create_query(tsq)?;
-        Ok(self.execute_sql_query(query_string).await.unwrap())
-    }
-}
-
-#[derive(Clone)]
-enum Name {
-    Table(String),
-    Column(String),
-}
-
-impl Iden for Name {
-    fn unquoted(&self, s: &mut dyn Write) {
-        write!(
-            s,
-            "{}",
-            match self {
-                Name::Table(s) => {
-                    s
-                }
-                Name::Column(s) => {
-                    s
+        let mut query_string = None;
+        if let Some(tsq_datatype) = &tsq.datatype {
+            for table in &self.time_series_tables {
+                if table.value_datatype.as_str() == tsq_datatype.as_str() {
+                    query_string = Some(table.create_query(tsq)?);
                 }
             }
-        )
-        .unwrap();
+            if query_string.is_none() {
+                return Err(Box::new(ArrowFlightSQLError::DatatypeNotSupported(
+                    tsq_datatype.as_str().to_string(),
+                )));
+            }
+        } else {
+            return Err(Box::new(
+                ArrowFlightSQLError::MissingTimeseriesQueryDatatype,
+            ));
+        }
+
+        Ok(self.execute_sql_query(query_string.unwrap()).await.unwrap())
     }
 }
