@@ -9,6 +9,7 @@ use spargebra::term::Variable;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use oxrdf::NamedNode;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Grouping {
@@ -24,6 +25,8 @@ pub struct TimeSeriesQuery {
     pub timeseries_variable: Option<VariableInContext>,
     pub data_point_variable: Option<VariableInContext>,
     pub value_variable: Option<VariableInContext>,
+    pub datatype_variable: Option<VariableInContext>,
+    pub datatype: Option<NamedNode>,
     pub timestamp_variable: Option<VariableInContext>,
     pub ids: Option<Vec<String>>,
     pub grouping: Option<Grouping>,
@@ -910,6 +913,8 @@ impl TimeSeriesQuery {
             timeseries_variable: None,
             data_point_variable: None,
             value_variable: None,
+            datatype_variable: None,
+            datatype: None,
             timestamp_variable: None,
             ids: None,
             grouping: None,

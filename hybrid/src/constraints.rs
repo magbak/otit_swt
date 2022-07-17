@@ -4,6 +4,7 @@ use oxrdf::Variable;
 #[derive(PartialEq, Debug, Clone)]
 pub enum Constraint {
     ExternalTimeseries,
+    ExternalTimeseriesDatatype,
     ExternalDataPoint,
     ExternalDataValue,
     ExternalTimestamp,

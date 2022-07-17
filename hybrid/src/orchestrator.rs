@@ -14,6 +14,28 @@ use polars::frame::DataFrame;
 use sparesults::QuerySolution;
 use std::collections::HashSet;
 use std::error::Error;
+use std::fmt::{Display, Formatter};
+
+#[derive(Debug)]
+pub enum OrchestrationError {
+    InconsistentDatatype(String, String, String),
+}
+
+impl Display for OrchestrationError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OrchestrationError::InconsistentDatatype(s1, s2, s3) => {
+                write!(
+                    f,
+                    "Inconsistent datatypes {} and {} for variable {}",
+                    s1, s2, s3
+                )
+            }
+        }
+    }
+}
+
+impl Error for OrchestrationError {}
 
 pub async fn execute_hybrid_query(
     query: &str,
@@ -30,7 +52,7 @@ pub async fn execute_hybrid_query(
         rewriter.rewrite_query(preprocessed_query).unwrap();
     debug!("Produced static rewrite: {:?}", static_rewrite);
     let static_query_solutions = execute_sparql_query(endpoint, &static_rewrite).await?;
-    complete_time_series_queries(&static_query_solutions, &mut time_series_queries);
+    complete_time_series_queries(&static_query_solutions, &mut time_series_queries)?;
     let static_result_df = create_static_query_result_df(&static_rewrite, static_query_solutions);
     debug!("Static result dataframe: {}", static_result_df);
     find_all_groupby_pushdowns(
@@ -39,7 +61,8 @@ pub async fn execute_hybrid_query(
         &mut time_series_queries,
         &variable_constraints,
     );
-    let mut time_series = execute_time_series_queries(time_series_database, time_series_queries).await?;
+    let mut time_series =
+        execute_time_series_queries(time_series_database, time_series_queries).await?;
     debug!("Time series: {:?}", time_series);
     let mut combiner = Combiner::new();
     let lazy_frame = combiner.combine_static_and_time_series_results(
@@ -53,7 +76,7 @@ pub async fn execute_hybrid_query(
 fn complete_time_series_queries(
     static_query_solutions: &Vec<QuerySolution>,
     time_series_queries: &mut Vec<TimeSeriesQuery>,
-) {
+) -> Result<(), OrchestrationError> {
     for tsq in time_series_queries {
         let mut ids = HashSet::new();
         if let Some(id_var) = &tsq.identifier_variable {
@@ -67,10 +90,32 @@ fn complete_time_series_queries(
                 }
             }
         }
+        if let Some(datatype_var) = &tsq.datatype_variable {
+            for sqs in static_query_solutions {
+                if let Some(Term::NamedNode(nn)) = sqs.get(&datatype_var.variable) {
+                    if tsq.datatype.is_none() {
+                        tsq.datatype = Some(nn.clone());
+                    } else if let Some(dt) = &tsq.datatype {
+                        if dt.as_str() != nn.as_str() {
+                            return Err(OrchestrationError::InconsistentDatatype(
+                                tsq.datatype.as_ref().unwrap().as_str().to_string(),
+                                dt.as_str().to_string(),
+                                tsq.timeseries_variable
+                                    .as_ref()
+                                    .unwrap()
+                                    .variable
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
         let mut ids_vec: Vec<String> = ids.into_iter().collect();
         ids_vec.sort();
         tsq.ids = Some(ids_vec);
     }
+    Ok(())
 }
 
 async fn execute_time_series_queries(

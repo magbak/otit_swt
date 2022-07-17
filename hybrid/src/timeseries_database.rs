@@ -1,4 +1,4 @@
-mod arrow_flight_sql_database;
+pub mod arrow_flight_sql_database;
 
 use crate::timeseries_query::TimeSeriesQuery;
 use polars::frame::DataFrame;
