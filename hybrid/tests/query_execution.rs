@@ -1,9 +1,5 @@
-use bollard::container::{
-    Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
-    StartContainerOptions,
-};
-use bollard::models::{ContainerSummary, HostConfig, PortBinding};
-use bollard::Docker;
+mod common;
+
 use hybrid::orchestrator::execute_hybrid_query;
 use hybrid::simple_in_memory_timeseries::InMemoryTimeseriesDatabase;
 use hybrid::splitter::parse_sparql_select_query;
@@ -11,47 +7,14 @@ use hybrid::static_sparql::execute_sparql_query;
 use log::debug;
 use oxrdf::{NamedNode, Term, Variable};
 use polars::prelude::{CsvReader, SerReader};
-use reqwest::header::CONTENT_TYPE;
-use reqwest::StatusCode;
 use rstest::*;
 use serial_test::serial;
 use sparesults::QuerySolution;
-use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
-use std::time::Duration;
-use tokio::time::sleep;
 
-const OXIGRAPH_SERVER_IMAGE: &str = "oxigraph/oxigraph:v0.3.2";
-const QUERY_ENDPOINT: &str = "http://localhost:7878/query";
-const UPDATE_ENDPOINT: &str = "http://localhost:7878/update";
-
-async fn find_container(docker: &Docker, container_name: &str) -> Option<ContainerSummary> {
-    let list = docker
-        .list_containers(Some(ListContainersOptions::<String> {
-            all: true,
-            ..Default::default()
-        }))
-        .await
-        .expect("List containers problem");
-    let slashed_container_name = "/".to_string() + container_name;
-    let existing = list
-        .iter()
-        .find(|cs| {
-            cs.names.is_some()
-                && cs
-                    .names
-                    .as_ref()
-                    .unwrap()
-                    .iter()
-                    .find(|n| n == &&slashed_container_name)
-                    .is_some()
-        })
-        .cloned();
-    existing
-}
+use crate::common::{add_sparql_testdata, compare_all_solutions, QUERY_ENDPOINT, start_sparql_container};
 
 #[fixture]
 fn use_logger() {
@@ -76,84 +39,18 @@ fn testdata_path() -> PathBuf {
 
 #[fixture]
 async fn sparql_endpoint() {
-    let docker = Docker::connect_with_local_defaults().expect("Could not find local docker");
-    let container_name = "my-oxigraph-server";
-    let existing = find_container(&docker, container_name).await;
-    if let Some(_) = existing {
-        docker
-            .remove_container(
-                container_name,
-                Some(RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                }),
-            )
-            .await
-            .expect("Remove existing problem");
-    }
-    let options = CreateContainerOptions {
-        name: container_name,
-    };
-    let config = Config {
-        image: Some(OXIGRAPH_SERVER_IMAGE),
-        cmd: Some(vec![
-            "--location",
-            "/data",
-            "serve",
-            "--bind",
-            "0.0.0.0:7878",
-        ]),
-        exposed_ports: Some(HashMap::from([("7878/tcp", HashMap::new())])),
-        host_config: Some(HostConfig {
-            port_bindings: Some(HashMap::from([(
-                "7878/tcp".to_string(),
-                Some(vec![PortBinding {
-                    host_ip: None,
-                    host_port: Some("7878/tcp".to_string()),
-                }]),
-            )])),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    docker
-        .create_container(Some(options), config)
-        .await
-        .expect("Problem creating container");
-    docker
-        .start_container(container_name, None::<StartContainerOptions<String>>)
-        .await
-        .expect("Started container problem ");
-    sleep(Duration::from_secs(10)).await;
-    let created = find_container(&docker, container_name).await;
-    assert!(created.is_some());
-    assert!(created
-        .as_ref()
-        .unwrap()
-        .status
-        .as_ref()
-        .unwrap()
-        .contains("Up"));
+    start_sparql_container().await
 }
 
 #[fixture]
 async fn with_testdata(#[future] sparql_endpoint: (), mut testdata_path: PathBuf) {
     let _ = sparql_endpoint.await;
     testdata_path.push("testdata.sparql");
-    let testdata_update_string =
-        fs::read_to_string(testdata_path.as_path()).expect("Read testdata.sparql problem");
-
-    let client = reqwest::Client::new();
-    let put_request = client
-        .post(UPDATE_ENDPOINT)
-        .header(CONTENT_TYPE, "application/sparql-update")
-        .body(testdata_update_string);
-    let put_response = put_request.send().await.expect("Update error");
-    assert_eq!(put_response.status(), StatusCode::from_u16(204).unwrap());
+    add_sparql_testdata(testdata_path).await;
 }
 
 #[fixture]
-fn time_series_database(testdata_path: PathBuf) -> InMemoryTimeseriesDatabase {
+fn inmem_time_series_database(testdata_path: PathBuf) -> InMemoryTimeseriesDatabase {
     let mut frames = HashMap::new();
     for t in ["ts1", "ts2"] {
         let mut file_path = testdata_path.clone();
@@ -171,50 +68,6 @@ fn time_series_database(testdata_path: PathBuf) -> InMemoryTimeseriesDatabase {
     InMemoryTimeseriesDatabase { frames }
 }
 
-fn compare_terms(t1: &Term, t2: &Term) -> Ordering {
-    let t1_string = t1.to_string();
-    let t2_string = t2.to_string();
-    t1_string.cmp(&t2_string)
-}
-
-fn compare_query_solutions(a: &QuerySolution, b: &QuerySolution) -> Ordering {
-    let mut first_unequal = None;
-    for (av, at) in a {
-        if let Some(bt) = b.get(av) {
-            let comparison = compare_terms(at, bt);
-            if Ordering::Equal != comparison {
-                first_unequal = Some(comparison);
-                break;
-            }
-        } else {
-            first_unequal = Some(Ordering::Greater);
-            break;
-        }
-    }
-    if let Some(ordering) = first_unequal {
-        return ordering;
-    }
-    for (bv, _) in b {
-        if a.get(bv).is_none() {
-            return Ordering::Less;
-        }
-    }
-    Ordering::Equal
-}
-
-fn compare_all_solutions(mut expected: Vec<QuerySolution>, mut actual: Vec<QuerySolution>) {
-    assert_eq!(expected.len(), actual.len());
-    expected.sort_by(compare_query_solutions);
-    actual.sort_by(compare_query_solutions);
-    let mut i = 0;
-    for es in &expected {
-        assert_eq!(
-            compare_query_solutions(es, actual.get(i).unwrap()),
-            Ordering::Equal
-        );
-        i += 1;
-    }
-}
 
 #[rstest]
 #[tokio::test]
@@ -262,7 +115,7 @@ async fn test_static_query(#[future] with_testdata: (), use_logger: ()) {
 #[serial]
 async fn test_simple_hybrid_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -282,7 +135,7 @@ async fn test_simple_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime && ?v < 200) .
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -307,7 +160,7 @@ async fn test_simple_hybrid_query(
 #[serial]
 async fn test_complex_hybrid_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -333,7 +186,7 @@ async fn test_complex_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:55"^^xsd:dateTime && ?v1 < ?v2) .
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -358,7 +211,7 @@ async fn test_complex_hybrid_query(
 #[serial]
 async fn test_pushdown_group_by_hybrid_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -377,7 +230,7 @@ async fn test_pushdown_group_by_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime) .
     } GROUP BY ?w
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w"], vec![false])
@@ -406,7 +259,7 @@ async fn test_pushdown_group_by_hybrid_query(
 #[serial]
 async fn test_pushdown_group_by_second_hybrid_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -431,7 +284,7 @@ async fn test_pushdown_group_by_second_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime)
     } GROUP BY ?w ?year ?month ?day ?hour ?minute ?second
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w", "sum_v"], vec![false])
@@ -460,7 +313,7 @@ async fn test_pushdown_group_by_second_hybrid_query(
 #[serial]
 async fn test_pushdown_group_by_second_having_hybrid_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -486,7 +339,7 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
     } GROUP BY ?w ?year ?month ?day ?hour ?minute ?second_5
     HAVING (SUM(?v) > 199)
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w", "sum_v"], vec![false])
@@ -515,7 +368,7 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
 #[serial]
 async fn test_pushdown_group_by_concat_agg_hybrid_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -535,7 +388,7 @@ async fn test_pushdown_group_by_concat_agg_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime)
     } GROUP BY ?w ?seconds_5
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w", "seconds_5"], vec![false])
@@ -564,7 +417,7 @@ async fn test_pushdown_group_by_concat_agg_hybrid_query(
 #[serial]
 async fn test_pushdown_groupby_exists_something_hybrid_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -584,7 +437,7 @@ async fn test_pushdown_groupby_exists_something_hybrid_query(
         FILTER EXISTS {SELECT ?w WHERE {?w types:hasSomething ?smth}}
     } GROUP BY ?w ?seconds_3
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w", "seconds_3"], vec![false])
@@ -613,7 +466,7 @@ async fn test_pushdown_groupby_exists_something_hybrid_query(
 #[serial]
 async fn test_pushdown_groupby_exists_timeseries_value_hybrid_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -633,7 +486,7 @@ async fn test_pushdown_groupby_exists_timeseries_value_hybrid_query(
             FILTER(?v > 300)}}
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w"], vec![false])
@@ -662,7 +515,7 @@ async fn test_pushdown_groupby_exists_timeseries_value_hybrid_query(
 #[serial]
 async fn test_pushdown_groupby_exists_aggregated_timeseries_value_hybrid_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -685,7 +538,7 @@ async fn test_pushdown_groupby_exists_aggregated_timeseries_value_hybrid_query(
             }
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w"], vec![false])
@@ -714,7 +567,7 @@ async fn test_pushdown_groupby_exists_aggregated_timeseries_value_hybrid_query(
 #[serial]
 async fn test_pushdown_groupby_not_exists_aggregated_timeseries_value_hybrid_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -737,7 +590,7 @@ async fn test_pushdown_groupby_not_exists_aggregated_timeseries_value_hybrid_que
             }
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w"], vec![false])
@@ -766,7 +619,7 @@ async fn test_pushdown_groupby_not_exists_aggregated_timeseries_value_hybrid_que
 #[serial]
 async fn test_path_group_by_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -781,7 +634,7 @@ async fn test_path_group_by_query(
         GROUP BY ?w
         ORDER BY ASC(?max_v)
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -806,7 +659,7 @@ async fn test_path_group_by_query(
 #[serial]
 async fn test_optional_clause_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -824,7 +677,7 @@ async fn test_optional_clause_query(
         }
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -849,7 +702,7 @@ async fn test_optional_clause_query(
 #[serial]
 async fn test_minus_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -868,7 +721,7 @@ async fn test_minus_query(
         }
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w", "v"], vec![false])
@@ -897,7 +750,7 @@ async fn test_minus_query(
 #[serial]
 async fn test_in_expression_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -913,7 +766,7 @@ async fn test_in_expression_query(
         FILTER(?v IN ((300+4), (304-3), 307))
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -938,7 +791,7 @@ async fn test_in_expression_query(
 #[serial]
 async fn test_values_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -955,7 +808,7 @@ async fn test_values_query(
         FILTER(?v = ?v2)
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -980,7 +833,7 @@ async fn test_values_query(
 #[serial]
 async fn test_if_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -995,7 +848,7 @@ async fn test_if_query(
         ?dp quarry:hasValue ?v .
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w", "v_with_min"], vec![false])
@@ -1025,7 +878,7 @@ async fn test_if_query(
 #[serial]
 async fn test_distinct_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -1040,7 +893,7 @@ async fn test_distinct_query(
         ?dp quarry:hasValue ?v .
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -1065,7 +918,7 @@ async fn test_distinct_query(
 #[serial]
 async fn test_union_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -1088,7 +941,7 @@ async fn test_union_query(
         }
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["w", "v"], vec![false])
@@ -1119,7 +972,7 @@ async fn test_union_query(
 #[serial]
 async fn test_coalesce_query(
     #[future] with_testdata: (),
-    time_series_database: InMemoryTimeseriesDatabase,
+    inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -1141,7 +994,7 @@ async fn test_coalesce_query(
         }
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(time_series_database))
+    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
         .await
         .expect("Hybrid error")
         .sort(&["s1", "s2", "v1", "v2", "t"], vec![false])
