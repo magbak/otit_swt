@@ -24,12 +24,26 @@ impl StaticQueryRewriter {
                 .filter(|x| x.is_some())
                 .map(|x| x.unwrap())
                 .collect::<Vec<Variable>>();
-            let mut keys_sorted = gpr_inner
+            let mut datatype_keys_sorted = gpr_inner
+                .datatypes_in_scope
+                .keys()
+                .collect::<Vec<&Variable>>();
+            datatype_keys_sorted.sort_by_key(|v| v.to_string());
+            for k in datatype_keys_sorted {
+                let vs = gpr_inner.datatypes_in_scope.get(k).unwrap();
+                let mut vars = vs.iter().collect::<Vec<&Variable>>();
+                //Sort to make rewrites deterministic
+                vars.sort_by_key(|v| v.to_string());
+                for v in vars {
+                    variables_rewrite.push(v.clone());
+                }
+            }
+            let mut id_keys_sorted = gpr_inner
                 .external_ids_in_scope
                 .keys()
                 .collect::<Vec<&Variable>>();
-            keys_sorted.sort_by_key(|v| v.to_string());
-            for k in keys_sorted {
+            id_keys_sorted.sort_by_key(|v| v.to_string());
+            for k in id_keys_sorted {
                 let vs = gpr_inner.external_ids_in_scope.get(k).unwrap();
                 let mut vars = vs.iter().collect::<Vec<&Variable>>();
                 //Sort to make rewrites deterministic

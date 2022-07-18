@@ -210,14 +210,6 @@ fn find_groupby_pushdowns_in_graph_pattern(
                                     .unwrap()
                                     .equivalent(v, context)
                         }
-                        Constraint::ExternalTimeseriesDatatype => {
-                            tsq.datatype_variable.is_some()
-                                && tsq
-                                    .datatype_variable
-                                    .as_ref()
-                                    .unwrap()
-                                    .equivalent(v, context)
-                        }
                         Constraint::ExternalDataPoint => {
                             tsq.data_point_variable.is_some()
                                 && tsq

@@ -8,6 +8,7 @@ use spargebra::algebra::Expression;
 use std::error::Error;
 use std::fmt::{Display, Formatter, Write};
 use std::str::FromStr;
+use polars::export::chrono::NaiveDateTime;
 
 #[derive(Debug)]
 pub enum TimeSeriesQueryToSQLError {
@@ -36,6 +37,7 @@ impl Error for TimeSeriesQueryToSQLError {}
 
 #[derive(Clone)]
 pub struct TimeSeriesTable {
+    pub schema: Option<String>,
     pub time_series_table: String,
     pub value_column: String,
     pub timestamp_column: String,
@@ -58,8 +60,12 @@ impl TimeSeriesTable {
             .expr_as(
                 SeaExpr::col(Name::Column(self.timestamp_column.clone())),
                 Alias::new("timestamp"),
-            )
-            .from(Name::Table(self.time_series_table.clone()));
+            );
+        if let Some(schema) = &self.schema {
+            query.from((Name::Schema(schema.clone()), Name::Table(self.time_series_table.clone())));
+        } else {
+            query.from(Name::Table(self.time_series_table.clone()));
+        }
 
         if let Some(ids) = &tsq.ids {
             query.and_where(
@@ -80,7 +86,9 @@ impl TimeSeriesTable {
             )?);
         }
         //TODO:Grouping/aggregation
-        Ok(query.to_string(PostgresQueryBuilder))
+        let query_string = query.to_string(PostgresQueryBuilder);
+        println!("Query: {}", query_string);
+        Ok(query_string)
     }
 
     fn sparql_expression_to_sql_expression(
@@ -101,9 +109,14 @@ impl TimeSeriesTable {
                 let v = l.value();
                 match l.datatype() {
                     xsd::DOUBLE => SimpleExpr::Value(Value::Double(Some(v.parse().unwrap()))),
-                    xsd::DATE_TIME => SimpleExpr::Value(Value::ChronoDateTimeWithTimeZone(Some(
-                        Box::new(chrono::DateTime::from_str(v).unwrap()),
-                    ))),
+                    xsd::INTEGER => SimpleExpr::Value(Value::BigInt(Some(v.parse().unwrap()))),
+                    xsd::DATE_TIME => {
+                        let dt = v
+                            .parse::<NaiveDateTime>()
+                            .expect("Datetime parsing error");
+                        SimpleExpr::Value(Value::ChronoDateTime(Some(
+                            Box::new(dt))))
+                    }
                     _ => {
                         return Err(TimeSeriesQueryToSQLError::UnknownDatatype(
                             l.datatype().as_str().to_string(),
@@ -283,6 +296,7 @@ impl TimeSeriesTable {
 
 #[derive(Clone)]
 enum Name {
+    Schema(String),
     Table(String),
     Column(String),
 }
@@ -293,6 +307,7 @@ impl Iden for Name {
             s,
             "{}",
             match self {
+                Name::Schema(s) => {s}
                 Name::Table(s) => {
                     s
                 }

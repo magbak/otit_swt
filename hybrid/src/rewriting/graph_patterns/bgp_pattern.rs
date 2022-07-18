@@ -1,6 +1,6 @@
 use super::StaticQueryRewriter;
 use crate::change_types::ChangeType;
-use crate::constants::HAS_EXTERNAL_ID;
+use crate::constants::{HAS_DATATYPE, HAS_EXTERNAL_ID};
 use crate::constraints::{Constraint, VariableConstraints};
 use crate::query_context::{Context, PathEntry};
 use crate::rewriting::graph_patterns::GPReturn;
@@ -19,6 +19,7 @@ impl StaticQueryRewriter {
         let context = context.extension_with(PathEntry::BGP);
         let mut new_triples = vec![];
         let mut dynamic_triples = vec![];
+        let mut datatypes_in_scope = HashMap::new();
         let mut external_ids_in_scope = HashMap::new();
         for t in patterns {
             //If the object is an external timeseries, we need to do get the external id
@@ -34,20 +35,33 @@ impl StaticQueryRewriter {
                                 "ts_external_id_".to_string() + &self.variable_counter.to_string(),
                             )
                             .unwrap();
+
+                            let datatype_var = Variable::new(
+                                "ts_datatype_".to_string() + &self.variable_counter.to_string()
+                            ).unwrap();
                             self.variable_counter += 1;
-                            self.create_time_series_query(&object_var, &external_id_var, &context);
-                            let new_triple = TriplePattern {
+                            self.create_time_series_query(&object_var, &external_id_var, &datatype_var, &context);
+                            let new_external_id_triple = TriplePattern {
                                 subject: t.object.clone(),
                                 predicate: NamedNodePattern::NamedNode(
                                     NamedNode::new(HAS_EXTERNAL_ID).unwrap(),
                                 ),
                                 object: TermPattern::Variable(external_id_var.clone()),
                             };
-                            if !new_triples.contains(&new_triple) {
-                                new_triples.push(new_triple);
-                            }
+                            let new_datatype_triple = TriplePattern {
+                                subject: t.object.clone(),
+                                predicate: NamedNodePattern::NamedNode(
+                                    NamedNode::new(HAS_DATATYPE).unwrap(),
+                                ),
+                                object: TermPattern::Variable(datatype_var.clone()),
+                            };
+                            new_triples.push(new_external_id_triple);
+                            new_triples.push(new_datatype_triple);
                             external_ids_in_scope
                                 .insert(object_var.clone(), vec![external_id_var.clone()]);
+                            datatypes_in_scope.insert(
+                                object_var.clone(), vec![datatype_var.clone()]
+                            );
                         }
                     }
                 }
@@ -112,6 +126,7 @@ impl StaticQueryRewriter {
                 },
                 use_change_type,
                 variables_in_scope,
+                datatypes_in_scope,
                 external_ids_in_scope,
             );
             Some(gpr)

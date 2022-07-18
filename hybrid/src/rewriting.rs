@@ -6,7 +6,7 @@ mod project_static;
 mod pushups;
 
 use crate::change_types::ChangeType;
-use crate::constants::{HAS_DATATYPE, HAS_DATA_POINT, HAS_TIMESTAMP, HAS_VALUE};
+use crate::constants::{HAS_DATA_POINT, HAS_TIMESTAMP, HAS_VALUE};
 use crate::constraints::{Constraint, VariableConstraints};
 use crate::query_context::PathEntry::ExtendExpression;
 use crate::query_context::{Context, PathEntry, VariableInContext};
@@ -197,25 +197,6 @@ impl StaticQueryRewriter {
                             }
                         }
                     }
-                } else if named_predicate_node == HAS_DATATYPE {
-                    for q in &mut self.time_series_queries {
-                        if q.datatype_variable.is_none() {
-                            if let (
-                                Some(q_data_point_variable),
-                                TermPattern::Variable(subject_variable),
-                            ) = (&q.data_point_variable, &t.subject)
-                            {
-                                if q_data_point_variable.partial(subject_variable, context) {
-                                    if let TermPattern::Variable(datatype_var) = &t.object {
-                                        q.datatype_variable = Some(VariableInContext::new(
-                                            datatype_var.clone(),
-                                            context.clone(),
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
                 } else if named_predicate_node == HAS_TIMESTAMP {
                     for q in &mut self.time_series_queries {
                         if q.timestamp_variable.is_none() {
@@ -244,10 +225,12 @@ impl StaticQueryRewriter {
         &mut self,
         time_series_variable: &Variable,
         time_series_id_variable: &Variable,
+        datatype_variable: &Variable,
         context: &Context,
     ) {
         let mut ts_query = TimeSeriesQuery::new();
         ts_query.identifier_variable = Some(time_series_id_variable.clone());
+        ts_query.datatype_variable = Some(datatype_variable.clone());
         ts_query.timeseries_variable = Some(VariableInContext::new(
             time_series_variable.clone(),
             context.clone(),

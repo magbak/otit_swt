@@ -8,7 +8,6 @@ use bollard::container::{
 use bollard::models::{HostConfig, PortBinding};
 use bollard::Docker;
 use hybrid::orchestrator::execute_hybrid_query;
-use hybrid::simple_in_memory_timeseries::InMemoryTimeseriesDatabase;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::static_sparql::execute_sparql_query;
 use hybrid::timeseries_database::arrow_flight_sql_database::ArrowFlightSQLDatabase;
@@ -174,7 +173,8 @@ async fn with_sparql_testdata(#[future] sparql_endpoint: (), mut testdata_path: 
 #[fixture]
 fn timeseries_table() -> TimeSeriesTable {
     TimeSeriesTable {
-        time_series_table: r#""my_nas"."ts.parquet""#.to_string(),
+        schema: Some("my_nas".to_string()),
+        time_series_table: "ts.parquet".to_string(),
         value_column: "v".to_string(),
         timestamp_column: "ts".to_string(),
         identifier_column: "id".to_string(),
@@ -257,9 +257,32 @@ async fn with_timeseries_testdata(#[future] arrow_sql_endpoint: ()) {
     bld = bld.header(CONTENT_TYPE, "application/json");
     let resp = bld.send().await.unwrap().text().await.unwrap();
     println!("Resp {:?}", resp);
+
+    //Promote file in source
+    let mut bld = c.request(Method::POST, format!("{}/api/v3/catalog/dremio%3A%2Fmy_nas%2Fts.parquet", DREMIO_ORIGIN));
+    bld = bld.bearer_auth(token.token.clone());
+    let create = r#"
+    {
+  "entityType": "dataset",
+    "id": "dremio:/my_nas/ts.parquet",
+    "path": [
+    	"my_nas", "ts.parquet"
+    	],
+
+    "type": "PHYSICAL_DATASET",
+    "format": {
+        "type": "Parquet"
+    }
+}
+    "#;
+    bld = bld.body(create);
+    bld = bld.header(CONTENT_TYPE, "application/json");
+    let resp = bld.send().await.unwrap().text().await.unwrap();
+    println!("Resp {:?}", resp);
 }
 
 
+#[ignore]
 #[rstest]
 #[tokio::test]
 #[serial]

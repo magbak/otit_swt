@@ -19,7 +19,7 @@ pub mod flight_sql {
 use crate::timeseries_database::TimeSeriesQueryable;
 use crate::timeseries_query::TimeSeriesQuery;
 use arrow2::io::flight as flight2;
-use arrow_format::flight::data::{BasicAuth, FlightDescriptor, HandshakeRequest};
+use arrow_format::flight::data::{BasicAuth, FlightDescriptor, FlightInfo, HandshakeRequest};
 use arrow_format::flight::service::flight_service_client::FlightServiceClient;
 use async_trait::async_trait;
 use flight_sql::CommandStatementQuery;
@@ -36,7 +36,9 @@ use std::fmt::{Display, Formatter};
 use thiserror::Error;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
-use tonic::{Status};
+use tonic::{Request, Response, Status};
+use tonic::metadata::{ MetadataValue};
+use crate::timeseries_database::arrow_flight_sql_database::flight_sql::CommandGetSqlInfo;
 
 #[derive(Error, Debug)]
 pub enum ArrowFlightSQLError {
@@ -70,7 +72,8 @@ impl Display for ArrowFlightSQLError {
 }
 
 pub struct ArrowFlightSQLDatabase {
-    client: FlightServiceClient<Channel>,
+    conn: Channel,
+    bearer_token: String,
     time_series_tables: Vec<TimeSeriesTable>,
 }
 
@@ -79,9 +82,8 @@ impl ArrowFlightSQLDatabase {
         endpoint: &str,
         time_series_tables: Vec<TimeSeriesTable>,
     ) -> Result<ArrowFlightSQLDatabase, ArrowFlightSQLError> {
-        let mut client = FlightServiceClient::connect(endpoint.to_string())
-            .await
-            .map_err(ArrowFlightSQLError::from)?;
+        let conn = tonic::transport::Endpoint::new(endpoint.to_string())?.connect().await?;
+        let mut client = FlightServiceClient::new(conn.clone());
         let basic_auth = BasicAuth{ username: "dremio".to_string(), password: "dremio123".to_string() };
         let mut authvec = vec![];
         basic_auth.encode(&mut authvec).unwrap();
@@ -89,13 +91,20 @@ impl ArrowFlightSQLDatabase {
         let handshake_request_streaming = tokio_stream::iter(vec![handshake_request]);
         let hands = client.handshake(handshake_request_streaming).await.unwrap();
         let mut stream_hands = hands.into_inner();
+        let mut token = None;
         for h in stream_hands.next().await {
             let h_ok = h.unwrap();
+            token = Some(h_ok.payload.clone());
             println!("{:?}", h_ok.payload);
         }
+        let token = token.take().unwrap();
+        let str_token = std::str::from_utf8(token.as_slice()).unwrap();
+        let bearer_token = format!("Bearer {}", str_token);
+        println!("Strtoken: {str_token}");
 
         Ok(ArrowFlightSQLDatabase {
-            client,
+            conn,
+            bearer_token,
             time_series_tables,
         })
     }
@@ -105,29 +114,41 @@ impl ArrowFlightSQLDatabase {
         query: String,
     ) -> Result<DataFrame, ArrowFlightSQLError> {
         let mut dfs = vec![];
-        let mut query_encoding = vec![];
         let query_cmd = CommandStatementQuery {
-            query: query.to_string(),
+            query,
         };
-        query_encoding.reserve(query_cmd.encoded_len());
-        query_cmd.encode(&mut query_encoding).unwrap();
-
+        let query_encoding = query_cmd.encode_to_vec();
+        println!("encoded: {:?}", query_encoding);
         let request = FlightDescriptor {
             r#type: 2, //CMD
             cmd: query_encoding,
             path: vec![], // Should be empty when CMD
         };
-        let res = self
-            .client
+
+        let bearer_token = self.bearer_token.clone();
+        let mut client= FlightServiceClient::with_interceptor(self.conn.clone(),|mut req: Request<()>| {
+            let bearer_token: MetadataValue<_> = bearer_token.parse().unwrap();
+            req.metadata_mut().insert("authorization", bearer_token);
+            Ok(req)
+        });
+
+        let resp = client.get_flight_info(CommandGetSqlInfo{ info: vec![] }).await;
+
+        let respose_result = client
             .get_flight_info(request)
-            .await
-            .map_err(ArrowFlightSQLError::from)?;
+            .await;
+        let res = match respose_result {
+            Ok(resp) => {resp}
+            Err(err) => {
+                println!("Err message: {}", err.message());
+                panic!("bad! {:?}", err);
+            }
+        };
         let mut schema_opt = None;
         let mut ipc_schema_opt = None;
         for endpoint in res.into_inner().endpoint {
             if let Some(ticket) = &endpoint.ticket {
-                let stream = self
-                    .client
+                let stream = client
                     .do_get(ticket.clone())
                     .await
                     .map_err(ArrowFlightSQLError::from)?;

@@ -31,6 +31,7 @@ impl StaticQueryRewriter {
             ChangeType::NoChange,
             variables_in_scope,
             Default::default(),
+            Default::default()
         );
         return Some(gpr);
     }

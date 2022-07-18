@@ -26,6 +26,7 @@ pub struct GPReturn {
     pub(crate) graph_pattern: Option<GraphPattern>,
     pub(crate) change_type: ChangeType,
     pub(crate) variables_in_scope: HashSet<Variable>,
+    pub(crate) datatypes_in_scope: HashMap<Variable, Vec<Variable>>,
     pub(crate) external_ids_in_scope: HashMap<Variable, Vec<Variable>>,
 }
 
@@ -34,12 +35,14 @@ impl GPReturn {
         graph_pattern: GraphPattern,
         change_type: ChangeType,
         variables_in_scope: HashSet<Variable>,
+        datatypes_in_scope: HashMap<Variable, Vec<Variable>>,
         external_ids_in_scope: HashMap<Variable, Vec<Variable>>,
     ) -> GPReturn {
         GPReturn {
             graph_pattern: Some(graph_pattern),
             change_type,
             variables_in_scope,
+            datatypes_in_scope,
             external_ids_in_scope,
         }
     }
@@ -57,6 +60,15 @@ impl GPReturn {
     fn with_scope(&mut self, gpr: &mut GPReturn) -> &mut GPReturn {
         self.variables_in_scope
             .extend(&mut gpr.variables_in_scope.drain());
+        for (k, v) in gpr.datatypes_in_scope.drain() {
+            if let Some(vs) = self.datatypes_in_scope.get_mut(&k) {
+                for vee in v {
+                    vs.push(vee);
+                }
+            } else {
+                self.datatypes_in_scope.insert(k, v);
+            }
+        }
         for (k, v) in gpr.external_ids_in_scope.drain() {
             if let Some(vs) = self.external_ids_in_scope.get_mut(&k) {
                 for vee in v {

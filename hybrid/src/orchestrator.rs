@@ -92,7 +92,7 @@ fn complete_time_series_queries(
         }
         if let Some(datatype_var) = &tsq.datatype_variable {
             for sqs in static_query_solutions {
-                if let Some(Term::NamedNode(nn)) = sqs.get(&datatype_var.variable) {
+                if let Some(Term::NamedNode(nn)) = sqs.get(datatype_var) {
                     if tsq.datatype.is_none() {
                         tsq.datatype = Some(nn.clone());
                     } else if let Some(dt) = &tsq.datatype {

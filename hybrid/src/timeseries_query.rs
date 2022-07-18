@@ -25,7 +25,7 @@ pub struct TimeSeriesQuery {
     pub timeseries_variable: Option<VariableInContext>,
     pub data_point_variable: Option<VariableInContext>,
     pub value_variable: Option<VariableInContext>,
-    pub datatype_variable: Option<VariableInContext>,
+    pub datatype_variable: Option<Variable>,
     pub datatype: Option<NamedNode>,
     pub timestamp_variable: Option<VariableInContext>,
     pub ids: Option<Vec<String>>,
