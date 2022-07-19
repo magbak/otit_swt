@@ -19,8 +19,7 @@ pub mod flight_sql {
 use crate::timeseries_database::TimeSeriesQueryable;
 use crate::timeseries_query::TimeSeriesQuery;
 use arrow2::io::flight as flight2;
-use arrow_format::flight::data::{BasicAuth, FlightDescriptor, FlightInfo, HandshakeRequest};
-use arrow_format::flight::service::flight_service_client::FlightServiceClient;
+use arrow_format::flight::data::{BasicAuth, FlightDescriptor, HandshakeRequest};
 use async_trait::async_trait;
 use flight_sql::CommandStatementQuery;
 
@@ -33,12 +32,15 @@ use crate::timeseries_database::timeseries_sql_rewrite::{
 };
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::time::Duration;
+use arrow_format::flight::service::flight_service_client::FlightServiceClient;
+use arrow_format::flight::data::FlightData;
 use thiserror::Error;
+use tokio::time::sleep;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
-use tonic::{Request, Response, Status};
+use tonic::{IntoRequest, Request, Status};
 use tonic::metadata::{ MetadataValue};
-use crate::timeseries_database::arrow_flight_sql_database::flight_sql::CommandGetSqlInfo;
 
 #[derive(Error, Debug)]
 pub enum ArrowFlightSQLError {
@@ -72,8 +74,8 @@ impl Display for ArrowFlightSQLError {
 }
 
 pub struct ArrowFlightSQLDatabase {
-    conn: Channel,
-    bearer_token: String,
+    client: FlightServiceClient<Channel>,
+    token: String,
     time_series_tables: Vec<TimeSeriesTable>,
 }
 
@@ -83,28 +85,14 @@ impl ArrowFlightSQLDatabase {
         time_series_tables: Vec<TimeSeriesTable>,
     ) -> Result<ArrowFlightSQLDatabase, ArrowFlightSQLError> {
         let conn = tonic::transport::Endpoint::new(endpoint.to_string())?.connect().await?;
-        let mut client = FlightServiceClient::new(conn.clone());
-        let basic_auth = BasicAuth{ username: "dremio".to_string(), password: "dremio123".to_string() };
-        let mut authvec = vec![];
-        basic_auth.encode(&mut authvec).unwrap();
-        let handshake_request = HandshakeRequest{ protocol_version: 0, payload: authvec };
-        let handshake_request_streaming = tokio_stream::iter(vec![handshake_request]);
-        let hands = client.handshake(handshake_request_streaming).await.unwrap();
-        let mut stream_hands = hands.into_inner();
-        let mut token = None;
-        for h in stream_hands.next().await {
-            let h_ok = h.unwrap();
-            token = Some(h_ok.payload.clone());
-            println!("{:?}", h_ok.payload);
-        }
-        let token = token.take().unwrap();
-        let str_token = std::str::from_utf8(token.as_slice()).unwrap();
-        let bearer_token = format!("Bearer {}", str_token);
-        println!("Strtoken: {str_token}");
+        let token = authenticate(conn.clone(), "dremio", "dremio123").await?;
+        let mut client = FlightServiceClient::new(conn);
+
+        println!("Strtoken: {token}");
 
         Ok(ArrowFlightSQLDatabase {
-            conn,
-            bearer_token,
+            client,
+            token,
             time_series_tables,
         })
     }
@@ -114,27 +102,16 @@ impl ArrowFlightSQLDatabase {
         query: String,
     ) -> Result<DataFrame, ArrowFlightSQLError> {
         let mut dfs = vec![];
-        let query_cmd = CommandStatementQuery {
-            query,
-        };
-        let query_encoding = query_cmd.encode_to_vec();
-        println!("encoded: {:?}", query_encoding);
-        let request = FlightDescriptor {
+        let mut request = FlightDescriptor {
             r#type: 2, //CMD
-            cmd: query_encoding,
+            cmd: query.into_bytes(),
+            //TODO: For some reason, encoding the CommandStatementQuery-struct
+            // gives me a parsing error with an extra character at the start of the decoded query.
             path: vec![], // Should be empty when CMD
-        };
+        }.into_request();
+        add_auth_header(&mut request, &self.token);
 
-        let bearer_token = self.bearer_token.clone();
-        let mut client= FlightServiceClient::with_interceptor(self.conn.clone(),|mut req: Request<()>| {
-            let bearer_token: MetadataValue<_> = bearer_token.parse().unwrap();
-            req.metadata_mut().insert("authorization", bearer_token);
-            Ok(req)
-        });
-
-        let resp = client.get_flight_info(CommandGetSqlInfo{ info: vec![] }).await;
-
-        let respose_result = client
+        let respose_result = self.client
             .get_flight_info(request)
             .await;
         let res = match respose_result {
@@ -147,14 +124,16 @@ impl ArrowFlightSQLDatabase {
         let mut schema_opt = None;
         let mut ipc_schema_opt = None;
         for endpoint in res.into_inner().endpoint {
-            if let Some(ticket) = &endpoint.ticket {
-                let stream = client
-                    .do_get(ticket.clone())
+            if let Some(ticket) = endpoint.ticket.clone() {
+                let mut ticket = ticket.into_request();
+                add_auth_header(&mut ticket, &self.token);
+                let stream = self.client
+                    .do_get(ticket)
                     .await
                     .map_err(ArrowFlightSQLError::from)?;
                 let mut streaming_flight_data = stream.into_inner();
                 while let Some(flight_data_result) = streaming_flight_data.next().await {
-                    if let Ok(flight_data) = flight_data_result {
+                    if let Ok(mut flight_data) = flight_data_result {
                         if schema_opt.is_none() || ipc_schema_opt.is_none() {
                             let schemas_result =
                                 flight2::deserialize_schemas(&flight_data.data_header);
@@ -184,7 +163,7 @@ impl ArrowFlightSQLDatabase {
                                 dfs.push(df)
                             }
                             Err(err) => {
-                                panic!("Fixit")
+                                panic!("Fixit {}", err);
                             }
                         }
                     }
@@ -218,4 +197,53 @@ impl TimeSeriesQueryable for ArrowFlightSQLDatabase {
 
         Ok(self.execute_sql_query(query_string.unwrap()).await.unwrap())
     }
+}
+
+//Adapted from: https://github.com/apache/arrow-rs/blob/master/integration-testing/src/flight_client_scenarios/auth_basic_proto.rs
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+async fn authenticate(
+    conn: Channel,
+    username: &str,
+    password: &str,
+) -> Result<String, ArrowFlightSQLError> {
+    let mut handshake_request = HandshakeRequest {
+        protocol_version: 2,
+        payload:vec![],
+        };
+    let user_pass_string = format!("{}:{}", username, password);
+    let user_pass_bytes = user_pass_string.as_bytes();
+    let base64_bytes = base64::encode(user_pass_bytes);
+    let basic_auth = format!("Basic {}", base64_bytes);
+    println!("{}", &basic_auth);
+    let mut client = FlightServiceClient::with_interceptor(conn, |mut req: Request<()>| {
+        req.metadata_mut().insert("authorization", basic_auth.parse().unwrap());
+        Ok(req)
+    });
+
+    let handshake_request_streaming = tokio_stream::iter(vec![handshake_request]);
+
+    let rx = client.handshake(handshake_request_streaming).await?;
+    let bearer_token = rx.metadata().get("authorization").unwrap().to_str().unwrap().to_string();
+    Ok(bearer_token)
+}
+
+fn add_auth_header<T>(request:&mut Request<T>, bearer_token: &str) {
+    let token_value: MetadataValue<_> = bearer_token.parse().unwrap();
+    request.metadata_mut().insert("authorization", token_value);
 }

@@ -35,7 +35,7 @@ use futures_util::stream::StreamExt;
 use serde::{Deserialize, Serialize};
 
 const DREMIO_SERVER_IMAGE: &str = "dremio/dremio-oss:22.0.0";
-const ARROW_SQL_DATABASE_ENDPOINT: &str = "http://127.0.0.1:32010";
+const ARROW_SQL_DATABASE_ENDPOINT: &str = "grpc+tcp://127.0.0.1:32010";
 const DREMIO_ORIGIN: &str = "http://127.0.0.1:9047";
 
 #[fixture]
@@ -120,6 +120,7 @@ async fn arrow_sql_endpoint(dockerfile_tar_gz_path: PathBuf) {
         exposed_ports: Some(HashMap::from([
             ("9047/tcp", HashMap::new()),
             ("32010/tcp", HashMap::new()),
+            ("45678/tcp", HashMap::new()),
         ])),
         host_config: Some(HostConfig {
             port_bindings: Some(HashMap::from([
@@ -137,6 +138,13 @@ async fn arrow_sql_endpoint(dockerfile_tar_gz_path: PathBuf) {
                         host_port: Some("32010/tcp".to_string()),
                     }]),
                 ),
+                (
+                    "45678/tcp".to_string(),
+                    Some(vec![PortBinding {
+                        host_ip: None,
+                        host_port: Some("45678/tcp".to_string()),
+                    }]),
+                ),
             ])),
             ..Default::default()
         }),
@@ -150,7 +158,7 @@ async fn arrow_sql_endpoint(dockerfile_tar_gz_path: PathBuf) {
         .start_container(container_name, None::<StartContainerOptions<String>>)
         .await
         .expect("Started container problem ");
-    sleep(Duration::from_secs(30)).await;
+    sleep(Duration::from_secs(40)).await;
     let created = find_container(&docker, container_name).await;
     assert!(created.is_some());
 
@@ -282,7 +290,6 @@ async fn with_timeseries_testdata(#[future] arrow_sql_endpoint: ()) {
 }
 
 
-#[ignore]
 #[rstest]
 #[tokio::test]
 #[serial]
