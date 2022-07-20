@@ -162,7 +162,7 @@ async fn arrow_sql_endpoint(dockerfile_tar_gz_path: PathBuf) {
         .start_container(container_name, None::<StartContainerOptions<String>>)
         .await
         .expect("Started container problem ");
-    sleep(Duration::from_secs(40)).await;
+    sleep(Duration::from_secs(45)).await;
     let created = find_container(&docker, container_name).await;
     assert!(created.is_some());
 
@@ -176,10 +176,10 @@ async fn arrow_sql_endpoint(dockerfile_tar_gz_path: PathBuf) {
 }
 
 #[fixture]
-async fn with_sparql_testdata(#[future] sparql_endpoint: (), mut testdata_path: PathBuf) {
+async fn with_sparql_testdata(#[future] sparql_endpoint: (), mut shared_testdata_path: PathBuf) {
     let _ = sparql_endpoint.await;
-    testdata_path.push("testdata.sparql");
-    add_sparql_testdata(testdata_path).await;
+    shared_testdata_path.push("testdata.sparql");
+    add_sparql_testdata(shared_testdata_path).await;
 }
 
 #[fixture]
