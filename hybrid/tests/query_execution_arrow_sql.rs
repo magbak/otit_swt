@@ -79,8 +79,9 @@ async fn sparql_endpoint() {
 }
 
 #[fixture]
-async fn with_testdata(#[future] sparql_endpoint: (), mut testdata_path: PathBuf) {
+async fn with_testdata(#[future] sparql_endpoint: (), shared_testdata_path: PathBuf) {
     let _ = sparql_endpoint.await;
+    let mut testdata_path = shared_testdata_path.clone();
     testdata_path.push("testdata.sparql");
     add_sparql_testdata(testdata_path).await;
 }
