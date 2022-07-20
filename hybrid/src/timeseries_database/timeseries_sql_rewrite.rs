@@ -85,7 +85,6 @@ impl TimeSeriesTable {
         }
         //TODO:Grouping/aggregation
         let query_string = query.to_string(PostgresQueryBuilder);
-        println!("Query: {}", query_string);
         Ok(query_string)
     }
 

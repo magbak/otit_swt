@@ -85,8 +85,6 @@ impl ArrowFlightSQLDatabase {
         let token = authenticate(conn.clone(), "dremio", "dremio123").await?;
         let client = FlightServiceClient::new(conn);
 
-        println!("Strtoken: {token}");
-
         Ok(ArrowFlightSQLDatabase {
             client,
             token,
@@ -129,7 +127,6 @@ impl ArrowFlightSQLDatabase {
                     .await
                     .map_err(ArrowFlightSQLError::from)?;
                 let mut streaming_flight_data = stream.into_inner();
-                let mut i = 0usize;
                 while let Some(flight_data_result) = streaming_flight_data.next().await {
                     if let Ok(flight_data) = flight_data_result {
                         if schema_opt.is_none() || ipc_schema_opt.is_none() {
@@ -150,6 +147,7 @@ impl ArrowFlightSQLDatabase {
                         match header {
                             MessageHeaderRef::Schema(s) => {
                                 println!("Received schema, should be handled already: {:?}", s);
+                                //TODO: Move schema code block here..
                             }
                             MessageHeaderRef::DictionaryBatch(db) => {
                                 todo!("Handle dictionary {:?}", db);
@@ -163,7 +161,6 @@ impl ArrowFlightSQLDatabase {
                                 );
                                 match chunk_result {
                                     Ok(ch) => {
-                                        println!("Fields: {:?}", schema_opt.as_ref().unwrap().fields.as_slice());
                                         let df = DataFrame::try_from((
                                             ch,
                                             schema_opt.as_ref().unwrap().fields.as_slice(),
@@ -176,16 +173,10 @@ impl ArrowFlightSQLDatabase {
                                     }
                                 }
                             }
-                            MessageHeaderRef::Tensor(_) => {}
-                            MessageHeaderRef::SparseTensor(_) => {}
+                            MessageHeaderRef::Tensor(_) => {},//TODO handle?
+                            MessageHeaderRef::SparseTensor(_) => {}//Todo handle?
                         }
-
-
-                        println!("Message {:?}", message);
-
-
                     }
-                    i = i+1;
                 }
             }
         }
@@ -249,7 +240,6 @@ async fn authenticate(
     let user_pass_bytes = user_pass_string.as_bytes();
     let base64_bytes = base64::encode(user_pass_bytes);
     let basic_auth = format!("Basic {}", base64_bytes);
-    println!("{}", &basic_auth);
     let mut client = FlightServiceClient::with_interceptor(conn, |mut req: Request<()>| {
         req.metadata_mut().insert("authorization", basic_auth.parse().unwrap());
         Ok(req)

@@ -88,7 +88,6 @@ async fn with_testdata(#[future] sparql_endpoint: (), shared_testdata_path: Path
 
 #[fixture]
 async fn arrow_sql_endpoint(dockerfile_tar_gz_path: PathBuf) {
-    println!("arrow");
     let docker = Docker::connect_with_local_defaults().expect("Could not find local docker");
     let container_name = "my-dremio-server";
     let existing = find_container(&docker, container_name).await;
@@ -238,7 +237,7 @@ async fn with_timeseries_testdata(#[future] arrow_sql_endpoint: ()) {
     bld = bld.json(&user_pass);
     let res = bld.send().await.unwrap();
     let token = res.json::<Token>().await.unwrap();
-    println!("Token: {}", token.token);
+    //println!("Token: {}", token.token);
 
     //Add source
     let mut bld = c.request(Method::POST, format!("{}/api/v3/catalog", DREMIO_ORIGIN));
