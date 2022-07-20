@@ -25,6 +25,8 @@ use std::time::Duration;
 use bollard::image::BuildImageOptions;
 use tokio::time::sleep;
 use futures_util::stream::StreamExt;
+use polars_core::datatypes::DataType;
+use polars_core::prelude::TimeUnit;
 use serde::{Deserialize, Serialize};
 
 const ARROW_SQL_DATABASE_ENDPOINT: &str = "grpc+tcp://127.0.0.1:32010";
@@ -320,9 +322,10 @@ async fn test_simple_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime && ?v < 200) .
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(db))
+    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(db))
         .await
         .expect("Hybrid error");
+    df.with_column(df.column("t").unwrap().cast(&DataType::Datetime(TimeUnit::Microseconds, None)).unwrap()).unwrap();
     let mut file_path = shared_testdata_path.clone();
     file_path.push("expected_simple_hybrid.csv");
 
