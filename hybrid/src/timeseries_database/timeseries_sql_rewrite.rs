@@ -1,13 +1,11 @@
 use crate::timeseries_query::TimeSeriesQuery;
 use oxrdf::vocab::xsd;
 use oxrdf::{NamedNode, Variable};
-use polars::export::chrono;
 use sea_query::{Alias, BinOper, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query::{Expr as SeaExpr, Iden, UnOper, Value};
 use spargebra::algebra::Expression;
 use std::error::Error;
 use std::fmt::{Display, Formatter, Write};
-use std::str::FromStr;
 use polars::export::chrono::NaiveDateTime;
 
 #[derive(Debug)]
@@ -51,15 +49,15 @@ impl TimeSeriesTable {
         query
             .expr_as(
                 SeaExpr::col(Name::Column(self.identifier_column.clone())),
-                Alias::new("id"),
+                Alias::new(tsq.identifier_variable.as_ref().unwrap().as_str()),
             )
             .expr_as(
                 SeaExpr::col(Name::Column(self.value_column.clone())),
-                Alias::new("value"),
+                Alias::new(tsq.value_variable.as_ref().unwrap().variable.as_str()),
             )
             .expr_as(
                 SeaExpr::col(Name::Column(self.timestamp_column.clone())),
-                Alias::new("timestamp"),
+                Alias::new(tsq.timestamp_variable.as_ref().unwrap().variable.as_str()),
             );
         if let Some(schema) = &self.schema {
             query.from((Name::Schema(schema.clone()), Name::Table(self.time_series_table.clone())));

@@ -19,24 +19,21 @@ pub mod flight_sql {
 use crate::timeseries_database::TimeSeriesQueryable;
 use crate::timeseries_query::TimeSeriesQuery;
 use arrow2::io::flight as flight2;
-use arrow_format::flight::data::{BasicAuth, FlightDescriptor, HandshakeRequest};
+use arrow_format::flight::data::{FlightDescriptor, HandshakeRequest};
 use async_trait::async_trait;
-use flight_sql::CommandStatementQuery;
 
 use polars::frame::DataFrame;
 use polars_core::utils::accumulate_dataframes_vertical;
-use prost::Message;
 
 use crate::timeseries_database::timeseries_sql_rewrite::{
     TimeSeriesQueryToSQLError, TimeSeriesTable,
 };
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::time::Duration;
 use arrow_format::flight::service::flight_service_client::FlightServiceClient;
-use arrow_format::flight::data::FlightData;
+use arrow_format::ipc::planus::ReadAsRoot;
+use arrow_format::ipc::{MessageHeaderRef};
 use thiserror::Error;
-use tokio::time::sleep;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tonic::{IntoRequest, Request, Status};
@@ -86,7 +83,7 @@ impl ArrowFlightSQLDatabase {
     ) -> Result<ArrowFlightSQLDatabase, ArrowFlightSQLError> {
         let conn = tonic::transport::Endpoint::new(endpoint.to_string())?.connect().await?;
         let token = authenticate(conn.clone(), "dremio", "dremio123").await?;
-        let mut client = FlightServiceClient::new(conn);
+        let client = FlightServiceClient::new(conn);
 
         println!("Strtoken: {token}");
 
@@ -132,8 +129,9 @@ impl ArrowFlightSQLDatabase {
                     .await
                     .map_err(ArrowFlightSQLError::from)?;
                 let mut streaming_flight_data = stream.into_inner();
+                let mut i = 0usize;
                 while let Some(flight_data_result) = streaming_flight_data.next().await {
-                    if let Ok(mut flight_data) = flight_data_result {
+                    if let Ok(flight_data) = flight_data_result {
                         if schema_opt.is_none() || ipc_schema_opt.is_none() {
                             let schemas_result =
                                 flight2::deserialize_schemas(&flight_data.data_header);
@@ -147,26 +145,47 @@ impl ArrowFlightSQLDatabase {
                                 }
                             }
                         }
-                        let chunk_result = flight2::deserialize_batch(
-                            &flight_data,
-                            schema_opt.as_ref().unwrap().fields.as_slice(),
-                            &ipc_schema_opt.as_ref().unwrap(),
-                            &Default::default(),
-                        );
-                        match chunk_result {
-                            Ok(ch) => {
-                                let df = DataFrame::try_from((
-                                    ch,
+                        let message = arrow_format::ipc::MessageRef::read_as_root(&flight_data.data_header).unwrap();
+                        let header = message.header().unwrap().unwrap();
+                        match header {
+                            MessageHeaderRef::Schema(s) => {
+                                println!("Received schema, should be handled already: {:?}", s);
+                            }
+                            MessageHeaderRef::DictionaryBatch(db) => {
+                                todo!("Handle dictionary {:?}", db);
+                            }
+                            MessageHeaderRef::RecordBatch(_) => {
+                                let chunk_result = flight2::deserialize_batch(
+                                    &flight_data,
                                     schema_opt.as_ref().unwrap().fields.as_slice(),
-                                ))
-                                .unwrap(); //TODO:handle
-                                dfs.push(df)
+                                    &ipc_schema_opt.as_ref().unwrap(),
+                                    &Default::default(),
+                                );
+                                match chunk_result {
+                                    Ok(ch) => {
+                                        println!("Fields: {:?}", schema_opt.as_ref().unwrap().fields.as_slice());
+                                        let df = DataFrame::try_from((
+                                            ch,
+                                            schema_opt.as_ref().unwrap().fields.as_slice(),
+                                        ))
+                                        .unwrap(); //TODO:handle
+                                        dfs.push(df)
+                                    }
+                                    Err(err) => {
+                                        panic!("Fixit {}", err);
+                                    }
+                                }
                             }
-                            Err(err) => {
-                                panic!("Fixit {}", err);
-                            }
+                            MessageHeaderRef::Tensor(_) => {}
+                            MessageHeaderRef::SparseTensor(_) => {}
                         }
+
+
+                        println!("Message {:?}", message);
+
+
                     }
+                    i = i+1;
                 }
             }
         }
@@ -222,7 +241,7 @@ async fn authenticate(
     username: &str,
     password: &str,
 ) -> Result<String, ArrowFlightSQLError> {
-    let mut handshake_request = HandshakeRequest {
+    let handshake_request = HandshakeRequest {
         protocol_version: 2,
         payload:vec![],
         };

@@ -2,29 +2,22 @@ mod common;
 
 use crate::common::{add_sparql_testdata, find_container, start_sparql_container, QUERY_ENDPOINT};
 use bollard::container::{
-    Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
+    Config, CreateContainerOptions, RemoveContainerOptions,
     StartContainerOptions,
 };
 use bollard::models::{HostConfig, PortBinding};
 use bollard::Docker;
 use hybrid::orchestrator::execute_hybrid_query;
-use hybrid::splitter::parse_sparql_select_query;
-use hybrid::static_sparql::execute_sparql_query;
 use hybrid::timeseries_database::arrow_flight_sql_database::ArrowFlightSQLDatabase;
 use hybrid::timeseries_database::timeseries_sql_rewrite::TimeSeriesTable;
 use log::debug;
 use oxrdf::vocab::xsd;
-use oxrdf::{NamedNode, Term, Variable};
 use polars::prelude::{CsvReader, SerReader};
-use polars_core::datatypes::AnyValue;
 use reqwest::header::CONTENT_TYPE;
-use reqwest::{Method, StatusCode};
+use reqwest::{Method};
 use rstest::*;
 use serial_test::serial;
-use sparesults::QuerySolution;
-use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::fs;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
@@ -34,7 +27,6 @@ use tokio::time::sleep;
 use futures_util::stream::StreamExt;
 use serde::{Deserialize, Serialize};
 
-const DREMIO_SERVER_IMAGE: &str = "dremio/dremio-oss:22.0.0";
 const ARROW_SQL_DATABASE_ENDPOINT: &str = "grpc+tcp://127.0.0.1:32010";
 const DREMIO_ORIGIN: &str = "http://127.0.0.1:9047";
 
@@ -56,6 +48,16 @@ fn testdata_path() -> PathBuf {
     testdata_path.push(manidir);
     testdata_path.push("tests");
     testdata_path.push("query_execution_arrow_sql_testdata");
+    testdata_path
+}
+
+#[fixture]
+fn shared_testdata_path() -> PathBuf {
+    let manidir = env!("CARGO_MANIFEST_DIR");
+    let mut testdata_path = PathBuf::new();
+    testdata_path.push(manidir);
+    testdata_path.push("tests");
+    testdata_path.push("query_execution_testdata");
     testdata_path
 }
 
@@ -226,7 +228,7 @@ struct NasConfig {
 #[fixture]
 async fn with_timeseries_testdata(#[future] arrow_sql_endpoint: ()) {
     let _ = arrow_sql_endpoint.await;
-    let mut c = reqwest::Client::new();
+    let c = reqwest::Client::new();
     let mut bld = c.request(Method::POST, format!("{}/apiv2/login", DREMIO_ORIGIN));
     let user_pass = UserPass {userName:"dremio".to_string(), password:"dremio123".to_string()};
     bld = bld.header(CONTENT_TYPE, "application/json");
@@ -297,7 +299,7 @@ async fn test_simple_hybrid_query(
     #[future] with_sparql_testdata: (),
     #[future] with_timeseries_testdata: (),
     timeseries_table: TimeSeriesTable,
-    testdata_path: PathBuf,
+    shared_testdata_path: PathBuf,
     use_logger: (),
 ) {
     let _ = use_logger;
@@ -321,7 +323,7 @@ async fn test_simple_hybrid_query(
     let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(db))
         .await
         .expect("Hybrid error");
-    let mut file_path = testdata_path.clone();
+    let mut file_path = shared_testdata_path.clone();
     file_path.push("expected_simple_hybrid.csv");
 
     let file = File::open(file_path.as_path()).expect("Read file problem");
@@ -332,8 +334,4 @@ async fn test_simple_hybrid_query(
         .finish()
         .expect("DF read error");
     assert_eq!(expected_df, df);
-    // let file = File::create(file_path.as_path()).expect("could not open file");
-    // let writer = CsvWriter::new(file);
-    // writer.finish(&mut df).expect("writeok");
-    // println!("{}", df);
 }
