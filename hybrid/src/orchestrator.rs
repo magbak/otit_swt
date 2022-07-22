@@ -40,7 +40,7 @@ impl Error for OrchestrationError {}
 pub async fn execute_hybrid_query(
     query: &str,
     endpoint: &str,
-    time_series_database: Box<dyn TimeSeriesQueryable>,
+    time_series_database: Box<&mut dyn TimeSeriesQueryable>,
 ) -> Result<DataFrame, Box<dyn Error>> {
     let parsed_query = parse_sparql_select_query(query)?;
     debug!("Parsed query: {:?}", parsed_query);
@@ -119,7 +119,7 @@ fn complete_time_series_queries(
 }
 
 async fn execute_time_series_queries(
-    mut time_series_database: Box<dyn TimeSeriesQueryable>,
+    time_series_database: Box<&mut dyn TimeSeriesQueryable>,
     time_series_queries: Vec<TimeSeriesQuery>,
 ) -> Result<Vec<(TimeSeriesQuery, DataFrame)>, Box<dyn Error>> {
     let mut out = vec![];

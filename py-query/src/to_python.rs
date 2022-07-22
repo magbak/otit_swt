@@ -24,7 +24,6 @@
 
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::ArrowField;
-use polars_core::utils::arrow;
 use polars_core::utils::arrow::array::ArrayRef;
 use polars_core::utils::arrow::ffi;
 use pyo3::ffi::Py_uintptr_t;

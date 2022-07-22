@@ -13,6 +13,7 @@ thiserror="1.0.31"
 polars-core = {version="0.22.7"}
 oxrdf = "0.1.0"
 simple-error = "0.2.3"
+tokio="1.20.0"
 
 [lib]
 name = "otit_swt_query"
