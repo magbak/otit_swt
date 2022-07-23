@@ -1,12 +1,12 @@
 use crate::timeseries_query::TimeSeriesQuery;
 use oxrdf::vocab::xsd;
 use oxrdf::{NamedNode, Variable};
+use polars::export::chrono::NaiveDateTime;
 use sea_query::{Alias, BinOper, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query::{Expr as SeaExpr, Iden, UnOper, Value};
 use spargebra::algebra::Expression;
 use std::error::Error;
 use std::fmt::{Display, Formatter, Write};
-use polars::export::chrono::NaiveDateTime;
 
 #[derive(Debug)]
 pub enum TimeSeriesQueryToSQLError {
@@ -60,7 +60,10 @@ impl TimeSeriesTable {
                 Alias::new(tsq.timestamp_variable.as_ref().unwrap().variable.as_str()),
             );
         if let Some(schema) = &self.schema {
-            query.from((Name::Schema(schema.clone()), Name::Table(self.time_series_table.clone())));
+            query.from((
+                Name::Schema(schema.clone()),
+                Name::Table(self.time_series_table.clone()),
+            ));
         } else {
             query.from(Name::Table(self.time_series_table.clone()));
         }
@@ -108,11 +111,8 @@ impl TimeSeriesTable {
                     xsd::DOUBLE => SimpleExpr::Value(Value::Double(Some(v.parse().unwrap()))),
                     xsd::INTEGER => SimpleExpr::Value(Value::BigInt(Some(v.parse().unwrap()))),
                     xsd::DATE_TIME => {
-                        let dt = v
-                            .parse::<NaiveDateTime>()
-                            .expect("Datetime parsing error");
-                        SimpleExpr::Value(Value::ChronoDateTime(Some(
-                            Box::new(dt))))
+                        let dt = v.parse::<NaiveDateTime>().expect("Datetime parsing error");
+                        SimpleExpr::Value(Value::ChronoDateTime(Some(Box::new(dt))))
                     }
                     _ => {
                         return Err(TimeSeriesQueryToSQLError::UnknownDatatype(
@@ -304,7 +304,9 @@ impl Iden for Name {
             s,
             "{}",
             match self {
-                Name::Schema(s) => {s}
+                Name::Schema(s) => {
+                    s
+                }
                 Name::Table(s) => {
                     s
                 }

@@ -38,12 +38,15 @@ impl Engine {
 
     pub fn execute_hybrid_query(&mut self, py: Python<'_>, sparql:&str) -> PyResult<PyObject> {
         let df_result = Runtime::new().unwrap().block_on(
-            execute_hybrid_query(sparql, &self.endpoint, Box::new(&mut self.arrow_flight_sql_db.unwrap()))
+            execute_hybrid_query(sparql, &self.endpoint, Box::new(self.arrow_flight_sql_db.as_mut().unwrap()))
         );
         match df_result {
             Ok(mut df) => {
+                let names_vec :Vec<String> = df.get_column_names().into_iter().map(|x|x.to_string()).collect();
+                let names: Vec<&str> = names_vec.iter().map(|x|x.as_str()).collect();
                 let chunk = df.as_single_chunk().iter_chunks().next().unwrap();
-                to_python::to_py_array(chunk.into_arrays().remove(0), py, &())
+                let pyarrow = PyModule::import(py, "pyarrow")?;
+                to_python::to_py_rb(&chunk, names.as_slice(), py, pyarrow)
             }
             Err(err) => {
                 Err(PyErr::from(PyQueryError::QueryExecutionError(err)))

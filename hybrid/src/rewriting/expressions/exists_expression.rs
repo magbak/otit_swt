@@ -30,6 +30,12 @@ impl StaticQueryRewriter {
                         self.additional_projections.insert(vprime.clone());
                     }
                 }
+                for (v, vs) in &gpret.datatypes_in_scope {
+                    self.additional_projections.insert(v.clone());
+                    for vprime in vs {
+                        self.additional_projections.insert(vprime.clone());
+                    }
+                }
                 if let GraphPattern::Project { inner, .. } = gpret.graph_pattern.take().unwrap() {
                     exr.with_graph_pattern_pushup(*inner);
                 } else {

@@ -7,7 +7,6 @@ pub mod change_types;
 pub mod combiner;
 pub mod constants;
 pub mod constraints;
-mod exists_helper;
 mod find_query_variables;
 mod groupby_pushdown;
 pub mod orchestrator;

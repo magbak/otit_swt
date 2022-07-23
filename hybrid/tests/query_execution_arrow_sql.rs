@@ -2,32 +2,31 @@ mod common;
 
 use crate::common::{add_sparql_testdata, find_container, start_sparql_container, QUERY_ENDPOINT};
 use bollard::container::{
-    Config, CreateContainerOptions, RemoveContainerOptions,
-    StartContainerOptions,
+    Config, CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
 };
+use bollard::image::BuildImageOptions;
 use bollard::models::{HostConfig, PortBinding};
 use bollard::Docker;
+use futures_util::stream::StreamExt;
 use hybrid::orchestrator::execute_hybrid_query;
 use hybrid::timeseries_database::arrow_flight_sql_database::ArrowFlightSQLDatabase;
 use hybrid::timeseries_database::timeseries_sql_rewrite::TimeSeriesTable;
 use log::debug;
 use oxrdf::vocab::xsd;
 use polars::prelude::{CsvReader, SerReader};
+use polars_core::datatypes::DataType;
+use polars_core::prelude::TimeUnit;
 use reqwest::header::CONTENT_TYPE;
-use reqwest::{Method};
+use reqwest::Method;
 use rstest::*;
+use serde::{Deserialize, Serialize};
 use serial_test::serial;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use std::time::Duration;
-use bollard::image::BuildImageOptions;
 use tokio::time::sleep;
-use futures_util::stream::StreamExt;
-use polars_core::datatypes::DataType;
-use polars_core::prelude::TimeUnit;
-use serde::{Deserialize, Serialize};
 
 const ARROW_SQL_DATABASE_ENDPOINT: &str = "grpc+tcp://127.0.0.1:32010";
 const DREMIO_ORIGIN: &str = "http://127.0.0.1:9047";
@@ -106,11 +105,15 @@ async fn arrow_sql_endpoint(dockerfile_tar_gz_path: PathBuf) {
     let mut file = File::open(dockerfile_tar_gz_path).unwrap();
     let mut contents = Vec::new();
     file.read_to_end(&mut contents).unwrap();
-    let mut build_stream = docker.build_image(BuildImageOptions {
-        dockerfile: "Dockerfile",
-        t: "my_dremio",
-        ..Default::default()
-    }, None, Some(contents.into()));
+    let mut build_stream = docker.build_image(
+        BuildImageOptions {
+            dockerfile: "Dockerfile",
+            t: "my_dremio",
+            ..Default::default()
+        },
+        None,
+        Some(contents.into()),
+    );
     while let Some(msg) = build_stream.next().await {
         println!("Message: {:?}", msg);
     }
@@ -194,9 +197,7 @@ fn timeseries_table() -> TimeSeriesTable {
     }
 }
 
-async fn ts_sql_db(
-    timeseries_table: TimeSeriesTable,
-) -> ArrowFlightSQLDatabase {
+async fn ts_sql_db(timeseries_table: TimeSeriesTable) -> ArrowFlightSQLDatabase {
     ArrowFlightSQLDatabase::new(ARROW_SQL_DATABASE_ENDPOINT, vec![timeseries_table])
         .await
         .unwrap()
@@ -217,7 +218,7 @@ struct UserPass {
 struct NewSource {
     pub entityType: String,
     pub name: String,
-    #[serde(rename="type")]
+    #[serde(rename = "type")]
     pub sourcetype: String,
     pub config: NasConfig,
 }
@@ -232,7 +233,10 @@ async fn with_timeseries_testdata(#[future] arrow_sql_endpoint: ()) {
     let _ = arrow_sql_endpoint.await;
     let c = reqwest::Client::new();
     let mut bld = c.request(Method::POST, format!("{}/apiv2/login", DREMIO_ORIGIN));
-    let user_pass = UserPass {userName:"dremio".to_string(), password:"dremio123".to_string()};
+    let user_pass = UserPass {
+        userName: "dremio".to_string(),
+        password: "dremio123".to_string(),
+    };
     bld = bld.header(CONTENT_TYPE, "application/json");
     bld = bld.json(&user_pass);
     let res = bld.send().await.unwrap();
@@ -271,7 +275,13 @@ async fn with_timeseries_testdata(#[future] arrow_sql_endpoint: ()) {
     println!("Resp {:?}", resp);
 
     //Promote file in source
-    let mut bld = c.request(Method::POST, format!("{}/api/v3/catalog/dremio%3A%2Fmy_nas%2Fts.parquet", DREMIO_ORIGIN));
+    let mut bld = c.request(
+        Method::POST,
+        format!(
+            "{}/api/v3/catalog/dremio%3A%2Fmy_nas%2Fts.parquet",
+            DREMIO_ORIGIN
+        ),
+    );
     bld = bld.bearer_auth(token.token.clone());
     let create = r#"
     {
@@ -293,7 +303,6 @@ async fn with_timeseries_testdata(#[future] arrow_sql_endpoint: ()) {
     println!("Resp {:?}", resp);
 }
 
-
 #[rstest]
 #[tokio::test]
 #[serial]
@@ -307,7 +316,7 @@ async fn test_simple_hybrid_query(
     let _ = use_logger;
     let _ = with_sparql_testdata.await;
     let _ = with_timeseries_testdata.await;
-    let db = ts_sql_db(timeseries_table).await;
+    let mut db = ts_sql_db(timeseries_table).await;
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX quarry:<https://github.com/magbak/quarry-rs#>
@@ -322,10 +331,16 @@ async fn test_simple_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime && ?v < 200) .
     }
     "#;
-    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(db))
+    let mut df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(&mut db))
         .await
         .expect("Hybrid error");
-    df.with_column(df.column("t").unwrap().cast(&DataType::Datetime(TimeUnit::Microseconds, None)).unwrap()).unwrap();
+    df.with_column(
+        df.column("t")
+            .unwrap()
+            .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+            .unwrap(),
+    )
+    .unwrap();
     let mut file_path = shared_testdata_path.clone();
     file_path.push("expected_simple_hybrid.csv");
 

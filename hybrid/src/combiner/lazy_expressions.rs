@@ -1,8 +1,10 @@
+mod exists_helper;
+
+use crate::combiner::lazy_expressions::exists_helper::rewrite_exists_graph_pattern;
 use crate::combiner::Combiner;
 use crate::constants::{
     DATETIME_AS_NANOS, DATETIME_AS_SECONDS, NANOS_AS_DATETIME, SECONDS_AS_DATETIME,
 };
-use crate::exists_helper::rewrite_exists_graph_pattern;
 use crate::query_context::{Context, PathEntry};
 use crate::sparql_result_to_polars::{
     sparql_literal_to_polars_literal_value, sparql_named_node_to_polars_literal_value,

@@ -117,7 +117,7 @@ async fn test_static_query(#[future] with_testdata: (), use_logger: ()) {
 #[serial]
 async fn test_simple_hybrid_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -137,9 +137,13 @@ async fn test_simple_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime && ?v < 200) .
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_simple_hybrid.csv");
 
@@ -162,7 +166,7 @@ async fn test_simple_hybrid_query(
 #[serial]
 async fn test_complex_hybrid_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -188,9 +192,13 @@ async fn test_complex_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:55"^^xsd:dateTime && ?v1 < ?v2) .
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_complex_hybrid.csv");
 
@@ -213,7 +221,7 @@ async fn test_complex_hybrid_query(
 #[serial]
 async fn test_pushdown_group_by_hybrid_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -232,11 +240,15 @@ async fn test_pushdown_group_by_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime) .
     } GROUP BY ?w
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error")
-        .sort(&["w"], vec![false])
-        .expect("Sort error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error")
+    .sort(&["w"], vec![false])
+    .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_group_by_hybrid.csv");
 
@@ -261,7 +273,7 @@ async fn test_pushdown_group_by_hybrid_query(
 #[serial]
 async fn test_pushdown_group_by_second_hybrid_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -286,11 +298,15 @@ async fn test_pushdown_group_by_second_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime)
     } GROUP BY ?w ?year ?month ?day ?hour ?minute ?second
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error")
-        .sort(&["w", "sum_v"], vec![false])
-        .expect("Sort error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error")
+    .sort(&["w", "sum_v"], vec![false])
+    .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_group_by_second_hybrid.csv");
 
@@ -315,7 +331,7 @@ async fn test_pushdown_group_by_second_hybrid_query(
 #[serial]
 async fn test_pushdown_group_by_second_having_hybrid_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -341,11 +357,15 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
     } GROUP BY ?w ?year ?month ?day ?hour ?minute ?second_5
     HAVING (SUM(?v) > 199)
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error")
-        .sort(&["w", "sum_v"], vec![false])
-        .expect("Sort error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error")
+    .sort(&["w", "sum_v"], vec![false])
+    .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_group_by_second_having_hybrid.csv");
 
@@ -370,7 +390,7 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
 #[serial]
 async fn test_pushdown_group_by_concat_agg_hybrid_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -390,11 +410,15 @@ async fn test_pushdown_group_by_concat_agg_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime)
     } GROUP BY ?w ?seconds_5
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error")
-        .sort(&["w", "seconds_5"], vec![false])
-        .expect("Sort error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error")
+    .sort(&["w", "seconds_5"], vec![false])
+    .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_group_by_concat_agg_hybrid.csv");
 
@@ -419,7 +443,7 @@ async fn test_pushdown_group_by_concat_agg_hybrid_query(
 #[serial]
 async fn test_pushdown_groupby_exists_something_hybrid_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -439,11 +463,15 @@ async fn test_pushdown_groupby_exists_something_hybrid_query(
         FILTER EXISTS {SELECT ?w WHERE {?w types:hasSomething ?smth}}
     } GROUP BY ?w ?seconds_3
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error")
-        .sort(&["w", "seconds_3"], vec![false])
-        .expect("Sort error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error")
+    .sort(&["w", "seconds_3"], vec![false])
+    .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_group_by_exists_something_hybrid.csv");
 
@@ -468,7 +496,7 @@ async fn test_pushdown_groupby_exists_something_hybrid_query(
 #[serial]
 async fn test_pushdown_groupby_exists_timeseries_value_hybrid_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -488,11 +516,15 @@ async fn test_pushdown_groupby_exists_timeseries_value_hybrid_query(
             FILTER(?v > 300)}}
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error")
-        .sort(&["w"], vec![false])
-        .expect("Sort error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error")
+    .sort(&["w"], vec![false])
+    .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_exists_timeseries_value_hybrid.csv");
 
@@ -517,7 +549,7 @@ async fn test_pushdown_groupby_exists_timeseries_value_hybrid_query(
 #[serial]
 async fn test_pushdown_groupby_exists_aggregated_timeseries_value_hybrid_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -540,11 +572,15 @@ async fn test_pushdown_groupby_exists_aggregated_timeseries_value_hybrid_query(
             }
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error")
-        .sort(&["w"], vec![false])
-        .expect("Sort error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error")
+    .sort(&["w"], vec![false])
+    .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_exists_aggregated_timeseries_value_hybrid.csv");
 
@@ -569,7 +605,7 @@ async fn test_pushdown_groupby_exists_aggregated_timeseries_value_hybrid_query(
 #[serial]
 async fn test_pushdown_groupby_not_exists_aggregated_timeseries_value_hybrid_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -592,11 +628,15 @@ async fn test_pushdown_groupby_not_exists_aggregated_timeseries_value_hybrid_que
             }
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error")
-        .sort(&["w"], vec![false])
-        .expect("Sort error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error")
+    .sort(&["w"], vec![false])
+    .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_not_exists_aggregated_timeseries_value_hybrid.csv");
 
@@ -621,7 +661,7 @@ async fn test_pushdown_groupby_not_exists_aggregated_timeseries_value_hybrid_que
 #[serial]
 async fn test_path_group_by_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -636,9 +676,13 @@ async fn test_path_group_by_query(
         GROUP BY ?w
         ORDER BY ASC(?max_v)
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_path_group_by_query.csv");
 
@@ -661,7 +705,7 @@ async fn test_path_group_by_query(
 #[serial]
 async fn test_optional_clause_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -679,9 +723,13 @@ async fn test_optional_clause_query(
         }
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_optional_clause_query.csv");
 
@@ -704,7 +752,7 @@ async fn test_optional_clause_query(
 #[serial]
 async fn test_minus_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -723,11 +771,15 @@ async fn test_minus_query(
         }
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error")
-        .sort(&["w", "v"], vec![false])
-        .expect("Sort error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error")
+    .sort(&["w", "v"], vec![false])
+    .expect("Sort error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_minus_query.csv");
 
@@ -752,7 +804,7 @@ async fn test_minus_query(
 #[serial]
 async fn test_in_expression_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -768,9 +820,13 @@ async fn test_in_expression_query(
         FILTER(?v IN ((300+4), (304-3), 307))
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_in_expression.csv");
 
@@ -793,7 +849,7 @@ async fn test_in_expression_query(
 #[serial]
 async fn test_values_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -810,9 +866,13 @@ async fn test_values_query(
         FILTER(?v = ?v2)
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_values_query.csv");
 
@@ -835,7 +895,7 @@ async fn test_values_query(
 #[serial]
 async fn test_if_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -850,11 +910,15 @@ async fn test_if_query(
         ?dp quarry:hasValue ?v .
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error")
-        .sort(&["w", "v_with_min"], vec![false])
-        .expect("Sort problem");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error")
+    .sort(&["w", "v_with_min"], vec![false])
+    .expect("Sort problem");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_if_query.csv");
 
@@ -880,7 +944,7 @@ async fn test_if_query(
 #[serial]
 async fn test_distinct_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -895,9 +959,13 @@ async fn test_distinct_query(
         ?dp quarry:hasValue ?v .
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_distinct_query.csv");
 
@@ -920,7 +988,7 @@ async fn test_distinct_query(
 #[serial]
 async fn test_union_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -943,11 +1011,15 @@ async fn test_union_query(
         }
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error")
-        .sort(&["w", "v"], vec![false])
-        .expect("Sort problem");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error")
+    .sort(&["w", "v"], vec![false])
+    .expect("Sort problem");
 
     let mut file_path = testdata_path.clone();
     file_path.push("expected_union_query.csv");
@@ -974,7 +1046,7 @@ async fn test_union_query(
 #[serial]
 async fn test_coalesce_query(
     #[future] with_testdata: (),
-    inmem_time_series_database: InMemoryTimeseriesDatabase,
+    mut inmem_time_series_database: InMemoryTimeseriesDatabase,
     testdata_path: PathBuf,
     use_logger: (),
 ) {
@@ -996,11 +1068,15 @@ async fn test_coalesce_query(
         }
     }
     "#;
-    let df = execute_hybrid_query(query, QUERY_ENDPOINT, Box::new(inmem_time_series_database))
-        .await
-        .expect("Hybrid error")
-        .sort(&["s1", "s2", "v1", "v2", "t"], vec![false])
-        .expect("Sort problem");
+    let df = execute_hybrid_query(
+        query,
+        QUERY_ENDPOINT,
+        Box::new(&mut inmem_time_series_database),
+    )
+    .await
+    .expect("Hybrid error")
+    .sort(&["s1", "s2", "v1", "v2", "t"], vec![false])
+    .expect("Sort problem");
 
     let mut file_path = testdata_path.clone();
     file_path.push("expected_coalesce_query.csv");

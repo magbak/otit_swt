@@ -28,9 +28,10 @@ fn test_simple_query() {
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
 
     let expected_str = r#"
-    SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
+    SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_external_id_0 WHERE {
      ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
      ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+     ?ts <https://github.com/magbak/quarry-rs#hasDatatype> ?ts_datatype_0 .
      ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
       }"#;
     let expected_query = Query::parse(expected_str, None).unwrap();
@@ -57,9 +58,10 @@ fn test_filtered_query() {
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
-    SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
+    SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_external_id_0 WHERE {
      ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
      ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+     ?ts <https://github.com/magbak/quarry-rs#hasDatatype> ?ts_datatype_0 .
      ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
       }"#;
     let expected_query = Query::parse(expected_str, None).unwrap();
@@ -88,10 +90,11 @@ fn test_complex_expression_filter() {
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
-    SELECT ?var1 ?var2 ?ts_external_id_0 WHERE {
+    SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_external_id_0 WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
     ?var2 <https://example.com/hasPropertyValue> ?pv .
     ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+    ?ts <https://github.com/magbak/quarry-rs#hasDatatype> ?ts_datatype_0 .
     ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
     FILTER(?pv) }"#;
     let expected_query = Query::parse(expected_str, None).unwrap();
@@ -120,10 +123,11 @@ fn test_complex_expression_filter_projection() {
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
-    SELECT ?var1 ?var2 ?ts_external_id_0 ?pv WHERE {
+    SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_external_id_0 ?pv WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
     ?var2 <https://example.com/hasPropertyValue> ?pv .
     ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+    ?ts <https://github.com/magbak/quarry-rs#hasDatatype> ?ts_datatype_0 .
     ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts . }
     "#;
     let expected_query = Query::parse(expected_str, None).unwrap();
@@ -152,10 +156,11 @@ fn test_complex_nested_expression_filter() {
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
-    SELECT ?var1 ?var2 ?ts_external_id_0 ?pv WHERE {
+    SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_external_id_0 ?pv WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
     ?var2 <https://example.com/hasPropertyValue> ?pv .
     ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+    ?ts <https://github.com/magbak/quarry-rs#hasDatatype> ?ts_datatype_0 .
     ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
      }"#;
     let expected_query = Query::parse(expected_str, None).unwrap();
@@ -186,11 +191,12 @@ fn test_option_expression_filter_projection() {
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
-    SELECT ?var1 ?var2 ?pv ?ts_external_id_0 WHERE {
+    SELECT ?var1 ?var2 ?pv ?ts_datatype_0 ?ts_external_id_0 WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
     OPTIONAL {
     ?var2 <https://example.com/hasPropertyValue> ?pv .
     ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+    ?ts <https://github.com/magbak/quarry-rs#hasDatatype> ?ts_datatype_0 .
     ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
     FILTER(!(?pv))
     }
@@ -232,18 +238,20 @@ fn test_union_expression() {
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
-    SELECT ?var1 ?var2 ?pv ?ts_external_id_0 ?ts_external_id_1 WHERE {
+    SELECT ?var1 ?var2 ?pv ?ts_datatype_0 ?ts_datatype_1 ?ts_external_id_0 ?ts_external_id_1 WHERE {
         ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
         OPTIONAL {
             {
               ?var2 <https://example.com/hasPropertyValue> ?pv .
               ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+              ?ts <https://github.com/magbak/quarry-rs#hasDatatype> ?ts_datatype_0 .
               ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
               FILTER(!?pv)
             }
             UNION {
               ?var2 <https://example.com/hasPropertyValue> ?pv .
               ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_1 .
+              ?ts <https://github.com/magbak/quarry-rs#hasDatatype> ?ts_datatype_1 .
               ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
               FILTER(?pv)
             }
@@ -279,11 +287,13 @@ fn test_bind_expression() {
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
-    SELECT ?var1 ?var2 ?ts_external_id_0 ?ts_external_id_1 WHERE {
+    SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_datatype_1 ?ts_external_id_0 ?ts_external_id_1 WHERE {
     ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
     ?ts1 <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+    ?ts1 <https://github.com/magbak/quarry-rs#hasDatatype> ?ts_datatype_0 .
     ?var1 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts1 .
     ?ts2 <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_1 .
+    ?ts2 <https://github.com/magbak/quarry-rs#hasDatatype> ?ts_datatype_1 .
     ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts2 . }
     "#;
     let expected_query = Query::parse(expected_str, None).unwrap();
@@ -314,10 +324,11 @@ fn test_fix_dropped_triple() {
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX quarry:<https://github.com/magbak/quarry-rs#>
     PREFIX types:<http://example.org/types#>
-    SELECT ?w ?s ?ts_external_id_0 WHERE {
+    SELECT ?w ?s ?ts_datatype_0 ?ts_external_id_0 WHERE {
         ?w a types:BigWidget .
         ?w types:hasSensor ?s .
         ?ts quarry:hasExternalId ?ts_external_id_0 .
+        ?ts quarry:hasDatatype ?ts_datatype_0 .
         ?s quarry:hasTimeseries ?ts .
     }"#;
     let expected_query = Query::parse(expected_str, None).unwrap();
@@ -349,8 +360,8 @@ fn test_fix_dropped_triple() {
                 PathEntry::BGP,
             ]),
         )),
-        datatype_variable: None, //TODO:Fix??
-        datatype: None,          //TODO:Fix??
+        datatype_variable: Some(Variable::new_unchecked("ts_datatype_0")),
+        datatype: None,
         timestamp_variable: Some(VariableInContext::new(
             Variable::new_unchecked("t"),
             Context::from_path(vec![
@@ -407,11 +418,13 @@ fn test_property_path_expression() {
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
-    SELECT ?var1 ?var2 ?ts_external_id_0 ?ts_external_id_1 WHERE {
+    SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_datatype_1 ?ts_external_id_0 ?ts_external_id_1 WHERE {
      ?var1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?var2 .
      ?blank_replacement_0 <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+     ?blank_replacement_0 <https://github.com/magbak/quarry-rs#hasDatatype> ?ts_datatype_0 .
      ?var1 <https://github.com/magbak/quarry-rs#hasTimeseries> ?blank_replacement_0 .
      ?blank_replacement_1 <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_1 .
+     ?blank_replacement_1 <https://github.com/magbak/quarry-rs#hasDatatype> ?ts_datatype_1 .
      ?var2 <https://github.com/magbak/quarry-rs#hasTimeseries> ?blank_replacement_1 . }
     "#;
     let expected_query = Query::parse(expected_str, None).unwrap();
@@ -442,8 +455,8 @@ fn test_property_path_expression() {
                     PathEntry::BGP,
                 ]),
             )),
-            datatype_variable: None, //TODO:Fix??
-            datatype: None,          //TODO:Fix??
+            datatype_variable: Some(Variable::new_unchecked("ts_datatype_0")),
+            datatype: None,
             timestamp_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("t"),
                 Context::from_path(vec![
@@ -482,8 +495,8 @@ fn test_property_path_expression() {
                     PathEntry::BGP,
                 ]),
             )),
-            datatype_variable: None, //TODO:Fix??
-            datatype: None,          //TODO:Fix??
+            datatype_variable: Some(Variable::new_unchecked("ts_datatype_1")),
+            datatype: None,
             timestamp_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("t"),
                 Context::from_path(vec![
@@ -529,9 +542,10 @@ fn test_having_query() {
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
-    SELECT ?w ?ts_external_id_0 WHERE {
+    SELECT ?w ?ts_datatype_0 ?ts_external_id_0 WHERE {
     ?w <http://example.org/types#hasSensor> ?s .
     ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+    ?ts <https://github.com/magbak/quarry-rs#hasDatatype> ?ts_datatype_0 .
     ?s <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts .
     }"#;
     let expected_query = Query::parse(expected_str, None).unwrap();
@@ -561,10 +575,11 @@ fn test_exists_query() {
     let mut rewriter = StaticQueryRewriter::new(&has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
-    SELECT ?w ?s ?ts ?ts_external_id_0 WHERE {
+    SELECT ?w ?s ?ts ?ts_datatype_0 ?ts_external_id_0 WHERE {
     ?w <http://example.org/types#hasSensor> ?s .
     OPTIONAL {
             ?ts <https://github.com/magbak/quarry-rs#hasExternalId> ?ts_external_id_0 .
+            ?ts <https://github.com/magbak/quarry-rs#hasDatatype> ?ts_datatype_0 .
             ?s <https://github.com/magbak/quarry-rs#hasTimeseries> ?ts . } }
     "#;
     let expected_query = Query::parse(expected_str, None).unwrap();

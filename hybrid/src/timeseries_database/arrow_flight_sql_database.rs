@@ -28,16 +28,16 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use crate::timeseries_database::timeseries_sql_rewrite::{
     TimeSeriesQueryToSQLError, TimeSeriesTable,
 };
-use std::error::Error;
-use std::fmt::{Display, Formatter};
 use arrow_format::flight::service::flight_service_client::FlightServiceClient;
 use arrow_format::ipc::planus::ReadAsRoot;
-use arrow_format::ipc::{MessageHeaderRef};
+use arrow_format::ipc::MessageHeaderRef;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 use thiserror::Error;
 use tokio_stream::StreamExt;
+use tonic::metadata::MetadataValue;
 use tonic::transport::Channel;
 use tonic::{IntoRequest, Request, Status};
-use tonic::metadata::{ MetadataValue};
 
 #[derive(Error, Debug)]
 pub enum ArrowFlightSQLError {
@@ -81,7 +81,9 @@ impl ArrowFlightSQLDatabase {
         endpoint: &str,
         time_series_tables: Vec<TimeSeriesTable>,
     ) -> Result<ArrowFlightSQLDatabase, ArrowFlightSQLError> {
-        let conn = tonic::transport::Endpoint::new(endpoint.to_string())?.connect().await?;
+        let conn = tonic::transport::Endpoint::new(endpoint.to_string())?
+            .connect()
+            .await?;
         let token = authenticate(conn.clone(), "dremio", "dremio123").await?;
         let client = FlightServiceClient::new(conn);
 
@@ -103,14 +105,13 @@ impl ArrowFlightSQLDatabase {
             //TODO: For some reason, encoding the CommandStatementQuery-struct
             // gives me a parsing error with an extra character at the start of the decoded query.
             path: vec![], // Should be empty when CMD
-        }.into_request();
+        }
+        .into_request();
         add_auth_header(&mut request, &self.token);
 
-        let respose_result = self.client
-            .get_flight_info(request)
-            .await;
+        let respose_result = self.client.get_flight_info(request).await;
         let res = match respose_result {
-            Ok(resp) => {resp}
+            Ok(resp) => resp,
             Err(err) => {
                 println!("Err message: {}", err.message());
                 panic!("bad! {:?}", err);
@@ -122,7 +123,8 @@ impl ArrowFlightSQLDatabase {
             if let Some(ticket) = endpoint.ticket.clone() {
                 let mut ticket = ticket.into_request();
                 add_auth_header(&mut ticket, &self.token);
-                let stream = self.client
+                let stream = self
+                    .client
                     .do_get(ticket)
                     .await
                     .map_err(ArrowFlightSQLError::from)?;
@@ -142,7 +144,9 @@ impl ArrowFlightSQLDatabase {
                                 }
                             }
                         }
-                        let message = arrow_format::ipc::MessageRef::read_as_root(&flight_data.data_header).unwrap();
+                        let message =
+                            arrow_format::ipc::MessageRef::read_as_root(&flight_data.data_header)
+                                .unwrap();
                         let header = message.header().unwrap().unwrap();
                         match header {
                             MessageHeaderRef::Schema(s) => {
@@ -173,8 +177,8 @@ impl ArrowFlightSQLDatabase {
                                     }
                                 }
                             }
-                            MessageHeaderRef::Tensor(_) => {},//TODO handle?
-                            MessageHeaderRef::SparseTensor(_) => {}//Todo handle?
+                            MessageHeaderRef::Tensor(_) => {} //TODO handle?
+                            MessageHeaderRef::SparseTensor(_) => {} //Todo handle?
                         }
                     }
                 }
@@ -234,25 +238,32 @@ async fn authenticate(
 ) -> Result<String, ArrowFlightSQLError> {
     let handshake_request = HandshakeRequest {
         protocol_version: 2,
-        payload:vec![],
-        };
+        payload: vec![],
+    };
     let user_pass_string = format!("{}:{}", username, password);
     let user_pass_bytes = user_pass_string.as_bytes();
     let base64_bytes = base64::encode(user_pass_bytes);
     let basic_auth = format!("Basic {}", base64_bytes);
     let mut client = FlightServiceClient::with_interceptor(conn, |mut req: Request<()>| {
-        req.metadata_mut().insert("authorization", basic_auth.parse().unwrap());
+        req.metadata_mut()
+            .insert("authorization", basic_auth.parse().unwrap());
         Ok(req)
     });
 
     let handshake_request_streaming = tokio_stream::iter(vec![handshake_request]);
 
     let rx = client.handshake(handshake_request_streaming).await?;
-    let bearer_token = rx.metadata().get("authorization").unwrap().to_str().unwrap().to_string();
+    let bearer_token = rx
+        .metadata()
+        .get("authorization")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
     Ok(bearer_token)
 }
 
-fn add_auth_header<T>(request:&mut Request<T>, bearer_token: &str) {
+fn add_auth_header<T>(request: &mut Request<T>, bearer_token: &str) {
     let token_value: MetadataValue<_> = bearer_token.parse().unwrap();
     request.metadata_mut().insert("authorization", token_value);
 }

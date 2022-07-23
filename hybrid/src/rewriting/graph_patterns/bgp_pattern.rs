@@ -37,10 +37,16 @@ impl StaticQueryRewriter {
                             .unwrap();
 
                             let datatype_var = Variable::new(
-                                "ts_datatype_".to_string() + &self.variable_counter.to_string()
-                            ).unwrap();
+                                "ts_datatype_".to_string() + &self.variable_counter.to_string(),
+                            )
+                            .unwrap();
                             self.variable_counter += 1;
-                            self.create_time_series_query(&object_var, &external_id_var, &datatype_var, &context);
+                            self.create_time_series_query(
+                                &object_var,
+                                &external_id_var,
+                                &datatype_var,
+                                &context,
+                            );
                             let new_external_id_triple = TriplePattern {
                                 subject: t.object.clone(),
                                 predicate: NamedNodePattern::NamedNode(
@@ -59,9 +65,8 @@ impl StaticQueryRewriter {
                             new_triples.push(new_datatype_triple);
                             external_ids_in_scope
                                 .insert(object_var.clone(), vec![external_id_var.clone()]);
-                            datatypes_in_scope.insert(
-                                object_var.clone(), vec![datatype_var.clone()]
-                            );
+                            datatypes_in_scope
+                                .insert(object_var.clone(), vec![datatype_var.clone()]);
                         }
                     }
                 }

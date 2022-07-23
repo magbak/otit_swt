@@ -20,7 +20,7 @@ impl StaticQueryRewriter {
             ChangeType::NoChange,
             variables.iter().map(|v| v.clone()).collect(),
             HashMap::new(),
-            HashMap::new()
+            HashMap::new(),
         ));
     }
 }
