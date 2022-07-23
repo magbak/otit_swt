@@ -78,18 +78,28 @@ impl ArrowFlightSQLDatabase {
 #[pyclass]
 #[derive(Clone)]
 pub struct TimeSeriesTable {
-    #[pyo3(get, set)]
     pub schema: Option<String>,
-    #[pyo3(get, set)]
     pub time_series_table: String,
-    #[pyo3(get, set)]
     pub value_column: String,
-    #[pyo3(get, set)]
     pub timestamp_column: String,
-    #[pyo3(get, set)]
     pub identifier_column: String,
-    #[pyo3(get, set)]
     pub value_datatype: String,
+}
+
+#[pymethods]
+impl TimeSeriesTable {
+    #[new]
+    pub fn new(time_series_table:String, value_column:String, timestamp_column:String, identifier_column:String, value_datatype:String, schema:Option<String>) -> TimeSeriesTable {
+        TimeSeriesTable {
+            schema,
+            time_series_table,
+            value_column,
+            timestamp_column,
+            identifier_column,
+            value_datatype
+        }
+
+    }
 }
 
 impl TimeSeriesTable {
@@ -103,5 +113,13 @@ impl TimeSeriesTable {
             value_datatype: NamedNode::new(&self.value_datatype)?
         })
     }
+}
+
+#[pymodule]
+fn otit_swt_query(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<Engine>()?;
+    m.add_class::<TimeSeriesTable>()?;
+    m.add_class::<ArrowFlightSQLDatabase>()?;
+    Ok(())
 }
 

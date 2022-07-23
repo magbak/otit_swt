@@ -1,4 +1,4 @@
-name: Python tests
+name: Python query tests
 
 on:
   push:
@@ -24,16 +24,16 @@ jobs:
         pip install --upgrade pip
         pip install pytest maturin
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      working-directory: ./py-mapper
+      working-directory: ./py-query
 
     - name: Build install package
       run: |
         source .venv/bin/activate
         maturin develop
-      working-directory: ./py-mapper
+      working-directory: ./py-query
 
     - name: pytest
       run: |
         source ../.venv/bin/activate
         pytest
-      working-directory: ./py-mapper/tests
+      working-directory: ./py-query/tests
