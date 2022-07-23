@@ -1,7 +1,7 @@
 use oxrdf::Variable;
 use spargebra::algebra::{AggregateExpression, Expression, GraphPattern};
 
-pub(crate) fn rewrite_exists_graph_pattern(
+pub fn rewrite_exists_graph_pattern(
     graph_pattern: &GraphPattern,
     helper_column_name: &str,
 ) -> GraphPattern {
