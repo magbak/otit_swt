@@ -71,9 +71,27 @@ pub(crate) fn sparql_literal_to_polars_literal_value(lit: &Literal) -> LiteralVa
     let value = lit.value();
     let literal_value = if datatype == xsd::STRING {
         LiteralValue::Utf8(value.to_string())
+    } else if datatype == xsd::UNSIGNED_INT {
+        let u = u32::from_str(value).expect("Integer parsing error");
+        LiteralValue::UInt32(u)
+    } else if datatype == xsd::UNSIGNED_LONG {
+        let u = u64::from_str(value).expect("Integer parsing error");
+        LiteralValue::UInt64(u)
     } else if datatype == xsd::INTEGER {
+        let i = i64::from_str(value).expect("Integer parsing error");
+        LiteralValue::Int64(i)
+    } else if datatype == xsd::LONG {
+        let i = i64::from_str(value).expect("Integer parsing error");
+        LiteralValue::Int64(i)
+    } else if datatype == xsd::INT {
         let i = i32::from_str(value).expect("Integer parsing error");
         LiteralValue::Int32(i)
+    } else if datatype == xsd::DOUBLE {
+        let d = f64::from_str(value).expect("Integer parsing error");
+        LiteralValue::Float64(d)
+    } else if datatype == xsd::FLOAT {
+        let f = f32::from_str(value).expect("Integer parsing error");
+        LiteralValue::Float32(f)
     } else if datatype == xsd::BOOLEAN {
         let b = bool::from_str(value).expect("Boolean parsing error");
         LiteralValue::Boolean(b)

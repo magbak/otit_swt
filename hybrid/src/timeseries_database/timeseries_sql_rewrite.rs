@@ -1,7 +1,7 @@
 use crate::timeseries_query::TimeSeriesQuery;
 use oxrdf::vocab::xsd;
 use oxrdf::{NamedNode, Variable};
-use polars::export::chrono::NaiveDateTime;
+use polars::export::chrono::{DateTime, NaiveDateTime, Utc};
 use sea_query::{Alias, BinOper, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query::{Expr as SeaExpr, Iden, UnOper, Value};
 use spargebra::algebra::Expression;
@@ -107,19 +107,31 @@ impl TimeSeriesTable {
                 )?),
             Expression::Literal(l) => {
                 let v = l.value();
-                match l.datatype() {
-                    xsd::DOUBLE => SimpleExpr::Value(Value::Double(Some(v.parse().unwrap()))),
-                    xsd::INTEGER => SimpleExpr::Value(Value::BigInt(Some(v.parse().unwrap()))),
+                let value = match l.datatype() {
+                    xsd::DOUBLE => Value::Double(Some(v.parse().unwrap())),
+                    xsd::FLOAT => Value::Float(Some(v.parse().unwrap())),
+                    xsd::INTEGER => Value::BigInt(Some(v.parse().unwrap())),
+                    xsd::LONG => Value::BigInt(Some(v.parse().unwrap())),
+                    xsd::INT => Value::Int(Some(v.parse().unwrap())),
+                    xsd::UNSIGNED_INT => Value::Unsigned(Some(v.parse().unwrap())),
+                    xsd::UNSIGNED_LONG => Value::BigUnsigned(Some(v.parse().unwrap())),
+                    xsd::STRING => Value::String(Some(Box::new(v.to_string()))),
                     xsd::DATE_TIME => {
-                        let dt = v.parse::<NaiveDateTime>().expect("Datetime parsing error");
-                        SimpleExpr::Value(Value::ChronoDateTime(Some(Box::new(dt))))
+                        if let Ok(dt) = v.parse::<NaiveDateTime>() {
+                            Value::ChronoDateTime(Some(Box::new(dt)))
+                        } else if let Ok(dt) = v.parse::<DateTime<Utc>>() {
+                            Value::ChronoDateTimeUtc(Some(Box::new(dt)))
+                        } else {
+                            todo!("Could not parse {}", v);
+                        }
                     }
                     _ => {
                         return Err(TimeSeriesQueryToSQLError::UnknownDatatype(
                             l.datatype().as_str().to_string(),
                         ));
                     }
-                }
+                };
+                SimpleExpr::Value(value)
             }
             Expression::Variable(v) => {
                 if v.as_str() == timestamp_variable.as_str() {
