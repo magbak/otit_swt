@@ -48,7 +48,7 @@ fn test_mapper_easy_case(testdata_path: PathBuf) {
     let df = DataFrame::from_iter(series);
 
     let mut mapping = Mapping::from_str(&t_str).unwrap();
-    let report = mapping
+    let _report = mapping
         .expand(
             "http://example.net/ns#ExampleTemplate",
             df,
@@ -92,7 +92,7 @@ fn test_all_iri_case() {
     let df = DataFrame::from_iter(series);
 
     let mut mapping = Mapping::from_str(&t_str).unwrap();
-    let report = mapping
+    let _report = mapping
         .expand(
             "http://example.net/ns#ExampleTemplate",
             df,
@@ -140,7 +140,7 @@ fn test_string_language_tag_cases() {
     let df = DataFrame::from_iter(series);
 
     let mut mapping = Mapping::from_str(&t_str).unwrap();
-    let report = mapping
+    let _report = mapping
         .expand(
             "http://example.net/ns#ExampleTemplate",
             df,
@@ -205,7 +205,7 @@ fn test_const_list_case() {
     let df = DataFrame::from_iter(series);
 
     let mut mapping = Mapping::from_str(&t_str).unwrap();
-    let report = mapping
+    let _report = mapping
         .expand(
             "http://example.net/ns#ExampleTemplate",
             df,
@@ -278,7 +278,7 @@ ex:Nested [?myVar] :: {
     v2.rename("myVar2");
     let series = [k, v1, v2];
     let df = DataFrame::from_iter(series);
-    let report = mapping
+    let _report = mapping
         .expand(
             "http://example.net/ns#ExampleTemplate",
             df,
@@ -344,7 +344,7 @@ fn test_mint_iri_templates() {
     my_iri1.rename("myIRI1");
     let series = [k, my_iri1];
     let df = DataFrame::from_iter(series);
-    let report = mapping
+    let _report = mapping
         .expand(
             "http://example.net/ns#ExampleTemplate",
             df,
@@ -475,7 +475,7 @@ ex:ExampleTemplate [
         datetime_ms,
     ];
     let df = DataFrame::from_iter(series);
-    let report = mapping
+    let _report = mapping
         .expand(
             "http://example.net/ns#ExampleTemplate",
             df,
@@ -708,7 +708,7 @@ ex:AnotherExampleTemplate [?object, ?predicate, ?myList] :: {
         .unwrap();
     df.rename("myList_agg_list", "myList").unwrap();
     //println!("{df}");
-    let report = mapping
+    let _report = mapping
         .expand(
             "http://example.net/ns#AnotherExampleTemplate",
             df,
@@ -794,7 +794,7 @@ ex:AnotherExampleTemplate [?subject, ?myList1, ?myList2] :: {
     df.rename("myList2_agg_list", "myList2").unwrap();
 
     //println!("{df}");
-    let report = mapping
+    let _report = mapping
         .expand(
             "http://example.net/ns#AnotherExampleTemplate",
             df,

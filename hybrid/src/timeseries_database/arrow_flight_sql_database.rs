@@ -31,6 +31,9 @@ use crate::timeseries_database::timeseries_sql_rewrite::{
 use arrow_format::flight::service::flight_service_client::FlightServiceClient;
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::MessageHeaderRef;
+use log::warn;
+use polars_core::error::ArrowError;
+use polars_core::prelude::PolarsError;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
@@ -46,6 +49,8 @@ pub enum ArrowFlightSQLError {
     TranslationError(#[from] TimeSeriesQueryToSQLError),
     DatatypeNotSupported(String),
     MissingTimeseriesQueryDatatype,
+    ArrowError(#[from] ArrowError),
+    PolarsError(#[from] PolarsError),
 }
 
 impl Display for ArrowFlightSQLError {
@@ -65,6 +70,12 @@ impl Display for ArrowFlightSQLError {
             }
             ArrowFlightSQLError::MissingTimeseriesQueryDatatype => {
                 write!(f, "Timeseries value datatype missing")
+            }
+            ArrowFlightSQLError::ArrowError(err) => {
+                write!(f, "Problem deserializing arrow: {}", err)
+            }
+            ArrowFlightSQLError::PolarsError(err) => {
+                write!(f, "Problem creating dataframe from arrow: {:?}", err)
             }
         }
     }
@@ -131,60 +142,52 @@ impl ArrowFlightSQLDatabase {
                 let mut streaming_flight_data = stream.into_inner();
                 while let Some(flight_data_result) = streaming_flight_data.next().await {
                     if let Ok(flight_data) = flight_data_result {
-                        if schema_opt.is_none() || ipc_schema_opt.is_none() {
-                            let schemas_result =
-                                flight2::deserialize_schemas(&flight_data.data_header);
-                            match schemas_result {
-                                Ok((schema, ipc_schema)) => {
-                                    schema_opt = Some(schema);
-                                    ipc_schema_opt = Some(ipc_schema);
-                                }
-                                Err(err) => {
-                                    panic!("Fiks dette")
-                                }
-                            }
-                        }
                         let message =
                             arrow_format::ipc::MessageRef::read_as_root(&flight_data.data_header)
                                 .unwrap();
                         let header = message.header().unwrap().unwrap();
                         match header {
-                            MessageHeaderRef::Schema(s) => {
-                                println!("Received schema, should be handled already: {:?}", s);
-                                //TODO: Move schema code block here..
+                            MessageHeaderRef::Schema(_) => {
+                                if schema_opt.is_some() || ipc_schema_opt.is_some() {
+                                    warn!("Received multiple schema messages, keeping last");
+                                }
+                                let (schema, ipc_schema) =
+                                    flight2::deserialize_schemas(&flight_data.data_header)
+                                        .expect("Schema deserialization problem");
+                                schema_opt = Some(schema);
+                                ipc_schema_opt = Some(ipc_schema);
                             }
-                            MessageHeaderRef::DictionaryBatch(db) => {
-                                todo!("Handle dictionary {:?}", db);
+                            MessageHeaderRef::DictionaryBatch(_) => {
+                                unimplemented!("Dictionary batch not implemented")
                             }
                             MessageHeaderRef::RecordBatch(_) => {
-                                let chunk_result = flight2::deserialize_batch(
+                                let chunk = flight2::deserialize_batch(
                                     &flight_data,
                                     schema_opt.as_ref().unwrap().fields.as_slice(),
                                     &ipc_schema_opt.as_ref().unwrap(),
                                     &Default::default(),
-                                );
-                                match chunk_result {
-                                    Ok(ch) => {
-                                        let df = DataFrame::try_from((
-                                            ch,
-                                            schema_opt.as_ref().unwrap().fields.as_slice(),
-                                        ))
-                                        .unwrap(); //TODO:handle
-                                        dfs.push(df)
-                                    }
-                                    Err(err) => {
-                                        panic!("Fixit {}", err);
-                                    }
-                                }
+                                )
+                                .map_err(ArrowFlightSQLError::from)?;
+
+                                let df = DataFrame::try_from((
+                                    chunk,
+                                    schema_opt.as_ref().unwrap().fields.as_slice(),
+                                ))
+                                .map_err(ArrowFlightSQLError::from)?;
+                                dfs.push(df);
                             }
-                            MessageHeaderRef::Tensor(_) => {} //TODO handle?
-                            MessageHeaderRef::SparseTensor(_) => {} //Todo handle?
+                            MessageHeaderRef::Tensor(_) => {
+                                unimplemented!("Tensor message not implemented");
+                            }
+                            MessageHeaderRef::SparseTensor(_) => {
+                                unimplemented!("Sparse tensor message not implemented");
+                            }
                         }
                     }
                 }
             }
         }
-        Ok(accumulate_dataframes_vertical(dfs).unwrap()) //TODO: handle
+        Ok(accumulate_dataframes_vertical(dfs).expect("Problem stacking dataframes"))
     }
 }
 

@@ -119,12 +119,14 @@ pub async fn add_sparql_testdata(testdata_path: PathBuf) {
     assert_eq!(put_response.status(), StatusCode::from_u16(204).unwrap());
 }
 
+#[allow(dead_code)]
 pub fn compare_terms(t1: &Term, t2: &Term) -> Ordering {
     let t1_string = t1.to_string();
     let t2_string = t2.to_string();
     t1_string.cmp(&t2_string)
 }
 
+#[allow(dead_code)]
 pub fn compare_query_solutions(a: &QuerySolution, b: &QuerySolution) -> Ordering {
     let mut first_unequal = None;
     for (av, at) in a {
@@ -150,6 +152,7 @@ pub fn compare_query_solutions(a: &QuerySolution, b: &QuerySolution) -> Ordering
     Ordering::Equal
 }
 
+#[allow(dead_code)]
 pub fn compare_all_solutions(mut expected: Vec<QuerySolution>, mut actual: Vec<QuerySolution>) {
     assert_eq!(expected.len(), actual.len());
     expected.sort_by(compare_query_solutions);

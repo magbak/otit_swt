@@ -209,12 +209,14 @@ struct Token {
 }
 
 #[derive(Serialize)]
+#[allow(non_snake_case)]
 struct UserPass {
     pub userName: String,
     pub password: String,
 }
 
 #[derive(Serialize)]
+#[allow(non_snake_case)]
 struct NewSource {
     pub entityType: String,
     pub name: String,
