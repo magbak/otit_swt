@@ -64,11 +64,11 @@ def oxigraph_db():
     )
     time.sleep(20)
     yield
-    # print("Stopping container")
-    # container.stop()
-    # print("Deleting container")
-    # container.remove()
-    # print("all done!")
+    print("Stopping container")
+    container.stop()
+    print("Deleting container")
+    container.remove()
+    print("all done!")
 
 
 @pytest.fixture(scope="session")
@@ -109,11 +109,11 @@ def dremio_db():
     )
     time.sleep(40)
     yield
-    # print("Stopping container")
-    # container.stop()
-    # print("Deleting container")
-    # container.remove()
-    # print("all done!")
+    print("Stopping container")
+    container.stop()
+    print("Deleting container")
+    container.remove()
+    print("all done!")
 
 
 @pytest.fixture(scope="session")
