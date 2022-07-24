@@ -1,19 +1,28 @@
 pub mod errors;
 mod to_python;
 
+use std::collections::HashMap;
 use crate::errors::PyQueryError;
 use hybrid::orchestrator::execute_hybrid_query;
 use hybrid::timeseries_database::arrow_flight_sql_database::ArrowFlightSQLDatabase as RustArrowFlightSQLDatabase;
 use hybrid::timeseries_database::timeseries_sql_rewrite::TimeSeriesTable as RustTimeSeriesTable;
-use oxrdf::{IriParseError, NamedNode};
+use oxrdf::{IriParseError, Literal, NamedNode, Variable};
 use pyo3::prelude::*;
 use tokio::runtime::{Runtime, Builder};
 use log::debug;
+use oxrdf::vocab::{rdf, xsd};
+use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
+use dsl::connective_mapping::ConnectiveMapping;
+use dsl::costants::{REPLACE_STR_LITERAL, REPLACE_VARIABLE_NAME};
+use dsl::parser::ts_query;
+use dsl::translator::Translator;
 
 #[pyclass]
 pub struct Engine {
     endpoint: String,
     arrow_flight_sql_db: Option<RustArrowFlightSQLDatabase>,
+    connective_mapping: Option<ConnectiveMapping>,
+    name_predicate: Option<String>
 }
 
 #[pymethods]
@@ -23,6 +32,8 @@ impl Engine {
         Box::new(Engine {
             endpoint: endpoint.to_string(),
             arrow_flight_sql_db: None,
+            connective_mapping: None,
+            name_predicate: None,
         })
     }
 
@@ -77,6 +88,51 @@ impl Engine {
             Err(err) => Err(PyErr::from(PyQueryError::QueryExecutionError(err))),
         }
     }
+
+    pub fn name_predicate(&mut self, name_predicate:&str) {
+        self.name_predicate = Some(name_predicate.into());
+    }
+
+    pub fn connective_mapping(&mut self, map: HashMap<String, String>) {
+        self.connective_mapping = Some(ConnectiveMapping {map});
+    }
+
+    pub fn execute_dsl_query(&mut self, py: Python<'_>, query:&str) -> PyResult<PyObject> {
+        let (_, parsed) = ts_query(query).expect("DSL parsing error"); //Todo handle error properly
+        let use_name_template = name_template(self.name_predicate.as_ref().unwrap());
+        let use_type_name_template = type_name_template(self.name_predicate.as_ref().unwrap());
+        let mut translator = Translator::new(use_name_template, use_type_name_template, self.connective_mapping.as_ref().unwrap().clone());
+        let sparql = translator.translate(&parsed).to_string();
+        self.execute_hybrid_query(py, &sparql)
+    }
+}
+
+fn type_name_template(predicate: &str) -> Vec<TriplePattern> {
+    let type_variable = Variable::new_unchecked("type_var");
+    let type_triple = TriplePattern {
+        subject: TermPattern::Variable(Variable::new_unchecked(REPLACE_VARIABLE_NAME)),
+        predicate: NamedNodePattern::NamedNode(NamedNode::from(rdf::TYPE)),
+        object: TermPattern::Variable(type_variable.clone()),
+    };
+    let type_name_triple = TriplePattern {
+        subject: TermPattern::Variable(type_variable),
+        predicate: NamedNodePattern::NamedNode(NamedNode::new(
+            predicate,
+        ).unwrap()),
+        object: TermPattern::Literal(Literal::new_typed_literal(REPLACE_STR_LITERAL, xsd::STRING)),
+    };
+    vec![type_triple, type_name_triple]
+}
+
+fn name_template(predicate: &str) -> Vec<TriplePattern> {
+    let name_triple = TriplePattern {
+        subject: TermPattern::Variable(Variable::new_unchecked(REPLACE_VARIABLE_NAME)),
+        predicate: NamedNodePattern::NamedNode(NamedNode::new_unchecked(
+            predicate,
+        )),
+        object: TermPattern::Literal(Literal::new_typed_literal(REPLACE_STR_LITERAL, xsd::STRING)),
+    };
+    vec![name_triple]
 }
 
 #[pyclass]

@@ -9,6 +9,7 @@ DREMIO_PORT = 32010
 PATH_HERE = pathlib.Path(__file__).parent
 TESTDATA_PATH = PATH_HERE / "testdata"
 
+
 def test_simple_query(dremio_testdata, oxigraph_testdata):
     engine = Engine(OXIGRAPH_QUERY_ENDPOINT)
     tables = [
