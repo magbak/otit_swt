@@ -23,7 +23,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 import time
-from SPARQLWrapper import SPARQLWrapper, JSON
+from SPARQLWrapper import SPARQLWrapper, JSON, POST
 import docker
 import pytest
 import pathlib
@@ -64,11 +64,11 @@ def oxigraph_db():
     )
     time.sleep(20)
     yield
-    print("Stopping container")
-    container.stop()
-    print("Deleting container")
-    container.remove()
-    print("all done!")
+    # print("Stopping container")
+    # container.stop()
+    # print("Deleting container")
+    # container.remove()
+    # print("all done!")
 
 
 @pytest.fixture(scope="session")
@@ -76,6 +76,7 @@ def oxigraph_testdata(oxigraph_db):
     ep = SPARQLWrapper(OXIGRAPH_UPDATE_ENDPOINT)
     with open(PATH_HERE / "testdata" / "testdata.sparql") as f:
         query = f.read()
+    ep.setMethod(POST)
     ep.setReturnFormat(JSON)
     ep.setQuery(query)
     res = ep.query()
@@ -92,9 +93,12 @@ def dremio_db():
     except:
         pass
 
-    (image, _) = client.images.build(
+    (image, logs) = client.images.build(
         path=str(DREMIO_DOCKER_PATH.absolute()),
     )
+    print(image)
+    for l in logs:
+        print(l)
     container = client.containers.run(
         image=image,
         name=DREMIO_CONTAINER_NAME,

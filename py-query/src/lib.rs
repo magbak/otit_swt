@@ -1,4 +1,4 @@
-mod errors;
+pub mod errors;
 mod to_python;
 
 use crate::errors::PyQueryError;
@@ -71,7 +71,8 @@ impl Engine {
                 let names: Vec<&str> = names_vec.iter().map(|x| x.as_str()).collect();
                 let chunk = df.as_single_chunk().iter_chunks().next().unwrap();
                 let pyarrow = PyModule::import(py, "pyarrow")?;
-                to_python::to_py_rb(&chunk, names.as_slice(), py, pyarrow)
+                let polars = PyModule::import(py, "polars")?;
+                to_python::to_py_df(&chunk, names.as_slice(), py, pyarrow, polars)
             }
             Err(err) => Err(PyErr::from(PyQueryError::QueryExecutionError(err))),
         }
