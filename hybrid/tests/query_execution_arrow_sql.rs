@@ -198,9 +198,14 @@ fn timeseries_table() -> TimeSeriesTable {
 }
 
 async fn ts_sql_db(timeseries_table: TimeSeriesTable) -> ArrowFlightSQLDatabase {
-    ArrowFlightSQLDatabase::new(ARROW_SQL_DATABASE_ENDPOINT, vec![timeseries_table])
-        .await
-        .unwrap()
+    ArrowFlightSQLDatabase::new(
+        ARROW_SQL_DATABASE_ENDPOINT,
+        "dremio",
+        "dremio123",
+        vec![timeseries_table],
+    )
+    .await
+    .unwrap()
 }
 
 #[derive(Deserialize)]
@@ -213,16 +218,6 @@ struct Token {
 struct UserPass {
     pub userName: String,
     pub password: String,
-}
-
-#[derive(Serialize)]
-#[allow(non_snake_case)]
-struct NewSource {
-    pub entityType: String,
-    pub name: String,
-    #[serde(rename = "type")]
-    pub sourcetype: String,
-    pub config: NasConfig,
 }
 
 #[derive(Serialize)]

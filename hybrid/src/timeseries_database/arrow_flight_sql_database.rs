@@ -31,7 +31,7 @@ use crate::timeseries_database::timeseries_sql_rewrite::{
 use arrow_format::flight::service::flight_service_client::FlightServiceClient;
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::MessageHeaderRef;
-use log::warn;
+use log::{debug, warn};
 use polars_core::error::ArrowError;
 use polars_core::prelude::PolarsError;
 use std::error::Error;
@@ -82,25 +82,27 @@ impl Display for ArrowFlightSQLError {
 }
 
 pub struct ArrowFlightSQLDatabase {
-    client: FlightServiceClient<Channel>,
-    token: String,
+    endpoint: String,
+    username: String,
+    password: String,
+    conn: Option<Channel>,
+    token: Option<String>,
     time_series_tables: Vec<TimeSeriesTable>,
 }
 
 impl ArrowFlightSQLDatabase {
     pub async fn new(
         endpoint: &str,
+        username: &str,
+        password: &str,
         time_series_tables: Vec<TimeSeriesTable>,
     ) -> Result<ArrowFlightSQLDatabase, ArrowFlightSQLError> {
-        let conn = tonic::transport::Endpoint::new(endpoint.to_string())?
-            .connect()
-            .await?;
-        let token = authenticate(conn.clone(), "dremio", "dremio123").await?;
-        let client = FlightServiceClient::new(conn);
-
         Ok(ArrowFlightSQLDatabase {
-            client,
-            token,
+            endpoint: endpoint.into(),
+            username: username.into(),
+            password: password.into(),
+            conn: None,
+            token: None,
             time_series_tables,
         })
     }
@@ -110,6 +112,17 @@ impl ArrowFlightSQLDatabase {
         query: String,
     ) -> Result<DataFrame, ArrowFlightSQLError> {
         let mut dfs = vec![];
+
+        if self.conn.is_none() {
+            debug!("Connection is not established, establishing");
+            let (token, conn) =
+                authenticated_connection(&self.username, &self.password, &self.endpoint).await?;
+            self.token = Some(token);
+            self.conn = Some(conn);
+            debug!("Established connection");
+        } else {
+            debug!("Using existing connection")
+        }
         let mut request = FlightDescriptor {
             r#type: 2, //CMD
             cmd: query.into_bytes(),
@@ -118,24 +131,18 @@ impl ArrowFlightSQLDatabase {
             path: vec![], // Should be empty when CMD
         }
         .into_request();
-        add_auth_header(&mut request, &self.token);
+        add_auth_header(&mut request, self.token.as_ref().unwrap());
 
-        let respose_result = self.client.get_flight_info(request).await;
-        let res = match respose_result {
-            Ok(resp) => resp,
-            Err(err) => {
-                println!("Err message: {}", err.message());
-                panic!("bad! {:?}", err);
-            }
-        };
+        let mut client = FlightServiceClient::new(self.conn.as_ref().unwrap().clone());
+        let response = client.get_flight_info(request).await?;
+        debug!("Got flight info response");
         let mut schema_opt = None;
         let mut ipc_schema_opt = None;
-        for endpoint in res.into_inner().endpoint {
+        for endpoint in response.into_inner().endpoint {
             if let Some(ticket) = endpoint.ticket.clone() {
                 let mut ticket = ticket.into_request();
-                add_auth_header(&mut ticket, &self.token);
-                let stream = self
-                    .client
+                add_auth_header(&mut ticket, self.token.as_ref().unwrap());
+                let stream = client
                     .do_get(ticket)
                     .await
                     .map_err(ArrowFlightSQLError::from)?;
@@ -212,7 +219,7 @@ impl TimeSeriesQueryable for ArrowFlightSQLDatabase {
             ));
         }
 
-        Ok(self.execute_sql_query(query_string.unwrap()).await.unwrap())
+        Ok(self.execute_sql_query(query_string.unwrap()).await?)
     }
 }
 
@@ -233,6 +240,18 @@ impl TimeSeriesQueryable for ArrowFlightSQLDatabase {
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
+async fn authenticated_connection(
+    username: &str,
+    password: &str,
+    endpoint: &str,
+) -> Result<(String, Channel), ArrowFlightSQLError> {
+    let conn = tonic::transport::Endpoint::new(endpoint.to_string())?
+        .connect()
+        .await?;
+    let token = authenticate(conn.clone(), username, password).await?;
+    Ok((token, conn))
+}
 
 async fn authenticate(
     conn: Channel,
