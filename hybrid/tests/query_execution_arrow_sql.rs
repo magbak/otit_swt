@@ -316,15 +316,15 @@ async fn test_simple_hybrid_query(
     let mut db = ts_sql_db(timeseries_table).await;
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
-    PREFIX quarry:<https://github.com/magbak/quarry-rs#>
+    PREFIX otit_swt:<https://github.com/magbak/otit_swt#>
     PREFIX types:<http://example.org/types#>
     SELECT ?w ?s ?t ?v WHERE {
         ?w a types:BigWidget .
         ?w types:hasSensor ?s .
-        ?s quarry:hasTimeseries ?ts .
-        ?ts quarry:hasDataPoint ?dp .
-        ?dp quarry:hasTimestamp ?t .
-        ?dp quarry:hasValue ?v .
+        ?s otit_swt:hasTimeseries ?ts .
+        ?ts otit_swt:hasDataPoint ?dp .
+        ?dp otit_swt:hasTimestamp ?t .
+        ?dp otit_swt:hasValue ?v .
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime && ?v < 200) .
     }
     "#;

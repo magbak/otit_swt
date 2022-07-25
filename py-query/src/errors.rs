@@ -12,6 +12,8 @@ pub enum PyQueryError {
     DatatypeIRIParseError(#[from] IriParseError),
     #[error(transparent)]
     QueryExecutionError(Box<dyn std::error::Error>),
+    #[error("DSL parsing error")]
+    DSLParsingError
 }
 
 impl std::convert::From<PyQueryError> for PyErr {
@@ -26,6 +28,9 @@ impl std::convert::From<PyQueryError> for PyErr {
             PyQueryError::QueryExecutionError(err) => {
                 QueryExecutionError::new_err(format!("{}", err))
             }
+            PyQueryError::DSLParsingError => {
+                DSLParsingError::new_err("")
+            }
         }
     }
 }
@@ -33,3 +38,4 @@ impl std::convert::From<PyQueryError> for PyErr {
 create_exception!(exceptions, ArrowFlightSQLError, PyException);
 create_exception!(exceptions, DatatypeIRIParseError, PyException);
 create_exception!(exceptions, QueryExecutionError, PyException);
+create_exception!(exceptions, DSLParsingError, PyException);

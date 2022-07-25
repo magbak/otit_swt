@@ -98,7 +98,7 @@ impl Engine {
     }
 
     pub fn execute_dsl_query(&mut self, py: Python<'_>, query:&str) -> PyResult<PyObject> {
-        let (_, parsed) = ts_query(query).expect("DSL parsing error"); //Todo handle error properly
+        let (_, parsed) = ts_query(query).map_err(|_|PyQueryError::DSLParsingError)?;
         let use_name_template = name_template(self.name_predicate.as_ref().unwrap());
         let use_type_name_template = type_name_template(self.name_predicate.as_ref().unwrap());
         let mut translator = Translator::new(use_name_template, use_type_name_template, self.connective_mapping.as_ref().unwrap().clone());
