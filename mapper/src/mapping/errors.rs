@@ -2,6 +2,7 @@ use crate::ast::{ConstantTerm, PType};
 use oxrdf::IriParseError;
 use polars_core::prelude::{DataType, Series};
 use std::fmt::{Display, Formatter};
+use polars_core::frame::DataFrame;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -10,7 +11,7 @@ pub enum MappingError {
     TemplateNotFound(String),
     MissingKeyColumn,
     KeyColumnContainsDuplicates(Series),
-    KeyColumnOverlapsExisting(Series),
+    KeyAndPathColumnOverlapsExisting(DataFrame),
     NonOptionalColumnHasNull(String, Series),
     InvalidKeyColumnDataType(DataType),
     NonBlankColumnHasBlankNode(String, Series),
@@ -37,8 +38,8 @@ impl Display for MappingError {
             MappingError::KeyColumnContainsDuplicates(dupes) => {
                 write!(f, "Key column has duplicate entries: {}", dupes)
             }
-            MappingError::KeyColumnOverlapsExisting(overlapping) => {
-                write!(f, "Key column overlaps existing keys: {}", overlapping)
+            MappingError::KeyAndPathColumnOverlapsExisting(overlapping) => {
+                write!(f, "Key and path columns overlaps existing: {}", overlapping)
             }
             MappingError::NonOptionalColumnHasNull(col, nullkey) => {
                 write!(

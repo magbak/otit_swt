@@ -3,6 +3,7 @@ pub mod export_triples;
 mod mint;
 mod ntriples_write;
 mod validation_inference;
+mod validation;
 
 use crate::ast::{
     ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Signature, StottrTerm,
@@ -18,16 +19,16 @@ use oxrdf::NamedNode;
 use polars::lazy::prelude::{col, concat, Expr, LiteralValue};
 use polars::prelude::{
     concat_lst, concat_str, AnyValue, DataFrame, DataType, Field, IntoLazy, LazyFrame, PolarsError,
-    Series, SeriesOps,
+    Series,
 };
 use polars::prelude::{IntoSeries, NoEq, StructChunked};
-use polars::toggle_string_cache;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::io::Write;
 use std::ops::{Deref, Not};
 use std::path::Path;
+use log::debug;
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
@@ -140,6 +141,16 @@ impl Mapping {
         Ok(Mapping::new(&dataset))
     }
 
+    pub fn from_strs(ss: Vec<&str>) -> Result<Mapping, Box<dyn Error>> {
+        let mut docs = vec![];
+        for s in ss {
+            let doc = document_from_str(s.into())?;
+            docs.push(doc);
+        }
+        let dataset = TemplateDataset::new(docs)?;
+        Ok(Mapping::new(&dataset))
+    }
+
     pub fn write_n_triples(&self, buffer: &mut dyn Write) -> Result<(), PolarsError> {
         //TODO: Refactor all of this stuff.. obviously poorly thought out..
         let constant_utf8_series = |s, n| {
@@ -240,7 +251,7 @@ impl Mapping {
                 &options,
             )?;
             let mut result_vec = vec![];
-            let path_here = vec![template.to_string()];
+            let path_here = vec![format!("<{}>", template)];
             self._expand(&name, df.lazy(), columns, &mut result_vec, path_here)?;
             self.process_results(result_vec);
 
@@ -258,6 +269,7 @@ impl Mapping {
         new_lfs_columns: &mut Vec<(LazyFrame, HashMap<String, MappedColumn>)>,
         path_here: Vec<String>,
     ) -> Result<(), MappingError> {
+        debug!("Expansion with path here: {}", path_here.join("/"));
         //At this point, the lf should have columns with names appropriate for the template to be instantiated (named_node).
         if let Some(template) = self.template_dataset.get(name) {
             if template.signature.template_name.as_str() == OTTR_TRIPLE {
@@ -300,58 +312,6 @@ impl Mapping {
         } else {
             Err(MappingError::TemplateNotFound(name.as_str().to_string()))
         }
-    }
-
-    fn validate_dataframe(&mut self, df: &mut DataFrame) -> Result<(), MappingError> {
-        if !df.get_column_names().contains(&"Key") {
-            return Err(MappingError::MissingKeyColumn);
-        }
-        if self
-            .object_property_triples
-            .as_ref()
-            .unwrap()
-            .get_column_names()
-            .contains(&"Key")
-        {
-            let key_datatype = df.column("Key").unwrap().dtype().clone();
-            if key_datatype != DataType::Utf8 {
-                return Err(MappingError::InvalidKeyColumnDataType(key_datatype.clone()));
-            }
-            if df.column("Key").unwrap().is_duplicated().unwrap().any() {
-                let is_duplicated = df.column("Key").unwrap().is_duplicated().unwrap();
-                let dupes = df.filter(&is_duplicated).unwrap().clone();
-                return Err(MappingError::KeyColumnContainsDuplicates(
-                    dupes.column("Key").unwrap().clone(),
-                ));
-            }
-            toggle_string_cache(true);
-            let df_keys = df
-                .column("Key")
-                .unwrap()
-                .cast(&DataType::Categorical(None))
-                .unwrap();
-            let existing_keys = self
-                .object_property_triples
-                .as_mut()
-                .unwrap()
-                .column("Key")
-                .unwrap()
-                .cast(&DataType::Categorical(None))
-                .unwrap();
-            let overlapping_keys = df_keys.is_in(&existing_keys).unwrap();
-            toggle_string_cache(false);
-
-            if overlapping_keys.any() {
-                return Err(MappingError::KeyColumnOverlapsExisting(
-                    df.column("Key")
-                        .unwrap()
-                        .filter(&overlapping_keys)
-                        .unwrap()
-                        .clone(),
-                ));
-            }
-        }
-        Ok(())
     }
 
     fn process_results(&mut self, result_vec: Vec<(LazyFrame, HashMap<String, MappedColumn>)>) {

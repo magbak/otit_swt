@@ -4,7 +4,7 @@ extern crate core;
 mod utils;
 
 use crate::utils::triples_from_file;
-use mapper::mapping::{ExpandOptions, Mapping, MintingOptions, SuffixGenerator};
+use mapper::mapping::{ExpandOptions, Mapping, MintingOptions, Part, PathColumn, SuffixGenerator};
 use oxrdf::{Literal, NamedNode, Subject, Term, Triple};
 use polars::frame::DataFrame;
 use polars::series::Series;
@@ -377,6 +377,107 @@ fn test_mint_iri_templates() {
                 "http://example.net/things#subject2",
             )),
             predicate: NamedNode::new_unchecked("http://example.net/ns#relatesTo"),
+            object: Term::NamedNode(NamedNode::new_unchecked("http://example.net/things#4")),
+        },
+    ]);
+    assert_eq!(expected_triples_set, actual_triples_set);
+}
+
+#[rstest]
+#[serial]
+fn test_path_column() {
+    let stottr1 = r#"
+    @prefix ex:<http://example.net/ns#>.
+    ex:ExampleTemplate1 [?myIRI1, ?myIRI2] :: {
+    ottr:Triple(?myIRI1, ex:relatesTo, ?myIRI2)
+    } ."#;
+
+    let stottr2 = r#"
+    @prefix ex:<http://example.net/ns#>.
+    ex:ExampleTemplate2 [?myIRI1, ?myIRI2] :: {
+    ottr:Triple(?myIRI1, ex:relatesDifferentlyTo, ?myIRI2)
+    } ."#;
+
+    let mut mapping = Mapping::from_strs(vec![stottr1, stottr2]).unwrap();
+    let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
+    k.rename("Key");
+    let mut my_iri1 = Series::from_iter([
+        "http://example.net/things#subject1".to_string(),
+        "http://example.net/things#subject2".to_string(),
+    ]);
+    my_iri1.rename("myIRI1");
+    let series = [k.clone(), my_iri1];
+    let df = DataFrame::from_iter(series);
+    let _report = mapping
+        .expand(
+            "http://example.net/ns#ExampleTemplate1",
+            df,
+            ExpandOptions {
+                mint_iris: Some(HashMap::from([(
+                    "myIRI2".to_string(),
+                    MintingOptions {
+                        prefix: "http://example.net/things#".to_string(),
+                        suffix_generator: SuffixGenerator::Numbering(3),
+                        list_length: None,
+                    },
+                )])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let mut my_iri1 = Series::from_iter([
+        "http://example.net/things#otherSubject1".to_string(),
+        "http://example.net/things#otherSubject2".to_string(),
+    ]);
+    my_iri1.rename("myIRI1");
+    let series = [k, my_iri1];
+    let df = DataFrame::from_iter(series);
+    let _report = mapping
+        .expand(
+            "http://example.net/ns#ExampleTemplate2",
+            df,
+            ExpandOptions {
+                path_column_map: Some(HashMap::from([
+                    ("myIRI2".to_string(),
+                     PathColumn {
+                         path: "<http://example.net/ns#ExampleTemplate1>/<http://ns.ottr.xyz/0.4/Triple>".into(),
+                         part: Part::Object })])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let triples = mapping.export_oxrdf_triples();
+    //println!("{:?}", triples);
+    let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
+    let expected_triples_set = HashSet::from([
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/things#subject1",
+            )),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#relatesTo"),
+            object: Term::NamedNode(NamedNode::new_unchecked("http://example.net/things#3")),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/things#subject2",
+            )),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#relatesTo"),
+            object: Term::NamedNode(NamedNode::new_unchecked("http://example.net/things#4")),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/things#otherSubject1",
+            )),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#relatesDifferentlyTo"),
+            object: Term::NamedNode(NamedNode::new_unchecked("http://example.net/things#3")),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked(
+                "http://example.net/things#otherSubject2",
+            )),
+            predicate: NamedNode::new_unchecked("http://example.net/ns#relatesDifferentlyTo"),
             object: Term::NamedNode(NamedNode::new_unchecked("http://example.net/things#4")),
         },
     ]);

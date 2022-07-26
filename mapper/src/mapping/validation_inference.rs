@@ -6,8 +6,10 @@ use crate::mapping::errors::MappingError;
 use crate::mapping::mint::mint_iri;
 use crate::mapping::{ExpandOptions, Part};
 use chrono::{Datelike, Timelike};
+use log::warn;
 use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
+use polars::toggle_string_cache;
 use polars_core::export::rayon::prelude::ParallelIterator;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
@@ -76,12 +78,16 @@ impl Mapping {
                     MappedColumn::PrimitiveColumn(column_data_type),
                 );
             } else if let Some(path_column) = path_column_map.get(variable_name) {
-                let path_series = Series::new("Path", [path_column.path.clone()]);
-                let use_df = match &path_column.part {
+                let mut path_series = Series::new("Path", [path_column.path.clone()]);
+                toggle_string_cache(true);
+                path_series = path_series.cast(&DataType::Categorical(None)).unwrap();
+
+
+                let mut use_df = match &path_column.part {
                     Part::Subject => {
                         if let Some(df) = &self.object_property_triples {
                             if path_series
-                                .is_in(&df.column(variable_name).unwrap().unique().unwrap())
+                                .is_in(&df.column(variable_name).unwrap().cast(&DataType::Categorical(None)).unwrap().unique().unwrap())
                                 .unwrap()
                                 .any()
                             {
@@ -100,18 +106,38 @@ impl Mapping {
                     Part::Object => self.object_property_triples.as_ref().unwrap(),
                 };
 
-                let mut filtered_df = use_df
-                    .filter(&use_df.column("Path").unwrap().is_in(&path_series).unwrap())
-                    .unwrap()
+                let mut join_df = use_df
                     .select(["Key", "Path", &path_column.part.to_string()])
                     .unwrap();
-                filtered_df
+                join_df
+                    .with_column(
+                        join_df
+                            .column("Path")
+                            .unwrap()
+                            .cast(&DataType::Categorical(None))
+                            .unwrap(),
+                    )
+                    .unwrap();
+                join_df.with_column(
+                        join_df
+                            .column("Key")
+                            .unwrap()
+                            .cast(&DataType::Categorical(None)).unwrap(),
+                    )
+                    .unwrap();
+
+                join_df = join_df
+                    .filter(&join_df.column("Path").unwrap().is_in(&path_series).unwrap())
+                    .unwrap();
+                join_df
                     .rename(&path_column.part.to_string(), variable_name)
                     .unwrap();
+
                 df.with_column(path_series).unwrap();
+                df.with_column(df.column("Key").unwrap().cast(&DataType::Categorical(None)).unwrap()).unwrap();
                 df = df
                     .join(
-                        &filtered_df,
+                        &join_df,
                         ["Key", "Path"],
                         ["Key", "Path"],
                         JoinType::Left,
@@ -120,6 +146,17 @@ impl Mapping {
                     .unwrap()
                     .drop("Path")
                     .unwrap();
+                toggle_string_cache(false);
+                df.with_column(df.column("Key").unwrap().cast(&DataType::Utf8).unwrap()).unwrap();
+                df.with_column(df.column(variable_name).unwrap().cast(&DataType::Utf8).unwrap()).unwrap();
+                let nullsum = df.column(variable_name).unwrap().null_count();
+                if nullsum > 0 {
+                    warn!("Path column {} has {} non-matches", variable_name, nullsum);
+                }
+                map.insert(
+                    variable_name.to_string(),
+                    MappedColumn::PrimitiveColumn(PrimitiveColumn{ rdf_node_type: RDFNodeType::IRI }),
+                );
             } else if options.mint_iris.is_some()
                 && options
                     .mint_iris
