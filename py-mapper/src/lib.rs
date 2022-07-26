@@ -1,3 +1,5 @@
+extern crate core;
+
 mod error;
 mod to_rust;
 
@@ -5,11 +7,16 @@ use crate::error::PyMapperError;
 use crate::to_rust::polars_df_to_rust_df;
 use mapper::document::document_from_str;
 use mapper::errors::MapperError;
-use mapper::mapping::Mapping as InnerMapping;
+use mapper::mapping::MintingOptions as RustMintingOptions;
+use mapper::mapping::ExpandOptions as RustExpandOptions;
+use mapper::mapping::PathColumn as RustPathColumn;
+use mapper::mapping::Part as RustPart;
+use mapper::mapping::{ListLength, Mapping as InnerMapping, SuffixGenerator};
 use mapper::templates::TemplateDataset;
+use pyo3::basic::CompareOp;
 use pyo3::prelude::PyModule;
 use pyo3::*;
-use pyo3::basic::CompareOp;
+use std::collections::HashMap;
 
 #[pyclass]
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -35,7 +42,7 @@ pub struct IRI {
 #[pymethods]
 impl IRI {
     fn __repr__(&self) -> String {
-        format!("<{}>",self.iri)
+        format!("<{}>", self.iri)
     }
 }
 
@@ -75,8 +82,8 @@ pub struct Literal {
 impl Literal {
     pub fn __repr__(&self) -> String {
         if let Some(tag) = &self.language_tag {
-            format!("\"{}\"@{}",self.lexical_form.to_owned(), tag)
-        } else if let Some(dt) = &self.datatype_iri{
+            format!("\"{}\"@{}", self.lexical_form.to_owned(), tag)
+        } else if let Some(dt) = &self.datatype_iri {
             format!("\"{}\"^^{}", &self.lexical_form, dt.__repr__())
         } else {
             panic!("Literal in invalid state {:?}", self)
@@ -135,14 +142,102 @@ pub struct Triple {
 #[pymethods]
 impl Triple {
     pub fn __repr__(&self) -> String {
-        format!("{} {} {}", self.subject.__repr__(), self.verb.__repr__(), self.object.__repr__())
+        format!(
+            "{} {} {}",
+            self.subject.__repr__(),
+            self.verb.__repr__(),
+            self.object.__repr__()
+        )
     }
 }
-
 
 #[pyclass]
 pub struct Mapping {
     inner: InnerMapping,
+}
+
+#[pyclass]
+#[derive(Debug, Clone)]
+pub enum Part {
+    Subject,
+    Object,
+}
+
+#[derive(Debug, Clone)]
+pub struct PathColumn {
+    path: String,
+    part: Part,
+}
+
+impl PathColumn {
+    fn to_rust_path_column(&self) -> RustPathColumn {
+        RustPathColumn { path: self.path.clone(), part: match self.part {
+            Part::Subject => {RustPart::Subject}
+            Part::Object => {RustPart::Object}
+        } }
+    }
+    
+}
+
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct ExpandOptions {
+    pub language_tags: Option<HashMap<String, String>>,
+    pub path_column_map: Option<HashMap<String, PathColumn>>,
+    pub mint_iris: Option<HashMap<String, MintingOptions>>,
+}
+
+impl ExpandOptions {
+    fn to_rust_expand_options(&self) -> RustExpandOptions {
+        let mut path_column_map = None;
+        if let Some(self_path_column_map) = &self.path_column_map {
+            let mut map = HashMap::new();
+            for (k, v) in self_path_column_map {
+                map.insert(k.clone(), v.to_rust_path_column());
+            }
+            path_column_map = Some(map);
+        }
+
+        let mut mint_iris = None;
+        if let Some(self_mint_iris) = &self.mint_iris {
+            let mut map = HashMap::new();
+            for (k, v) in self_mint_iris {
+                map.insert(k.clone(), v.to_rust_minting_options());
+            }
+            mint_iris = Some(map);
+        }
+
+        RustExpandOptions {
+            language_tags: self.language_tags.clone(),
+            path_column_map,
+            mint_iris
+        }
+    }
+}
+
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct MintingOptions {
+    pub prefix: String,
+    pub numbering_suffix_start: usize,
+    pub constant_list_length: Option<usize>,
+    pub same_as_column_list_length: Option<String>,
+}
+
+impl MintingOptions {
+    fn to_rust_minting_options(&self) -> RustMintingOptions {
+        RustMintingOptions {
+            prefix: self.prefix.clone(),
+            suffix_generator: SuffixGenerator::Numbering(self.numbering_suffix_start),
+            list_length: if let Some(l) = &self.constant_list_length {
+                Some(ListLength::Constant(l.clone()))
+            } else if let Some(c) = &self.same_as_column_list_length {
+                Some(ListLength::SameAsColumn(c.clone()))
+            } else {
+                None
+            },
+        }
+    }
 }
 
 #[pymethods]
@@ -162,11 +257,20 @@ impl Mapping {
         })
     }
 
-    pub fn expand(&mut self, template: &str, df: &PyAny) -> PyResult<()> {
+    pub fn expand(
+        &mut self,
+        template: &str,
+        df: &PyAny,
+        options: Option<ExpandOptions>,
+    ) -> PyResult<()> {
         let df = polars_df_to_rust_df(&df)?;
+        let options = match options {
+            None => {Default::default()}
+            Some(o) => {o.to_rust_expand_options()}
+        };
         let _report = self
             .inner
-            .expand(template, df, Default::default())
+            .expand(template, df, options)
             .map_err(MapperError::from)
             .map_err(PyMapperError::from)?;
         Ok(())
@@ -218,7 +322,9 @@ impl Mapping {
                 datatype_iri: if let Some(_) = ltag_opt {
                     None
                 } else {
-                    Some(IRI {iri:dt.to_string()})
+                    Some(IRI {
+                        iri: dt.to_string(),
+                    })
                 },
             }
         }

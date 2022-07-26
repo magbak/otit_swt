@@ -11,7 +11,7 @@ use crate::constants::{BLANK_NODE_IRI, NONE_IRI, OTTR_TRIPLE};
 use crate::document::document_from_str;
 use crate::mapping::errors::MappingError;
 use crate::mapping::validation_inference::{
-    find_validate_and_prepare_dataframe_columns, MappedColumn, PrimitiveColumn, RDFNodeType,
+    MappedColumn, PrimitiveColumn, RDFNodeType,
 };
 use crate::templates::TemplateDataset;
 use ntriples_write::write_ntriples;
@@ -26,6 +26,7 @@ use polars::prelude::{IntoSeries, NoEq, StructChunked};
 use polars::toggle_string_cache;
 use std::collections::HashMap;
 use std::error::Error;
+use std::fmt::{Display, Formatter};
 use std::io::Write;
 use std::ops::{Deref, Not};
 use std::path::Path;
@@ -36,8 +37,37 @@ pub struct Mapping {
     data_property_triples: Option<DataFrame>,
 }
 
+#[derive(Debug)]
+pub enum Part {
+    Subject,
+    Object,
+}
+
+impl Display for Part {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f, "{}",
+            match self {
+                Part::Subject => {
+                    "subject"
+                }
+                Part::Object => {
+                    "object"
+                }
+            }
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct PathColumn {
+    pub path: String,
+    pub part: Part,
+}
+
 pub struct ExpandOptions {
     pub language_tags: Option<HashMap<String, String>>,
+    pub path_column_map: Option<HashMap<String, PathColumn>>,
     pub mint_iris: Option<HashMap<String, MintingOptions>>,
 }
 
@@ -45,6 +75,7 @@ impl Default for ExpandOptions {
     fn default() -> Self {
         ExpandOptions {
             language_tags: None,
+            path_column_map: None,
             mint_iris: None,
         }
     }
@@ -72,6 +103,7 @@ impl Mapping {
         let utf8 = DataType::Utf8;
         let object_property_dataframe = DataFrame::new(vec![
             Series::new_empty("Key", &utf8),
+            Series::new_empty("Path", &utf8),
             Series::new_empty("subject", &utf8),
             Series::new_empty("verb", &utf8),
             Series::new_empty("object", &utf8),
@@ -79,6 +111,7 @@ impl Mapping {
         .unwrap();
         let data_property_dataframe = DataFrame::new(vec![
             Series::new_empty("Key", &utf8),
+            Series::new_empty("Path", &utf8),
             Series::new_empty("subject", &utf8),
             Series::new_empty("verb", &utf8),
             Series::new_empty("object", &DataType::Struct(literal_struct_fields())),
@@ -202,13 +235,14 @@ impl Mapping {
         let name = NamedNode::new(template).map_err(MappingError::from)?;
         self.validate_dataframe(&mut df)?;
         if let Some(target_template) = self.template_dataset.get(&name) {
-            let columns = find_validate_and_prepare_dataframe_columns(
+            let (df, columns) = self.find_validate_and_prepare_dataframe_columns(
                 &target_template.signature,
-                &mut df,
+                df,
                 &options,
             )?;
             let mut result_vec = vec![];
-            self._expand(&name, df.lazy(), columns, &mut result_vec)?;
+            let path_here = vec![template.to_string()];
+            self._expand(&name, df.lazy(), columns, &mut result_vec, path_here)?;
             self.process_results(result_vec);
 
             Ok(MappingReport {})
@@ -223,11 +257,21 @@ impl Mapping {
         mut lf: LazyFrame,
         columns: HashMap<String, MappedColumn>,
         new_lfs_columns: &mut Vec<(LazyFrame, HashMap<String, MappedColumn>)>,
+        path_here: Vec<String>,
     ) -> Result<(), MappingError> {
         //At this point, the lf should have columns with names appropriate for the template to be instantiated (named_node).
         if let Some(template) = self.template_dataset.get(name) {
             if template.signature.template_name.as_str() == OTTR_TRIPLE {
-                let keep_cols = vec![col("Key"), col("subject"), col("verb"), col("object")];
+                lf = lf.with_column(
+                    Expr::Literal(LiteralValue::Utf8(path_here.join("/"))).alias("Path"),
+                );
+                let keep_cols = vec![
+                    col("Key"),
+                    col("Path"),
+                    col("subject"),
+                    col("verb"),
+                    col("object"),
+                ];
                 lf = lf.select(keep_cols.as_slice());
                 new_lfs_columns.push((lf, columns));
                 Ok(())
@@ -240,11 +284,16 @@ impl Mapping {
                         lf.clone(),
                         &columns,
                     )?;
+                    // We extend the path with the template name
+                    let mut new_path_here = path_here.clone();
+                    // To_string means we include < and > to avoid ambiguity
+                    new_path_here.push(i.template_name.to_string());
                     self._expand(
                         &i.template_name,
                         instance_lf,
                         instance_columns,
                         new_lfs_columns,
+                        new_path_here,
                     )?;
                 }
                 Ok(())

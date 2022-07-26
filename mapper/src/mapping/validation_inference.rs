@@ -1,16 +1,18 @@
+use super::Mapping;
 use crate::ast::{PType, Parameter, Signature};
 use crate::chrono::TimeZone as ChronoTimeZone;
 use crate::constants::{XSD_DATETIME_WITHOUT_TZ_FORMAT, XSD_DATETIME_WITH_TZ_FORMAT};
 use crate::mapping::errors::MappingError;
 use crate::mapping::mint::mint_iri;
-use crate::mapping::ExpandOptions;
+use crate::mapping::{ExpandOptions, Part};
 use chrono::{Datelike, Timelike};
 use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
 use polars_core::export::rayon::prelude::ParallelIterator;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    AnyValue, BooleanChunked, ChunkApply, DataType, IntoSeries, Series, StructChunked, TimeZone,
+    AnyValue, BooleanChunked, ChunkApply, DataType, IntoSeries, JoinType, NamedFrom, Series,
+    StructChunked, TimeZone,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -32,75 +34,129 @@ pub enum RDFNodeType {
     None,
 }
 
-pub fn find_validate_and_prepare_dataframe_columns(
-    signature: &Signature,
-    df: &mut DataFrame,
-    options: &ExpandOptions,
-) -> Result<HashMap<String, MappedColumn>, MappingError> {
-    let mut df_columns = HashSet::new();
-    df_columns.extend(df.get_column_names().into_iter().map(|x| x.to_string()));
-    let removed = df_columns.remove("Key");
-    assert!(removed);
+impl Mapping {
+    pub fn find_validate_and_prepare_dataframe_columns(
+        &self,
+        signature: &Signature,
+        mut df: DataFrame,
+        options: &ExpandOptions,
+    ) -> Result<(DataFrame, HashMap<String, MappedColumn>), MappingError> {
+        let mut df_columns = HashSet::new();
+        df_columns.extend(df.get_column_names().into_iter().map(|x| x.to_string()));
+        let removed = df_columns.remove("Key");
+        assert!(removed);
 
-    let mut map = HashMap::new();
-    for parameter in &signature.parameter_list {
-        let variable_name = &parameter.stottr_variable.name;
-        if df_columns.contains(variable_name.as_str()) {
-            df_columns.remove(variable_name.as_str());
-            if !parameter.optional {
-                validate_non_optional_parameter(&df, variable_name)?;
-            }
-            if parameter.non_blank {
-                //TODO handle blanks;
-                validate_non_blank_parameter(&df, variable_name)?;
-            }
-            let column_data_type = infer_validate_and_prepare_column_data_type(
-                df,
-                &parameter,
-                variable_name,
-                options,
-            )?;
+        let mut map = HashMap::new();
+        let empty_path_column_map = HashMap::new();
+        let path_column_map = if let Some(m) = &options.path_column_map {
+            m
+        } else {
+            &empty_path_column_map
+        };
+        for parameter in &signature.parameter_list {
+            let variable_name = &parameter.stottr_variable.name;
+            if df_columns.contains(variable_name.as_str()) {
+                df_columns.remove(variable_name.as_str());
+                if !parameter.optional {
+                    validate_non_optional_parameter(&df, variable_name)?;
+                }
+                if parameter.non_blank {
+                    //TODO handle blanks;
+                    validate_non_blank_parameter(&df, variable_name)?;
+                }
+                let column_data_type = infer_validate_and_prepare_column_data_type(
+                    &mut df,
+                    &parameter,
+                    variable_name,
+                    options,
+                )?;
 
-            map.insert(
-                variable_name.to_string(),
-                MappedColumn::PrimitiveColumn(column_data_type),
-            );
-        } else if options.mint_iris.is_some()
-            && options
-                .mint_iris
-                .as_ref()
-                .unwrap()
-                .contains_key(variable_name)
-        {
-            mint_iri(
-                df,
-                variable_name,
-                &parameter.ptype,
-                options
+                map.insert(
+                    variable_name.to_string(),
+                    MappedColumn::PrimitiveColumn(column_data_type),
+                );
+            } else if let Some(path_column) = path_column_map.get(variable_name) {
+                let path_series = Series::new("Path", [path_column.path.clone()]);
+                let use_df = match &path_column.part {
+                    Part::Subject => {
+                        if let Some(df) = &self.object_property_triples {
+                            if path_series
+                                .is_in(&df.column(variable_name).unwrap().unique().unwrap())
+                                .unwrap()
+                                .any()
+                            {
+                                df
+                            } else if let Some(df) = &self.data_property_triples {
+                                df
+                            } else {
+                                panic!("Should not happen")
+                            }
+                        } else if let Some(df) = &self.data_property_triples {
+                            df
+                        } else {
+                            panic!("Should also not happen")
+                        }
+                    }
+                    Part::Object => self.object_property_triples.as_ref().unwrap(),
+                };
+
+                let mut filtered_df = use_df
+                    .filter(&use_df.column("Path").unwrap().is_in(&path_series).unwrap())
+                    .unwrap()
+                    .select(["Key", "Path", &path_column.part.to_string()])
+                    .unwrap();
+                filtered_df
+                    .rename(&path_column.part.to_string(), variable_name)
+                    .unwrap();
+                df.with_column(path_series).unwrap();
+                df = df
+                    .join(
+                        &filtered_df,
+                        ["Key", "Path"],
+                        ["Key", "Path"],
+                        JoinType::Left,
+                        None,
+                    )
+                    .unwrap()
+                    .drop("Path")
+                    .unwrap();
+            } else if options.mint_iris.is_some()
+                && options
                     .mint_iris
                     .as_ref()
                     .unwrap()
-                    .get(variable_name)
-                    .unwrap(),
-            );
-            map.insert(
-                variable_name.to_string(),
-                MappedColumn::PrimitiveColumn(PrimitiveColumn {
-                    rdf_node_type: RDFNodeType::IRI,
-                }),
-            );
-        } else {
-            return Err(MappingError::MissingParameterColumn(
-                variable_name.to_string(),
+                    .contains_key(variable_name)
+            {
+                mint_iri(
+                    &mut df,
+                    variable_name,
+                    &parameter.ptype,
+                    options
+                        .mint_iris
+                        .as_ref()
+                        .unwrap()
+                        .get(variable_name)
+                        .unwrap(),
+                );
+                map.insert(
+                    variable_name.to_string(),
+                    MappedColumn::PrimitiveColumn(PrimitiveColumn {
+                        rdf_node_type: RDFNodeType::IRI,
+                    }),
+                );
+            } else {
+                return Err(MappingError::MissingParameterColumn(
+                    variable_name.to_string(),
+                ));
+            }
+        }
+        if !df_columns.is_empty() {
+            return Err(MappingError::ContainsIrrelevantColumns(
+                df_columns.iter().map(|x| x.to_string()).collect(),
             ));
         }
+        Ok((df, map))
     }
-    if !df_columns.is_empty() {
-        return Err(MappingError::ContainsIrrelevantColumns(
-            df_columns.iter().map(|x| x.to_string()).collect(),
-        ));
-    }
-    Ok(map)
 }
 
 fn infer_validate_and_prepare_column_data_type(
