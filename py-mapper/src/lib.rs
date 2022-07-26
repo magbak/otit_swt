@@ -7,10 +7,10 @@ use crate::error::PyMapperError;
 use crate::to_rust::polars_df_to_rust_df;
 use mapper::document::document_from_str;
 use mapper::errors::MapperError;
-use mapper::mapping::MintingOptions as RustMintingOptions;
 use mapper::mapping::ExpandOptions as RustExpandOptions;
-use mapper::mapping::PathColumn as RustPathColumn;
+use mapper::mapping::MintingOptions as RustMintingOptions;
 use mapper::mapping::Part as RustPart;
+use mapper::mapping::PathColumn as RustPathColumn;
 use mapper::mapping::{ListLength, Mapping as InnerMapping, SuffixGenerator};
 use mapper::templates::TemplateDataset;
 use pyo3::basic::CompareOp;
@@ -171,12 +171,14 @@ pub struct PathColumn {
 
 impl PathColumn {
     fn to_rust_path_column(&self) -> RustPathColumn {
-        RustPathColumn { path: self.path.clone(), part: match self.part {
-            Part::Subject => {RustPart::Subject}
-            Part::Object => {RustPart::Object}
-        } }
+        RustPathColumn {
+            path: self.path.clone(),
+            part: match self.part {
+                Part::Subject => RustPart::Subject,
+                Part::Object => RustPart::Object,
+            },
+        }
     }
-    
 }
 
 #[pyclass]
@@ -210,7 +212,7 @@ impl ExpandOptions {
         RustExpandOptions {
             language_tags: self.language_tags.clone(),
             path_column_map,
-            mint_iris
+            mint_iris,
         }
     }
 }
@@ -265,8 +267,8 @@ impl Mapping {
     ) -> PyResult<()> {
         let df = polars_df_to_rust_df(&df)?;
         let options = match options {
-            None => {Default::default()}
-            Some(o) => {o.to_rust_expand_options()}
+            None => Default::default(),
+            Some(o) => o.to_rust_expand_options(),
         };
         let _report = self
             .inner

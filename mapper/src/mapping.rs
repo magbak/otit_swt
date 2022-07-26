@@ -10,9 +10,7 @@ use crate::ast::{
 use crate::constants::{BLANK_NODE_IRI, NONE_IRI, OTTR_TRIPLE};
 use crate::document::document_from_str;
 use crate::mapping::errors::MappingError;
-use crate::mapping::validation_inference::{
-    MappedColumn, PrimitiveColumn, RDFNodeType,
-};
+use crate::mapping::validation_inference::{MappedColumn, PrimitiveColumn, RDFNodeType};
 use crate::templates::TemplateDataset;
 use ntriples_write::write_ntriples;
 use oxrdf::vocab::xsd;
@@ -46,7 +44,8 @@ pub enum Part {
 impl Display for Part {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
-            f, "{}",
+            f,
+            "{}",
             match self {
                 Part::Subject => {
                     "subject"
