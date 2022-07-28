@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod flight_sql {
-    tonic::include_proto!("arrow.flight.protocol.sql");
-}
-
 use crate::timeseries_database::TimeSeriesQueryable;
 use crate::timeseries_query::TimeSeriesQuery;
 use arrow2::io::flight as flight2;
