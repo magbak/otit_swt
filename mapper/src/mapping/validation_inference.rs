@@ -83,7 +83,7 @@ impl Mapping {
                 path_series = path_series.cast(&DataType::Categorical(None)).unwrap();
 
 
-                let mut use_df = match &path_column.part {
+                let use_df = match &path_column.part {
                     Part::Subject => {
                         if let Some(df) = &self.object_property_triples {
                             if path_series

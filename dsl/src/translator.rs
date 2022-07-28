@@ -7,7 +7,7 @@ mod triples_template;
 
 use crate::ast::TsQuery;
 use crate::connective_mapping::ConnectiveMapping;
-use crate::costants::{HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, TIMESTAMP_VARIABLE_NAME};
+use crate::costants::{HAS_DATA_POINT, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, TIMESTAMP_VARIABLE_NAME};
 use oxrdf::{NamedNode, Variable};
 use spargebra::algebra::{Expression, GraphPattern};
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
@@ -234,7 +234,7 @@ impl Translator {
             Variable::new_unchecked(format!("{}_datapoint", timeseries_variable.as_str()));
         let has_datapoint_triple = TriplePattern {
             subject: TermPattern::Variable(timeseries_variable.clone()),
-            predicate: NamedNodePattern::NamedNode(NamedNode::new_unchecked(HAS_TIMESERIES)),
+            predicate: NamedNodePattern::NamedNode(NamedNode::new_unchecked(HAS_DATA_POINT)),
             object: TermPattern::Variable(datapoint_variable.clone()),
         };
 
@@ -247,7 +247,7 @@ impl Translator {
         };
         let timestamp_variable = Variable::new_unchecked(TIMESTAMP_VARIABLE_NAME);
         let has_timestamp_triple = TriplePattern {
-            subject: TermPattern::Variable(timeseries_variable.clone()),
+            subject: TermPattern::Variable(datapoint_variable.clone()),
             predicate: NamedNodePattern::NamedNode(NamedNode::new_unchecked(HAS_TIMESTAMP)),
             object: TermPattern::Variable(timestamp_variable),
         };

@@ -16,6 +16,7 @@ pub(crate) fn find_all_groupby_pushdowns(
     time_series_queries: &mut Vec<TimeSeriesQuery>,
     variable_constraints: &VariableConstraints,
 ) {
+    assert!(static_query_df.height() > 0);
     if let Query::Select {
         dataset: _,
         pattern,

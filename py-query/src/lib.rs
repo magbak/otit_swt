@@ -89,12 +89,14 @@ impl Engine {
         }
     }
 
-    pub fn name_predicate(&mut self, name_predicate:&str) {
+    pub fn name_predicate(&mut self, name_predicate:&str) -> PyResult<()> {
         self.name_predicate = Some(name_predicate.into());
+        Ok(())
     }
 
-    pub fn connective_mapping(&mut self, map: HashMap<String, String>) {
+    pub fn connective_mapping(&mut self, map: HashMap<String, String>) -> PyResult<()> {
         self.connective_mapping = Some(ConnectiveMapping {map});
+        Ok(())
     }
 
     pub fn execute_dsl_query(&mut self, py: Python<'_>, query:&str) -> PyResult<PyObject> {
@@ -103,6 +105,7 @@ impl Engine {
         let use_type_name_template = type_name_template(self.name_predicate.as_ref().unwrap());
         let mut translator = Translator::new(use_name_template, use_type_name_template, self.connective_mapping.as_ref().unwrap().clone());
         let sparql = translator.translate(&parsed).to_string();
+        println!("Q: {}", sparql);
         self.execute_hybrid_query(py, &sparql)
     }
 }
