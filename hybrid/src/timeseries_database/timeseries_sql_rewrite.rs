@@ -416,7 +416,7 @@ impl TimeSeriesTable {
                     if c.as_str() == DATETIME_AS_SECONDS {
                         SimpleExpr::FunctionCall(
                             Function::Custom(Rc::new(Name::Function("UNIX_TIMESTAMP".to_string()))),
-                            vec![mapped_e],
+                            vec![mapped_e, SimpleExpr::Value(Value::String(Some(Box::new("YYYY-MM-DD HH:MI:SS.FFF".to_string()))))],
                         )
                     } else {
                         todo!("Fix custom {}", c)
