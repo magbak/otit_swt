@@ -1,3 +1,4 @@
 polars
 pyarrow
 rdflib
+pandas
