@@ -63,10 +63,11 @@ def test_dsl_query(dremio_testdata, oxigraph_testdata):
 
     df = engine.execute_dsl_query("""
     BigWidget."ImportantSensor"
-    from 2021-12-01T00:00:01+01:00
-    to 2021-12-02T00:00:01+01:00
+    from 2022-06-01T08:46:53+00:00
+    to 2023-12-02T00:00:01+00:00
     aggregate mean 5s
     """)
-    expected_csv = TESTDATA_PATH / "expected_simple_query.csv"
+    expected_csv = TESTDATA_PATH / "expected_dsl_query.csv"
+    df.to_csv(expected_csv)
     expected_df = pl.read_csv(expected_csv, parse_dates=True)
     pl.testing.assert_frame_equal(df, expected_df, check_dtype=False)
