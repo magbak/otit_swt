@@ -281,13 +281,13 @@ impl TimeSeriesTable {
             Expression::Less(left, right) => {
                 SimpleExpr::Binary(
                     Box::new(self.sparql_expression_to_sql_expression(
-                        right,
+                        left,
                         variable_column_name_map,
                         table_name,
                     )?),
                     BinOper::SmallerThan,
                     Box::new(self.sparql_expression_to_sql_expression(
-                        left,
+                        right,
                         variable_column_name_map,
                         table_name,
                     )?),
