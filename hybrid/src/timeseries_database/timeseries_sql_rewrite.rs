@@ -204,8 +204,7 @@ impl TimeSeriesTable {
                     xsd::STRING => Value::String(Some(Box::new(v.to_string()))),
                     xsd::DATE_TIME => {
                         if let Ok(dt) = v.parse::<NaiveDateTime>() {
-                            let dt_with_tz_utc: DateTime<Utc> = Utc.from_utc_datetime(&dt);
-                            Value::ChronoDateTimeUtc(Some(Box::new(dt_with_tz_utc)))
+                            Value::ChronoDateTime(Some(Box::new(dt)))
                         } else if let Ok(dt) = v.parse::<DateTime<Utc>>() {
                             Value::ChronoDateTimeUtc(Some(Box::new(dt)))
                         } else {
