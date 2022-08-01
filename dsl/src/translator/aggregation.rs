@@ -34,18 +34,24 @@ impl Translator {
                 use_mag = duration_nanoseconds as u64;
             }
 
-            let grouping_col_expression = Expression::FunctionCall(
-                Function::Floor,
-                vec![Expression::Divide(
-                    Box::new(Expression::FunctionCall(
-                        Function::Custom(NamedNode::new_unchecked(use_to_func)),
-                        vec![timestamp_variable_expression.clone()],
-                    )),
-                    Box::new(Expression::Literal(Literal::new_typed_literal(
-                        use_mag.to_string(),
-                        xsd::UNSIGNED_LONG,
-                    ))),
-                )],
+            let grouping_col_expression = Expression::Multiply(
+                Box::new(Expression::FunctionCall(
+                    Function::Floor,
+                    vec![Expression::Divide(
+                        Box::new(Expression::FunctionCall(
+                            Function::Custom(NamedNode::new_unchecked(use_to_func)),
+                            vec![timestamp_variable_expression.clone()],
+                        )),
+                        Box::new(Expression::Literal(Literal::new_typed_literal(
+                            use_mag.to_string(),
+                            xsd::UNSIGNED_LONG,
+                        ))),
+                    )],
+                )),
+                Box::new(Expression::Literal(Literal::new_typed_literal(
+                    use_mag.to_string(),
+                    xsd::UNSIGNED_LONG,
+                ))),
             );
             let timestamp_grouping_variable =
                 Variable::new_unchecked(format!("{}_grouping", TIMESTAMP_VARIABLE_NAME));
