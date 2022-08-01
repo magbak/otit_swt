@@ -1,7 +1,7 @@
 mod common;
 
 use hybrid::orchestrator::execute_hybrid_query;
-use hybrid::simple_in_memory_timeseries::InMemoryTimeseriesDatabase;
+use hybrid::timeseries_database::simple_in_memory_timeseries::InMemoryTimeseriesDatabase;
 use hybrid::splitter::parse_sparql_select_query;
 use hybrid::static_sparql::execute_sparql_query;
 use log::debug;

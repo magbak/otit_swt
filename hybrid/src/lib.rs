@@ -13,7 +13,6 @@ pub mod orchestrator;
 pub mod preprocessing;
 pub mod query_context;
 pub mod rewriting;
-pub mod simple_in_memory_timeseries;
 mod sparql_result_to_polars;
 pub mod splitter;
 pub mod static_sparql;

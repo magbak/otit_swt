@@ -2,8 +2,8 @@ use crate::constants::DATETIME_AS_SECONDS;
 use crate::timeseries_query::TimeSeriesQuery;
 use log::debug;
 use oxrdf::vocab::xsd;
-use oxrdf::{NamedNode, Variable};
-use polars::export::chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
+use oxrdf::NamedNode;
+use polars::export::chrono::{DateTime, NaiveDateTime, Utc};
 use sea_query::{Alias, BinOper, ColumnRef, Function, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query::{Expr as SeaExpr, Iden, UnOper, Value};
 use spargebra::algebra::{AggregateExpression, Expression};
@@ -155,20 +155,22 @@ impl TimeSeriesTable {
                 grouping
                     .by
                     .iter()
-                    .map(|x| ColumnRef::TableColumn(
+                    .map(|x| {
+                        ColumnRef::TableColumn(
                             Rc::new(inner_query_name.clone()),
                             Rc::new(Name::Column(x.as_str().to_string())),
-                        ))
+                        )
+                    })
                     .collect::<Vec<ColumnRef>>(),
             );
             for v in &grouping.by {
                 outer_query.expr_as(
-                        SimpleExpr::Column(ColumnRef::TableColumn(
-                            Rc::new(inner_query_name.clone()),
-                            Rc::new(Name::Column(v.as_str().to_string())),
-                        )),
-                        Alias::new(v.as_str()),
-                    );
+                    SimpleExpr::Column(ColumnRef::TableColumn(
+                        Rc::new(inner_query_name.clone()),
+                        Rc::new(Name::Column(v.as_str().to_string())),
+                    )),
+                    Alias::new(v.as_str()),
+                );
             }
             inner_query = outer_query;
         }
@@ -228,7 +230,7 @@ impl TimeSeriesTable {
                         ))
                     } else {
                         SimpleExpr::Column(ColumnRef::Column(Rc::new(Name::Column(
-                            found_v.to_string()
+                            found_v.to_string(),
                         ))))
                     }
                 } else {
@@ -277,21 +279,19 @@ impl TimeSeriesTable {
                     table_name,
                 )?),
             ),
-            Expression::Less(left, right) => {
-                SimpleExpr::Binary(
-                    Box::new(self.sparql_expression_to_sql_expression(
-                        left,
-                        variable_column_name_map,
-                        table_name,
-                    )?),
-                    BinOper::SmallerThan,
-                    Box::new(self.sparql_expression_to_sql_expression(
-                        right,
-                        variable_column_name_map,
-                        table_name,
-                    )?),
-                )
-            }
+            Expression::Less(left, right) => SimpleExpr::Binary(
+                Box::new(self.sparql_expression_to_sql_expression(
+                    left,
+                    variable_column_name_map,
+                    table_name,
+                )?),
+                BinOper::SmallerThan,
+                Box::new(self.sparql_expression_to_sql_expression(
+                    right,
+                    variable_column_name_map,
+                    table_name,
+                )?),
+            ),
             Expression::LessOrEqual(left, right) => {
                 SimpleExpr::Binary(
                     Box::new(self.sparql_expression_to_sql_expression(
@@ -415,7 +415,12 @@ impl TimeSeriesTable {
                     if c.as_str() == DATETIME_AS_SECONDS {
                         SimpleExpr::FunctionCall(
                             Function::Custom(Rc::new(Name::Function("UNIX_TIMESTAMP".to_string()))),
-                            vec![mapped_e, SimpleExpr::Value(Value::String(Some(Box::new("YYYY-MM-DD HH:MI:SS.FFF".to_string()))))],
+                            vec![
+                                mapped_e,
+                                SimpleExpr::Value(Value::String(Some(Box::new(
+                                    "YYYY-MM-DD HH:MI:SS.FFF".to_string(),
+                                )))),
+                            ],
                         )
                     } else {
                         todo!("Fix custom {}", c)
@@ -430,6 +435,7 @@ impl TimeSeriesTable {
             }
         })
     }
+    //TODO: Support distinct in aggregates.. how???
     fn sparql_aggregate_expression_to_sql_expression(
         &self,
         agg: &AggregateExpression,
@@ -437,7 +443,7 @@ impl TimeSeriesTable {
         table_name: Option<&Name>,
     ) -> Result<SimpleExpr, TimeSeriesQueryToSQLError> {
         Ok(match agg {
-            AggregateExpression::Count { expr, distinct } => {
+            AggregateExpression::Count { expr, distinct: _ } => {
                 if let Some(some_expr) = expr {
                     SimpleExpr::FunctionCall(
                         Function::Count,
@@ -451,7 +457,7 @@ impl TimeSeriesTable {
                     todo!("")
                 }
             }
-            AggregateExpression::Sum { expr, distinct } => SimpleExpr::FunctionCall(
+            AggregateExpression::Sum { expr, distinct: _ } => SimpleExpr::FunctionCall(
                 Function::Sum,
                 vec![self.sparql_expression_to_sql_expression(
                     expr,
@@ -459,7 +465,7 @@ impl TimeSeriesTable {
                     table_name,
                 )?],
             ),
-            AggregateExpression::Avg { expr, distinct } => SimpleExpr::FunctionCall(
+            AggregateExpression::Avg { expr, distinct: _ } => SimpleExpr::FunctionCall(
                 Function::Avg,
                 vec![self.sparql_expression_to_sql_expression(
                     expr,
@@ -467,7 +473,7 @@ impl TimeSeriesTable {
                     table_name,
                 )?],
             ),
-            AggregateExpression::Min { expr, distinct } => SimpleExpr::FunctionCall(
+            AggregateExpression::Min { expr, distinct: _ } => SimpleExpr::FunctionCall(
                 Function::Min,
                 vec![self.sparql_expression_to_sql_expression(
                     expr,
@@ -475,7 +481,7 @@ impl TimeSeriesTable {
                     table_name,
                 )?],
             ),
-            AggregateExpression::Max { expr, distinct } => SimpleExpr::FunctionCall(
+            AggregateExpression::Max { expr, distinct: _ } => SimpleExpr::FunctionCall(
                 Function::Max,
                 vec![self.sparql_expression_to_sql_expression(
                     expr,
@@ -484,19 +490,22 @@ impl TimeSeriesTable {
                 )?],
             ),
             AggregateExpression::GroupConcat {
-                expr,
-                distinct,
-                separator,
+                expr: _,
+                distinct: _,
+                separator: _,
             } => {
                 todo!("")
             }
-            AggregateExpression::Sample { expr, distinct } => {
+            AggregateExpression::Sample {
+                expr: _,
+                distinct: _,
+            } => {
                 todo!("")
             }
             AggregateExpression::Custom {
-                expr,
-                distinct,
-                name,
+                expr: _,
+                distinct: _,
+                name: _,
             } => {
                 todo!("")
             }

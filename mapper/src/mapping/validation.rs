@@ -1,10 +1,10 @@
+use super::Mapping;
+use crate::mapping::errors::MappingError;
 use polars_core::datatypes::DataType;
 use polars_core::frame::DataFrame;
-use crate::mapping::errors::MappingError;
-use super::Mapping;
 
 impl Mapping {
-pub(crate) fn validate_dataframe(&mut self, df: &mut DataFrame) -> Result<(), MappingError> {
+    pub(crate) fn validate_dataframe(&mut self, df: &mut DataFrame) -> Result<(), MappingError> {
         if !df.get_column_names().contains(&"Key") {
             return Err(MappingError::MissingKeyColumn);
         }

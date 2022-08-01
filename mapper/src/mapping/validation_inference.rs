@@ -82,12 +82,18 @@ impl Mapping {
                 toggle_string_cache(true);
                 path_series = path_series.cast(&DataType::Categorical(None)).unwrap();
 
-
                 let use_df = match &path_column.part {
                     Part::Subject => {
                         if let Some(df) = &self.object_property_triples {
                             if path_series
-                                .is_in(&df.column(variable_name).unwrap().cast(&DataType::Categorical(None)).unwrap().unique().unwrap())
+                                .is_in(
+                                    &df.column(variable_name)
+                                        .unwrap()
+                                        .cast(&DataType::Categorical(None))
+                                        .unwrap()
+                                        .unique()
+                                        .unwrap(),
+                                )
                                 .unwrap()
                                 .any()
                             {
@@ -118,11 +124,13 @@ impl Mapping {
                             .unwrap(),
                     )
                     .unwrap();
-                join_df.with_column(
+                join_df
+                    .with_column(
                         join_df
                             .column("Key")
                             .unwrap()
-                            .cast(&DataType::Categorical(None)).unwrap(),
+                            .cast(&DataType::Categorical(None))
+                            .unwrap(),
                     )
                     .unwrap();
 
@@ -134,7 +142,13 @@ impl Mapping {
                     .unwrap();
 
                 df.with_column(path_series).unwrap();
-                df.with_column(df.column("Key").unwrap().cast(&DataType::Categorical(None)).unwrap()).unwrap();
+                df.with_column(
+                    df.column("Key")
+                        .unwrap()
+                        .cast(&DataType::Categorical(None))
+                        .unwrap(),
+                )
+                .unwrap();
                 df = df
                     .join(
                         &join_df,
@@ -147,15 +161,24 @@ impl Mapping {
                     .drop("Path")
                     .unwrap();
                 toggle_string_cache(false);
-                df.with_column(df.column("Key").unwrap().cast(&DataType::Utf8).unwrap()).unwrap();
-                df.with_column(df.column(variable_name).unwrap().cast(&DataType::Utf8).unwrap()).unwrap();
+                df.with_column(df.column("Key").unwrap().cast(&DataType::Utf8).unwrap())
+                    .unwrap();
+                df.with_column(
+                    df.column(variable_name)
+                        .unwrap()
+                        .cast(&DataType::Utf8)
+                        .unwrap(),
+                )
+                .unwrap();
                 let nullsum = df.column(variable_name).unwrap().null_count();
                 if nullsum > 0 {
                     warn!("Path column {} has {} non-matches", variable_name, nullsum);
                 }
                 map.insert(
                     variable_name.to_string(),
-                    MappedColumn::PrimitiveColumn(PrimitiveColumn{ rdf_node_type: RDFNodeType::IRI }),
+                    MappedColumn::PrimitiveColumn(PrimitiveColumn {
+                        rdf_node_type: RDFNodeType::IRI,
+                    }),
                 );
             } else if options.mint_iris.is_some()
                 && options

@@ -1,8 +1,8 @@
 use crate::ast::{ConstantTerm, PType};
 use oxrdf::IriParseError;
+use polars_core::frame::DataFrame;
 use polars_core::prelude::{DataType, Series};
 use std::fmt::{Display, Formatter};
-use polars_core::frame::DataFrame;
 use thiserror::Error;
 
 #[derive(Error, Debug)]

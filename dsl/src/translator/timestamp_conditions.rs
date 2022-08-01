@@ -29,7 +29,7 @@ impl Translator {
                 Box::new(Expression::Literal(Literal::new_typed_literal(
                     format!("{}", to_ts.format(XSD_DATETIME_FORMAT)),
                     xsd::DATE_TIME,
-                )))
+                ))),
             );
             timestamp_conditions.push(gteq);
         }

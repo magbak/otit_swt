@@ -1,5 +1,6 @@
 pub mod arrow_flight_sql_database;
 pub mod timeseries_sql_rewrite;
+pub mod simple_in_memory_timeseries;
 
 use crate::timeseries_query::TimeSeriesQuery;
 use async_trait::async_trait;

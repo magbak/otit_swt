@@ -7,7 +7,9 @@ mod triples_template;
 
 use crate::ast::TsQuery;
 use crate::connective_mapping::ConnectiveMapping;
-use crate::costants::{HAS_DATA_POINT, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, TIMESTAMP_VARIABLE_NAME};
+use crate::costants::{
+    HAS_DATA_POINT, HAS_TIMESERIES, HAS_TIMESTAMP, HAS_VALUE, TIMESTAMP_VARIABLE_NAME,
+};
 use oxrdf::{NamedNode, Variable};
 use spargebra::algebra::{Expression, GraphPattern};
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};

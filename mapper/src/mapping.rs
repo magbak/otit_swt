@@ -2,8 +2,8 @@ pub mod errors;
 pub mod export_triples;
 mod mint;
 mod ntriples_write;
-mod validation_inference;
 mod validation;
+mod validation_inference;
 
 use crate::ast::{
     ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Signature, StottrTerm,
@@ -13,6 +13,7 @@ use crate::document::document_from_str;
 use crate::mapping::errors::MappingError;
 use crate::mapping::validation_inference::{MappedColumn, PrimitiveColumn, RDFNodeType};
 use crate::templates::TemplateDataset;
+use log::debug;
 use ntriples_write::write_ntriples;
 use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
@@ -28,7 +29,6 @@ use std::fmt::{Display, Formatter};
 use std::io::Write;
 use std::ops::{Deref, Not};
 use std::path::Path;
-use log::debug;
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
