@@ -8,6 +8,7 @@ use std::ops::{Div, Mul};
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use polars_core::datatypes::AnyValue;
+use polars::export::chrono::{NaiveDateTime, Utc};
 
 const OPCUA_AGG_FUNC_AVERAGE: u32 = 2342;
 const OPCUA_AGG_FUNC_COUNT: u32 = 2352;
@@ -33,8 +34,10 @@ impl OPCUADataProvider {
             } else {panic!("")};
             let mut df = self.frames.get(&idstring).unwrap().clone();
             let mut lf = df.lazy();
-            lf = lf.filter(col("timestamp").gt_eq(lit(start_time.as_chrono().to_string().parse::<PolarsDateTime<PolarsUtc>>().unwrap().naive_utc())));
-            lf = lf.filter(col("timestamp").lt_eq(lit(end_time.as_chrono().to_string().parse::<PolarsDateTime<PolarsUtc>>().unwrap().naive_utc())));
+            let start = start_time.as_chrono().to_string().parse::<PolarsDateTime<PolarsUtc>>().unwrap().naive_utc();
+            let stop = end_time.as_chrono().to_string().parse::<PolarsDateTime<PolarsUtc>>().unwrap().naive_utc();
+            lf = lf.filter(col("timestamp").gt_eq(lit(start)));
+            lf = lf.filter(col("timestamp").lt_eq(lit(stop)));
             if let Some(aggregation_types) = &aggregation_types {
             lf = lf.with_column(
                 col("timestamp")
@@ -70,25 +73,28 @@ impl OPCUADataProvider {
             for _ in 0..df.height() {
                 let value_variant = match v_iter.next().unwrap() {
                     AnyValue::Float64(f) => {Variant::Double(f)}
+                    AnyValue::Int64(i) => {Variant::Int64(i)}
                     _ => {todo!("Very rudimentary value type support!")}
                 };
 
-                let timestamp = match ts_iter.next().unwrap() {
+                let naive_date_time = match ts_iter.next().unwrap() {
                     AnyValue::Datetime(number, timeunit, _) => {
                         match timeunit {
                             TimeUnit::Nanoseconds => {
-                                DateTime::from(number / 1_000_000_000)
+                                NaiveDateTime::from_timestamp(number / 1_000_000_000, (number % 1_000_000_000) as u32)
                             }
                             TimeUnit::Microseconds => {
-                                DateTime::from(number / 1_000_000)
+                                NaiveDateTime::from_timestamp(number / 1_000_000, (number % 1_000_000) as u32)
                             }
                             TimeUnit::Milliseconds => {
-                                DateTime::from(number / 1_000_000_000)
+                                NaiveDateTime::from_timestamp(number / 1_000, (number % 1_000) as u32)
                             }
                         }
                     },
                     _ => {panic!("Something is not right!")}
                 };
+
+                let timestamp = DateTime::from(DateTimeUtc::from_utc(naive_date_time, Utc));
 
                 let dv = DataValue{
                     value: Some(value_variant),

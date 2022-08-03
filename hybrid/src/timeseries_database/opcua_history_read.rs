@@ -1,17 +1,19 @@
 use crate::constants::DATETIME_AS_SECONDS;
 use crate::timeseries_database::TimeSeriesQueryable;
 use crate::timeseries_query::TimeSeriesQuery;
-use opcua_client::prelude::{DateTime, AggregateConfiguration, AttributeService, ByteString, Client, ClientBuilder, EndpointDescription, ExtensionObject, HistoryReadAction, HistoryReadResult, HistoryReadValueId, Identifier, IdentityToken, MessageSecurityMode, NodeId, QualifiedName, ReadProcessedDetails, Session, TimestampsToReturn, UAString, UserTokenPolicy, ReadRawModifiedDetails};
+use opcua_client::prelude::{DateTime, AggregateConfiguration, AttributeService, ByteString, Client, ClientBuilder, EndpointDescription, ExtensionObject, HistoryReadAction, HistoryReadResult, HistoryReadValueId, Identifier, IdentityToken, MessageSecurityMode, NodeId, QualifiedName, ReadProcessedDetails, Session, TimestampsToReturn, UAString, UserTokenPolicy, ReadRawModifiedDetails, HistoryData, BinaryEncoder, Variant};
 use oxrdf::vocab::xsd;
 use oxrdf::{Literal, Variable};
 use polars::export::chrono::{DateTime as ChronoDateTime, NaiveDateTime, TimeZone, Utc};
 use polars_core::frame::DataFrame;
 use spargebra::algebra::{AggregateExpression, Expression, Function};
 use std::error::Error;
+use std::process::id;
 use std::sync::{Arc, RwLock};
-use polars_core::prelude::DataType;
+use polars_core::prelude::{AnyValue, DataType, NamedFrom};
 use polars_core::series::Series;
 use async_trait::async_trait;
+use polars::prelude::{concat, IntoLazy};
 
 const OPCUA_AGG_FUNC_AVERAGE: u32 = 2342;
 const OPCUA_AGG_FUNC_COUNT: u32 = 2352;
@@ -67,10 +69,15 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
         let mut processed_details = None;
         let mut raw_modified_details = None;
 
-        if tsq.grouping.is_some() {
+        let colnames;
+        let identifiers = &tsq.ids.as_ref().unwrap();
+        if let Some(grouping) = &tsq.grouping {
             processed_details = Some(create_read_processed_details(tsq, start_time, end_time));
+            colnames = grouping.aggregations.iter().map(|(v,_)|v.as_str().to_string()).collect();
+
         } else {
             raw_modified_details = Some(create_raw_details(start_time, end_time));
+            colnames = vec![tsq.value_variable.as_ref().unwrap().variable.as_str().to_string()];
         }
 
         let mut nodes_to_read_vec = vec![];
@@ -85,7 +92,9 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
         }
         //let series = vec![];
         let mut stopped = false;
+        let mut dfs = vec![];
         while !stopped {
+            let mut iter_series_tuples = vec![];
             let action = if let Some(d) = &processed_details {
                 HistoryReadAction::ReadProcessedDetails(d.clone())
             } else if let Some(d) = &raw_modified_details {
@@ -109,11 +118,19 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
             //Now we process the data
             for (i, h) in resp.into_iter().enumerate() {
                 let HistoryReadResult { status_code, continuation_point:_, history_data } = h;
-                println!("Status code: {}", status_code);
-                let series = decode_history_data(history_data);
+                let t = history_data_to_series_tuple(history_data.decode_inner::<HistoryData>(&Default::default()).unwrap());
+                iter_series_tuples.push(t);
+            }
+            for (i,(mut ts, mut val)) in iter_series_tuples.into_iter().enumerate() {
+                let mut identifier_series = Series::new_empty(tsq.identifier_variable.as_ref().unwrap().as_str(), &DataType::Utf8);
+                identifier_series = identifier_series.extend_constant(AnyValue::Utf8(identifiers.get(i).unwrap()), ts.len()).unwrap();
+                val.rename(colnames.get(i).unwrap());
+                ts.rename(tsq.timestamp_variable.as_ref().unwrap().variable.as_str());
+                dfs.push(DataFrame::new(vec![identifier_series, ts, val]).unwrap().lazy());
             }
         }
-        Ok(DataFrame::new(vec![Series::new_empty("hello", &DataType::Float64)]).unwrap())
+
+        Ok(concat(dfs, true).unwrap().collect().unwrap())
     }
 }
 
@@ -154,10 +171,28 @@ let interval_opt = find_grouping_interval(tsq);
     details
 }
 
-fn decode_history_data(ex: ExtensionObject) -> Series {
-    let ExtensionObject { node_id, body } = ex;
-    println!("Exobj: {}", node_id);
-    Series::new_empty("MySeries", &DataType::Float64)
+fn history_data_to_series_tuple(hd: HistoryData) -> (Series, Series) {
+    let HistoryData { data_values } = hd;
+    let data_values_vec = data_values.unwrap();
+    let mut any_value_vec = vec![];
+    let mut ts_value_vec = vec![];
+    for data_value in data_values_vec {
+        if let Some(ts) = data_value.source_timestamp {
+            let polars_datetime = NaiveDateTime::from_timestamp(ts.as_chrono().timestamp(), 0);
+            ts_value_vec.push(polars_datetime);
+        }
+        if let Some(val) = data_value.value {
+            let any_value = match val {
+                Variant::Double(d) => {AnyValue::Float64(d)},
+                Variant::Int64(i) => {AnyValue::Int64(i)},
+                _ => {todo!("Implement: {}", val)}
+            };
+            any_value_vec.push(any_value);
+        }
+    }
+    let timestamps = Series::new("timestamp", ts_value_vec.as_slice());
+    let values = Series::from_any_values("value", any_value_vec.as_slice()).unwrap();
+    (timestamps, values)
 }
 
 fn find_aggregate_types(tsq: &TimeSeriesQuery) -> Option<Vec<NodeId>> {
@@ -277,10 +312,10 @@ fn find_time_condition(
         Expression::GreaterOrEqual(left, right) => {
             match find_time {
                 FindTime::Start => {
-                    //Must have form literal_date >= variable
-                    if let Expression::Variable(v) = right.as_ref() {
+                    //Must have form variable >= literal_date
+                    if let Expression::Variable(v) = left.as_ref() {
                         if v == timestamp_variable {
-                            datetime_from_expression(left)
+                            datetime_from_expression(right)
                         } else {
                             None
                         }
@@ -289,10 +324,10 @@ fn find_time_condition(
                     }
                 }
                 FindTime::End => {
-                    //Must have form variable >= literal_date
-                    if let Expression::Variable(v) = left.as_ref() {
+                    //Must have form literal_date >= variable
+                    if let Expression::Variable(v) = right.as_ref() {
                         if v == timestamp_variable {
-                            datetime_from_expression(right)
+                            datetime_from_expression(left)
                         } else {
                             None
                         }
@@ -308,10 +343,10 @@ fn find_time_condition(
         Expression::LessOrEqual(left, right) => {
             match find_time {
                 FindTime::Start => {
-                    //Must have form variable <= literal_date
-                    if let Expression::Variable(v) = left.as_ref() {
+                    //Must have form literal_date <= variable
+                    if let Expression::Variable(v) = right.as_ref() {
                         if v == timestamp_variable {
-                            datetime_from_expression(right)
+                            datetime_from_expression(left)
                         } else {
                             None
                         }
@@ -320,10 +355,10 @@ fn find_time_condition(
                     }
                 }
                 FindTime::End => {
-                    //Must have form literal_date <= variable
-                    if let Expression::Variable(v) = right.as_ref() {
+                    //Must have form variable <= literal_date
+                    if let Expression::Variable(v) = left.as_ref() {
                         if v == timestamp_variable {
-                            datetime_from_expression(left)
+                            datetime_from_expression(right)
                         } else {
                             None
                         }

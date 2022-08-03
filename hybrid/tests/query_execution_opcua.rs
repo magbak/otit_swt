@@ -14,8 +14,8 @@ use tokio::runtime::Builder;
 use hybrid::orchestrator::execute_hybrid_query;
 use hybrid::timeseries_database::opcua_history_read::OPCUAHistoryRead;
 use opcua_server::prelude::*;
-use polars::io::SerReader;
-use polars::prelude::CsvReader;
+use polars::io::{SerReader, SerWriter};
+use polars::prelude::{CsvReader, CsvWriter};
 use polars_core::frame::DataFrame;
 
 use crate::opcua_data_provider::OPCUADataProvider;
@@ -113,15 +113,13 @@ fn opcua_server_fixture(frames: HashMap<String, DataFrame>) -> JoinHandle<()>{
 
 #[rstest]
 #[serial]
-#[ignore]
-fn test_basic_query(with_testdata: (), use_logger: (), opcua_server_fixture:JoinHandle<()>) {
+fn test_basic_query(with_testdata: (), use_logger: (), opcua_server_fixture:JoinHandle<()>, testdata_path: PathBuf) {
     let _ = with_testdata;
     let _ = use_logger;
     let port = 1234;
     let path = "/";
 
     let endpoint = format!("opc.tcp://{}:{}{}", hostname().unwrap(), port, path);
-    println!("Endpoint: {}", endpoint);
     let mut opcua_tsdb = OPCUAHistoryRead::new(&endpoint, 1);
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -140,11 +138,27 @@ fn test_basic_query(with_testdata: (), use_logger: (), opcua_server_fixture:Join
     let mut builder = Builder::new_multi_thread();
     builder.enable_all();
     let runtime = builder.build().unwrap();
-    let df = runtime.block_on(execute_hybrid_query(
+    let mut df = runtime.block_on(execute_hybrid_query(
         query,
         QUERY_ENDPOINT,
         Box::new(&mut opcua_tsdb),
     ))
     .expect("Hybrid error");
-    println!("DF: {}", df);
+    let mut file_path = testdata_path.clone();
+    file_path.push("expected_basic_query.csv");
+    let file = File::open(file_path.as_path()).expect("Read file problem");
+    let mut expected_df = CsvReader::new(file)
+        .infer_schema(None)
+        .has_header(true)
+        .with_parse_dates(true)
+        .finish()
+        .expect("DF read error");
+    expected_df.with_column(expected_df.column("t").unwrap().cast(&polars::prelude::DataType::Datetime(polars::prelude::TimeUnit::Milliseconds, None)).unwrap()).unwrap();
+    assert_eq!(expected_df, df);
+    //
+    // let file = File::create(file_path.as_path()).expect("could not open file");
+    // let mut writer = CsvWriter::new(file);
+    // writer.finish(&mut df).expect("writeok");
+    //println!("{}", df);
+
 }
