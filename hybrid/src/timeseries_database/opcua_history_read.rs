@@ -1,7 +1,7 @@
 use crate::constants::DATETIME_AS_SECONDS;
 use crate::timeseries_database::TimeSeriesQueryable;
 use crate::timeseries_query::TimeSeriesQuery;
-use opcua_client::prelude::{DateTime, AggregateConfiguration, AttributeService, ByteString, Client, ClientBuilder, EndpointDescription, ExtensionObject, HistoryReadAction, HistoryReadResult, HistoryReadValueId, Identifier, IdentityToken, MessageSecurityMode, NodeId, QualifiedName, ReadProcessedDetails, Session, TimestampsToReturn, UAString, UserTokenPolicy};
+use opcua_client::prelude::{DateTime, AggregateConfiguration, AttributeService, ByteString, Client, ClientBuilder, EndpointDescription, ExtensionObject, HistoryReadAction, HistoryReadResult, HistoryReadValueId, Identifier, IdentityToken, MessageSecurityMode, NodeId, QualifiedName, ReadProcessedDetails, Session, TimestampsToReturn, UAString, UserTokenPolicy, ReadRawModifiedDetails};
 use oxrdf::vocab::xsd;
 use oxrdf::{Literal, Variable};
 use polars::export::chrono::{DateTime as ChronoDateTime, NaiveDateTime, TimeZone, Utc};
@@ -13,11 +13,11 @@ use polars_core::prelude::DataType;
 use polars_core::series::Series;
 use async_trait::async_trait;
 
-const AVERAGE: u32 = 2342;
-const COUNT: u32 = 2352;
-const MINIMUM: u32 = 2346;
-const MAXIMUM: u32 = 2347;
-const TOTAL: u32 = 2344;
+const OPCUA_AGG_FUNC_AVERAGE: u32 = 2342;
+const OPCUA_AGG_FUNC_COUNT: u32 = 2352;
+const OPCUA_AGG_FUNC_MINIMUM: u32 = 2346;
+const OPCUA_AGG_FUNC_MAXIMUM: u32 = 2347;
+const OPCUA_AGG_FUNC_TOTAL: u32 = 2344;
 
 pub struct OPCUAHistoryRead {
     client: Client,
@@ -64,30 +64,15 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
         let start_time = find_time(tsq, &FindTime::Start);
         let end_time = find_time(tsq, &FindTime::End);
 
-        let interval_opt = find_grouping_interval(tsq);
-        let processing_interval = if let Some(interval) = interval_opt {
-            interval
+        let mut processed_details = None;
+        let mut raw_modified_details = None;
+
+        if tsq.grouping.is_some() {
+            processed_details = Some(create_read_processed_details(tsq, start_time, end_time));
         } else {
-            0.0
-        };
+            raw_modified_details = Some(create_raw_details(start_time, end_time));
+        }
 
-        let aggregate_type = find_aggregate_types(tsq);
-
-        let config = AggregateConfiguration {
-            use_server_capabilities_defaults: false,
-            treat_uncertain_as_bad: false,
-            percent_data_bad: 0,
-            percent_data_good: 0,
-            use_sloped_extrapolation: false,
-        };
-
-        let details = ReadProcessedDetails {
-            start_time: start_time.unwrap_or(Default::default()),
-            end_time: end_time.unwrap_or(Default::default()),
-            processing_interval,
-            aggregate_type,
-            aggregate_configuration: config,
-        };
         let mut nodes_to_read_vec = vec![];
         for id in tsq.ids.as_ref().unwrap() {
             let hrvi = HistoryReadValueId{
@@ -101,7 +86,14 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
         //let series = vec![];
         let mut stopped = false;
         while !stopped {
-            let resp = session.history_read(HistoryReadAction::ReadProcessedDetails(details.clone()), TimestampsToReturn::Source, false, nodes_to_read_vec.as_slice()).expect("");
+            let action = if let Some(d) = &processed_details {
+                HistoryReadAction::ReadProcessedDetails(d.clone())
+            } else if let Some(d) = &raw_modified_details {
+                HistoryReadAction::ReadRawModifiedDetails(d.clone())
+            } else {
+                panic!("");
+            };
+            let resp = session.history_read(action, TimestampsToReturn::Source, false, nodes_to_read_vec.as_slice()).expect("");
             //First we set the new continuation points:
             for (i,h) in resp.iter().enumerate() {
                 if h.continuation_point.is_null() {
@@ -123,6 +115,43 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
         }
         Ok(DataFrame::new(vec![Series::new_empty("hello", &DataType::Float64)]).unwrap())
     }
+}
+
+fn create_raw_details(start_time:Option<DateTime>, end_time:Option<DateTime>) -> ReadRawModifiedDetails {
+    ReadRawModifiedDetails {
+        is_read_modified: false,
+        start_time: start_time.unwrap(),
+        end_time: end_time.unwrap(),
+        num_values_per_node: 0,
+        return_bounds: false
+    }
+}
+
+fn create_read_processed_details(tsq: &TimeSeriesQuery, start_time:Option<DateTime>, end_time:Option<DateTime>) -> ReadProcessedDetails {
+    let aggregate_type = find_aggregate_types(tsq);
+
+    let config = AggregateConfiguration {
+        use_server_capabilities_defaults: false,
+        treat_uncertain_as_bad: false,
+        percent_data_bad: 0,
+        percent_data_good: 0,
+        use_sloped_extrapolation: false,
+    };
+let interval_opt = find_grouping_interval(tsq);
+        let processing_interval = if let Some(interval) = interval_opt {
+            interval
+        } else {
+            0.0
+        };
+
+    let details = ReadProcessedDetails {
+        start_time: start_time.unwrap_or(Default::default()),
+        end_time: end_time.unwrap_or(Default::default()),
+        processing_interval,
+        aggregate_type,
+        aggregate_configuration: config,
+    };
+    details
 }
 
 fn decode_history_data(ex: ExtensionObject) -> Series {
@@ -152,7 +181,7 @@ fn find_aggregate_types(tsq: &TimeSeriesQuery) -> Option<Vec<NodeId>> {
                     }
                     NodeId {
                         namespace: 0,
-                        identifier: Identifier::Numeric(COUNT),
+                        identifier: Identifier::Numeric(OPCUA_AGG_FUNC_COUNT),
                     }
                 }
                 AggregateExpression::Sum { expr, distinct } => {
@@ -160,7 +189,7 @@ fn find_aggregate_types(tsq: &TimeSeriesQuery) -> Option<Vec<NodeId>> {
                     assert!(expr_is_ok(expr));
                     NodeId {
                         namespace: 0,
-                        identifier: Identifier::Numeric(TOTAL),
+                        identifier: Identifier::Numeric(OPCUA_AGG_FUNC_TOTAL),
                     }
                 }
                 AggregateExpression::Avg { expr, distinct } => {
@@ -168,7 +197,7 @@ fn find_aggregate_types(tsq: &TimeSeriesQuery) -> Option<Vec<NodeId>> {
                     assert!(expr_is_ok(expr));
                     NodeId {
                         namespace: 0,
-                        identifier: Identifier::Numeric(AVERAGE),
+                        identifier: Identifier::Numeric(OPCUA_AGG_FUNC_AVERAGE),
                     }
                 }
                 AggregateExpression::Min { expr, distinct } => {
@@ -176,7 +205,7 @@ fn find_aggregate_types(tsq: &TimeSeriesQuery) -> Option<Vec<NodeId>> {
                     assert!(expr_is_ok(expr));
                     NodeId {
                         namespace: 0,
-                        identifier: Identifier::Numeric(MINIMUM),
+                        identifier: Identifier::Numeric(OPCUA_AGG_FUNC_MINIMUM),
                     }
                 }
                 AggregateExpression::Max { expr, distinct } => {
@@ -184,7 +213,7 @@ fn find_aggregate_types(tsq: &TimeSeriesQuery) -> Option<Vec<NodeId>> {
                     assert!(expr_is_ok(expr));
                     NodeId {
                         namespace: 0,
-                        identifier: Identifier::Numeric(MAXIMUM),
+                        identifier: Identifier::Numeric(OPCUA_AGG_FUNC_MAXIMUM),
                     }
                 }
                 _ => {

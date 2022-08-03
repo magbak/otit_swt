@@ -569,7 +569,7 @@ pub fn lazy_expression(
                         inner_lf = inner_lf.with_column(
                             col(&first_context.as_str())
                                 .dt()
-                                .nanosecond()
+                                .nanosecond()//TODO: This is wrong, must be fixed..
                                 .alias(context.as_str()),
                         );
                     } else if iri == DATETIME_AS_SECONDS {
@@ -578,7 +578,7 @@ pub fn lazy_expression(
                         inner_lf = inner_lf.with_column(
                             col(&first_context.as_str())
                                 .dt()
-                                .second()
+                                .second() //TODO: This is wrong, must be fixed..
                                 .alias(context.as_str()),
                         );
                     } else if iri == NANOS_AS_DATETIME {
