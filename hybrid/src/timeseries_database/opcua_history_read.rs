@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::constants::DATETIME_AS_SECONDS;
 use crate::timeseries_database::TimeSeriesQueryable;
 use crate::timeseries_query::TimeSeriesQuery;
@@ -69,19 +70,24 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
         let mut processed_details = None;
         let mut raw_modified_details = None;
 
-        let colnames;
-        let identifiers = &tsq.ids.as_ref().unwrap();
+        let mut colnames_identifiers = vec![];
         if let Some(grouping) = &tsq.grouping {
             processed_details = Some(create_read_processed_details(tsq, start_time, end_time));
-            colnames = grouping.aggregations.iter().map(|(v,_)|v.as_str().to_string()).collect();
+            for c in tsq.ids.as_ref().unwrap() {
+                for (v,_) in &grouping.aggregations {
+                    colnames_identifiers.push((v.as_str().to_string(), c.clone()));
+                }
+            }
 
         } else {
             raw_modified_details = Some(create_raw_details(start_time, end_time));
-            colnames = vec![tsq.value_variable.as_ref().unwrap().variable.as_str().to_string()];
+            for c in tsq.ids.as_ref().unwrap() {
+                colnames_identifiers.push((tsq.value_variable.as_ref().unwrap().variable.as_str().to_string(), c.clone()))
+            }
         }
 
         let mut nodes_to_read_vec = vec![];
-        for id in tsq.ids.as_ref().unwrap() {
+        for (_, id) in &colnames_identifiers {
             let hrvi = HistoryReadValueId{
                 node_id: NodeId::new(self.namespace, Identifier::String(UAString::from(id.to_string()))),
                 index_range: UAString::null(),
@@ -94,7 +100,6 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
         let mut stopped = false;
         let mut dfs = vec![];
         while !stopped {
-            let mut iter_series_tuples = vec![];
             let action = if let Some(d) = &processed_details {
                 HistoryReadAction::ReadProcessedDetails(d.clone())
             } else if let Some(d) = &raw_modified_details {
@@ -112,21 +117,44 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                     stopped = true;
                 } else {
                     nodes_to_read_vec.get_mut(i).unwrap().continuation_point = h.continuation_point.clone();
+                    todo!("Continuation points are just halfway implemented...");
                 }
             }
+
+            let mut series_map: HashMap<String, Vec<(Series, Series)>> = HashMap::new();
 
             //Now we process the data
             for (i, h) in resp.into_iter().enumerate() {
                 let HistoryReadResult { status_code, continuation_point:_, history_data } = h;
-                let t = history_data_to_series_tuple(history_data.decode_inner::<HistoryData>(&Default::default()).unwrap());
-                iter_series_tuples.push(t);
-            }
-            for (i,(mut ts, mut val)) in iter_series_tuples.into_iter().enumerate() {
-                let mut identifier_series = Series::new_empty(tsq.identifier_variable.as_ref().unwrap().as_str(), &DataType::Utf8);
-                identifier_series = identifier_series.extend_constant(AnyValue::Utf8(identifiers.get(i).unwrap()), ts.len()).unwrap();
-                val.rename(colnames.get(i).unwrap());
+                let (mut ts, mut val) = history_data_to_series_tuple(history_data.decode_inner::<HistoryData>(&Default::default()).unwrap());
+                let (colname, id) = colnames_identifiers.get(i).unwrap();
                 ts.rename(tsq.timestamp_variable.as_ref().unwrap().variable.as_str());
-                dfs.push(DataFrame::new(vec![identifier_series, ts, val]).unwrap().lazy());
+                val.rename(colname);
+                if let Some(v) = series_map.get_mut(id) {
+                    v.push((ts, val));
+                } else {
+                    series_map.insert(id.clone(), vec![(ts,val)]);
+                }
+            }
+            let mut keys: Vec<String> = series_map.keys().map(|x|x.clone()).collect();
+            keys.sort();
+            for k in keys {
+                let series_vec = series_map.remove(&k).unwrap();
+                let mut first_ts = None;
+                let mut value_vec = vec![];
+                for (i, (ts, val)) in series_vec.into_iter().enumerate() {
+                    if let Some(_) = &first_ts {
+                    } else {
+                        first_ts = Some(ts);
+                    }
+                    value_vec.push(val);
+                };
+                let mut identifier_series = Series::new_empty(tsq.identifier_variable.as_ref().unwrap().as_str(), &DataType::Utf8);
+                identifier_series = identifier_series.extend_constant(AnyValue::Utf8(&k), first_ts.as_ref().unwrap().len()).unwrap();
+                value_vec.push(identifier_series);
+                value_vec.push(first_ts.unwrap());
+                value_vec.sort_by_key(|x|x.name().to_string());
+                dfs.push(DataFrame::new(value_vec).unwrap().lazy())
             }
         }
 
