@@ -301,6 +301,7 @@ fn test_pushdown_group_by_five_second_hybrid_query(
             Box::new(&mut opcua_tsdb),
         ))
         .expect("Hybrid error");
+    df = df.sort(vec!["w", "datetime_seconds"], false).unwrap();
     let mut file_path = testdata_path.clone();
     file_path.push("expected_pushdown_group_by_five_second_hybrid_query.csv");
     let file = File::open(file_path.as_path()).expect("Read file problem");
@@ -313,7 +314,7 @@ fn test_pushdown_group_by_five_second_hybrid_query(
     expected_df
         .with_column(
             expected_df
-                .column("t")
+                .column("datetime_seconds")
                 .unwrap()
                 .cast(&polars::prelude::DataType::Datetime(
                     polars::prelude::TimeUnit::Milliseconds,
@@ -322,6 +323,8 @@ fn test_pushdown_group_by_five_second_hybrid_query(
                 .unwrap(),
         )
         .unwrap();
+    expected_df = expected_df.sort(vec!["w", "datetime_seconds"], false).unwrap();
+
     assert_eq!(expected_df, df);
 
     // let file = File::create(file_path.as_path()).expect("could not open file");

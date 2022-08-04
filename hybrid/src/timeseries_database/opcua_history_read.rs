@@ -577,8 +577,6 @@ fn find_grouping_interval(tsq: &TimeSeriesQuery) -> Option<(String, f64)> {
             }
         }
         if let Some((_, e)) = tsf {
-            println!("Expr {}", e);
-            println!("Expr {:?}", e);
             if let Expression::Multiply(left, right) = e {
                 let n = find_grouping_interval_multiplication(left, right);
                 let out = if n.is_some() {
@@ -604,7 +602,11 @@ fn find_grouping_interval_multiplication(a: &Expression, b: &Expression) -> Opti
                 {
                     if let Function::Custom(nn) = f {
                         if nn.as_str() == DATETIME_AS_SECONDS {
-                            return from_numeric_datatype(lit);
+                            if let Some(f) = from_numeric_datatype(lit) {
+                                return Some(f*1000.0); //Intervals are in milliseconds
+                            } else {
+                                return None
+                            }
                         }
                     }
                 }
