@@ -1,26 +1,24 @@
 mod common;
 mod opcua_data_provider;
 
-use rstest::*;
-use serial_test::serial;
-use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
-use std::{thread, time};
-use std::collections::HashMap;
-use std::fs::File;
-use std::thread::{JoinHandle, sleep};
-use log::debug;
-use tokio::runtime::Builder;
 use hybrid::orchestrator::execute_hybrid_query;
 use hybrid::timeseries_database::opcua_history_read::OPCUAHistoryRead;
+use log::debug;
 use opcua_server::prelude::*;
 use polars::io::{SerReader, SerWriter};
 use polars::prelude::{CsvReader, CsvWriter};
 use polars_core::frame::DataFrame;
+use rstest::*;
+use serial_test::serial;
+use std::collections::HashMap;
+use std::fs::File;
+use std::path::PathBuf;
+use std::thread::{sleep, JoinHandle};
+use std::{thread, time};
+use tokio::runtime::Builder;
 
-use crate::opcua_data_provider::OPCUADataProvider;
 use crate::common::{add_sparql_testdata, start_sparql_container, QUERY_ENDPOINT};
-
+use crate::opcua_data_provider::OPCUADataProvider;
 
 #[fixture]
 fn use_logger() {
@@ -53,7 +51,6 @@ fn sparql_endpoint() {
 
 #[fixture]
 fn with_testdata(sparql_endpoint: (), testdata_path: PathBuf) {
-
     let mut testdata_path = testdata_path.clone();
     testdata_path.push("testdata.sparql");
     let mut builder = Builder::new_multi_thread();
@@ -82,38 +79,61 @@ fn frames(testdata_path: PathBuf) -> HashMap<String, DataFrame> {
 }
 
 #[fixture]
-fn opcua_server_fixture(frames: HashMap<String, DataFrame>) -> JoinHandle<()>{
+fn opcua_server_fixture(frames: HashMap<String, DataFrame>) -> JoinHandle<()> {
     let port = 1234;
     let path = "/";
     //From https://github.com/locka99/opcua/blob/master/docs/server.md
     let server = ServerBuilder::new()
         .application_name("Server Name")
         .application_uri("urn:server_uri")
-        .discovery_urls(vec![format!("opc.tcp://{}:{}{}", hostname().unwrap(), port, path).into()])
+        .discovery_urls(vec![format!(
+            "opc.tcp://{}:{}{}",
+            hostname().unwrap(),
+            port,
+            path
+        )
+        .into()])
         .create_sample_keypair(true)
         .pki_dir("./pki-server")
         .discovery_server_url(None)
         .host_and_port(hostname().unwrap(), port)
         .endpoints(
-            [
-                ("", "/", SecurityPolicy::None, MessageSecurityMode::None, &[ANONYMOUS_USER_TOKEN_ID]),
-            ].iter().map(|v| {
-                (v.0.to_string(), ServerEndpoint::from((v.1, v.2, v.3, &v.4[..])))
-            }).collect())
-        .server().unwrap();
+            [(
+                "",
+                "/",
+                SecurityPolicy::None,
+                MessageSecurityMode::None,
+                &[ANONYMOUS_USER_TOKEN_ID],
+            )]
+            .iter()
+            .map(|v| {
+                (
+                    v.0.to_string(),
+                    ServerEndpoint::from((v.1, v.2, v.3, &v.4[..])),
+                )
+            })
+            .collect(),
+        )
+        .server()
+        .unwrap();
     {
         let server_state = server.server_state();
         let mut server_state = server_state.write().unwrap();
-        server_state.set_historical_data_provider(Box::new(OPCUADataProvider{frames}))
+        server_state.set_historical_data_provider(Box::new(OPCUADataProvider { frames }))
     }
-    let handle = thread::spawn(move || {server.run()});
+    let handle = thread::spawn(move || server.run());
     sleep(time::Duration::from_secs(2));
     handle
 }
 
 #[rstest]
 #[serial]
-fn test_basic_query(with_testdata: (), use_logger: (), opcua_server_fixture:JoinHandle<()>, testdata_path: PathBuf) {
+fn test_basic_query(
+    with_testdata: (),
+    use_logger: (),
+    opcua_server_fixture: JoinHandle<()>,
+    testdata_path: PathBuf,
+) {
     let _ = with_testdata;
     let _ = use_logger;
     let port = 1234;
@@ -132,18 +152,19 @@ fn test_basic_query(with_testdata: (), use_logger: (), opcua_server_fixture:Join
         ?ts otit_swt:hasDataPoint ?dp .
         ?dp otit_swt:hasTimestamp ?t .
         ?dp otit_swt:hasValue ?v .
-        FILTER(?t >= "2022-06-01T08:46:53"^^xsd:dateTime && ?t <= "2022-06-06T08:46:53"^^xsd:dateTime) .
+        FILTER(?t >= "2022-06-01T08:46:53"^^xsd:dateTime && ?t <= "2022-06-01T08:46:58"^^xsd:dateTime) .
     }
     "#;
     let mut builder = Builder::new_multi_thread();
     builder.enable_all();
     let runtime = builder.build().unwrap();
-    let mut df = runtime.block_on(execute_hybrid_query(
-        query,
-        QUERY_ENDPOINT,
-        Box::new(&mut opcua_tsdb),
-    ))
-    .expect("Hybrid error");
+    let mut df = runtime
+        .block_on(execute_hybrid_query(
+            query,
+            QUERY_ENDPOINT,
+            Box::new(&mut opcua_tsdb),
+        ))
+        .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_basic_query.csv");
     let file = File::open(file_path.as_path()).expect("Read file problem");
@@ -153,12 +174,158 @@ fn test_basic_query(with_testdata: (), use_logger: (), opcua_server_fixture:Join
         .with_parse_dates(true)
         .finish()
         .expect("DF read error");
-    expected_df.with_column(expected_df.column("t").unwrap().cast(&polars::prelude::DataType::Datetime(polars::prelude::TimeUnit::Milliseconds, None)).unwrap()).unwrap();
+    expected_df
+        .with_column(
+            expected_df
+                .column("t")
+                .unwrap()
+                .cast(&polars::prelude::DataType::Datetime(
+                    polars::prelude::TimeUnit::Milliseconds,
+                    None,
+                ))
+                .unwrap(),
+        )
+        .unwrap();
     assert_eq!(expected_df, df);
     //
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let mut writer = CsvWriter::new(file);
     // writer.finish(&mut df).expect("writeok");
     //println!("{}", df);
+}
 
+#[rstest]
+#[serial]
+fn test_basic_no_end_time_query(
+    with_testdata: (),
+    use_logger: (),
+    opcua_server_fixture: JoinHandle<()>,
+    testdata_path: PathBuf,
+) {
+    let _ = with_testdata;
+    let _ = use_logger;
+    let port = 1234;
+    let path = "/";
+
+    let endpoint = format!("opc.tcp://{}:{}{}", hostname().unwrap(), port, path);
+    let mut opcua_tsdb = OPCUAHistoryRead::new(&endpoint, 1);
+    let query = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX otit_swt:<https://github.com/magbak/otit_swt#>
+    PREFIX types:<http://example.org/types#>
+    SELECT ?w ?s ?t ?v WHERE {
+        ?w a types:BigWidget .
+        ?w types:hasSensor ?s .
+        ?s otit_swt:hasTimeseries ?ts .
+        ?ts otit_swt:hasDataPoint ?dp .
+        ?dp otit_swt:hasTimestamp ?t .
+        ?dp otit_swt:hasValue ?v .
+        FILTER(?t >= "2022-06-01T08:46:54"^^xsd:dateTime) .
+    }
+    "#;
+    let mut builder = Builder::new_multi_thread();
+    builder.enable_all();
+    let runtime = builder.build().unwrap();
+    let mut df = runtime
+        .block_on(execute_hybrid_query(
+            query,
+            QUERY_ENDPOINT,
+            Box::new(&mut opcua_tsdb),
+        ))
+        .expect("Hybrid error");
+    let mut file_path = testdata_path.clone();
+    file_path.push("expected_basic_no_end_time_query.csv");
+    let file = File::open(file_path.as_path()).expect("Read file problem");
+    let mut expected_df = CsvReader::new(file)
+        .infer_schema(None)
+        .has_header(true)
+        .with_parse_dates(true)
+        .finish()
+        .expect("DF read error");
+    expected_df
+        .with_column(
+            expected_df
+                .column("t")
+                .unwrap()
+                .cast(&polars::prelude::DataType::Datetime(
+                    polars::prelude::TimeUnit::Milliseconds,
+                    None,
+                ))
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(expected_df, df);
+
+    // let file = File::create(file_path.as_path()).expect("could not open file");
+    // let mut writer = CsvWriter::new(file);
+    // writer.finish(&mut df).expect("writeok");
+    // println!("{}", df);
+}
+
+#[rstest]
+#[serial]
+fn test_pushdown_group_by_five_second_hybrid_query(
+    with_testdata: (),
+    use_logger: (),
+    opcua_server_fixture: JoinHandle<()>,
+    testdata_path: PathBuf,
+) {
+    let _ = with_testdata;
+    let _ = use_logger;
+    let port = 1234;
+    let path = "/";
+
+    let endpoint = format!("opc.tcp://{}:{}{}", hostname().unwrap(), port, path);
+    let mut opcua_tsdb = OPCUAHistoryRead::new(&endpoint, 1);
+    let query = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX otit_swt:<https://github.com/magbak/otit_swt#>
+    PREFIX types:<http://example.org/types#>
+    SELECT ?w ?datetime_seconds (SUM(?v) as ?sum_v) WHERE {
+        ?w types:hasSensor ?s .
+        ?s otit_swt:hasTimeseries ?ts .
+        ?ts otit_swt:hasDataPoint ?dp .
+        ?dp otit_swt:hasTimestamp ?t .
+        ?dp otit_swt:hasValue ?v .
+        BIND(5 * FLOOR(otit_swt:DateTimeAsSeconds(?t) / 5) as ?datetime_seconds)
+        FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime)
+    } GROUP BY ?w ?datetime_seconds
+    "#;
+    let mut builder = Builder::new_multi_thread();
+    builder.enable_all();
+    let runtime = builder.build().unwrap();
+    let mut df = runtime
+        .block_on(execute_hybrid_query(
+            query,
+            QUERY_ENDPOINT,
+            Box::new(&mut opcua_tsdb),
+        ))
+        .expect("Hybrid error");
+    let mut file_path = testdata_path.clone();
+    file_path.push("expected_pushdown_group_by_five_second_hybrid_query.csv");
+    let file = File::open(file_path.as_path()).expect("Read file problem");
+    let mut expected_df = CsvReader::new(file)
+        .infer_schema(None)
+        .has_header(true)
+        .with_parse_dates(true)
+        .finish()
+        .expect("DF read error");
+    expected_df
+        .with_column(
+            expected_df
+                .column("t")
+                .unwrap()
+                .cast(&polars::prelude::DataType::Datetime(
+                    polars::prelude::TimeUnit::Milliseconds,
+                    None,
+                ))
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(expected_df, df);
+
+    // let file = File::create(file_path.as_path()).expect("could not open file");
+    // let mut writer = CsvWriter::new(file);
+    // writer.finish(&mut df).expect("writeok");
+    // println!("{}", df);
 }

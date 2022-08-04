@@ -1,20 +1,24 @@
-use std::collections::HashMap;
 use crate::constants::DATETIME_AS_SECONDS;
 use crate::timeseries_database::TimeSeriesQueryable;
 use crate::timeseries_query::TimeSeriesQuery;
-use opcua_client::prelude::{DateTime, AggregateConfiguration, AttributeService, ByteString, Client, ClientBuilder, EndpointDescription, ExtensionObject, HistoryReadAction, HistoryReadResult, HistoryReadValueId, Identifier, IdentityToken, MessageSecurityMode, NodeId, QualifiedName, ReadProcessedDetails, Session, TimestampsToReturn, UAString, UserTokenPolicy, ReadRawModifiedDetails, HistoryData, BinaryEncoder, Variant};
+use async_trait::async_trait;
+use opcua_client::prelude::{
+    AggregateConfiguration, AttributeService, ByteString, Client, ClientBuilder, DateTime,
+    EndpointDescription, HistoryData, HistoryReadAction, HistoryReadResult, HistoryReadValueId,
+    Identifier, IdentityToken, MessageSecurityMode, NodeId, QualifiedName, ReadProcessedDetails,
+    ReadRawModifiedDetails, Session, TimestampsToReturn, UAString, UserTokenPolicy, Variant,
+};
 use oxrdf::vocab::xsd;
 use oxrdf::{Literal, Variable};
-use polars::export::chrono::{DateTime as ChronoDateTime, NaiveDateTime, TimeZone, Utc};
+use polars::export::chrono::{DateTime as ChronoDateTime, Duration, NaiveDateTime, TimeZone, Utc};
+use polars::prelude::{concat, IntoLazy};
 use polars_core::frame::DataFrame;
-use spargebra::algebra::{AggregateExpression, Expression, Function};
-use std::error::Error;
-use std::process::id;
-use std::sync::{Arc, RwLock};
 use polars_core::prelude::{AnyValue, DataType, NamedFrom};
 use polars_core::series::Series;
-use async_trait::async_trait;
-use polars::prelude::{concat, IntoLazy};
+use spargebra::algebra::{AggregateExpression, Expression, Function};
+use std::collections::HashMap;
+use std::error::Error;
+use std::sync::{Arc, RwLock};
 
 const OPCUA_AGG_FUNC_AVERAGE: u32 = 2342;
 const OPCUA_AGG_FUNC_COUNT: u32 = 2352;
@@ -55,7 +59,7 @@ impl OPCUAHistoryRead {
         OPCUAHistoryRead {
             client,
             session,
-            namespace
+            namespace,
         }
     }
 }
@@ -68,28 +72,41 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
         let end_time = find_time(tsq, &FindTime::End);
 
         let mut processed_details = None;
+        let mut timestamp_grouping_colname = None;
         let mut raw_modified_details = None;
 
         let mut colnames_identifiers = vec![];
         if let Some(grouping) = &tsq.grouping {
-            processed_details = Some(create_read_processed_details(tsq, start_time, end_time));
+            let (colname, processed_details_some) = create_read_processed_details(tsq, start_time, end_time);
+            processed_details = Some(processed_details_some);
+            timestamp_grouping_colname = colname;
             for c in tsq.ids.as_ref().unwrap() {
-                for (v,_) in &grouping.aggregations {
+                for (v, _) in &grouping.aggregations {
                     colnames_identifiers.push((v.as_str().to_string(), c.clone()));
                 }
             }
-
         } else {
             raw_modified_details = Some(create_raw_details(start_time, end_time));
             for c in tsq.ids.as_ref().unwrap() {
-                colnames_identifiers.push((tsq.value_variable.as_ref().unwrap().variable.as_str().to_string(), c.clone()))
+                colnames_identifiers.push((
+                    tsq.value_variable
+                        .as_ref()
+                        .unwrap()
+                        .variable
+                        .as_str()
+                        .to_string(),
+                    c.clone(),
+                ))
             }
         }
 
         let mut nodes_to_read_vec = vec![];
         for (_, id) in &colnames_identifiers {
-            let hrvi = HistoryReadValueId{
-                node_id: NodeId::new(self.namespace, Identifier::String(UAString::from(id.to_string()))),
+            let hrvi = HistoryReadValueId {
+                node_id: NodeId::new(
+                    self.namespace,
+                    Identifier::String(UAString::from(id.to_string())),
+                ),
                 index_range: UAString::null(),
                 data_encoding: QualifiedName::null(),
                 continuation_point: ByteString::null(),
@@ -107,17 +124,22 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
             } else {
                 panic!("");
             };
-            let resp = session.history_read(action, TimestampsToReturn::Source, false, nodes_to_read_vec.as_slice()).expect("");
+            let resp = session
+                .history_read(
+                    action,
+                    TimestampsToReturn::Source,
+                    false,
+                    nodes_to_read_vec.as_slice(),
+                )
+                .expect("");
             //First we set the new continuation points:
-            for (i,h) in resp.iter().enumerate() {
-                if h.continuation_point.is_null() {
-                    if stopped {
-                        panic!("Should not happen")
-                    }
-                    stopped = true;
-                } else {
-                    nodes_to_read_vec.get_mut(i).unwrap().continuation_point = h.continuation_point.clone();
+            for (i, h) in resp.iter().enumerate() {
+                if !h.continuation_point.is_null() {
+                    nodes_to_read_vec.get_mut(i).unwrap().continuation_point =
+                        h.continuation_point.clone();
                     todo!("Continuation points are just halfway implemented...");
+                } else {
+                    stopped = true;
                 }
             }
 
@@ -125,18 +147,30 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
 
             //Now we process the data
             for (i, h) in resp.into_iter().enumerate() {
-                let HistoryReadResult { status_code, continuation_point:_, history_data } = h;
-                let (mut ts, mut val) = history_data_to_series_tuple(history_data.decode_inner::<HistoryData>(&Default::default()).unwrap());
+                let HistoryReadResult {
+                    status_code,
+                    continuation_point: _,
+                    history_data,
+                } = h;
+                let (mut ts, mut val) = history_data_to_series_tuple(
+                    history_data
+                        .decode_inner::<HistoryData>(&Default::default())
+                        .unwrap(),
+                );
                 let (colname, id) = colnames_identifiers.get(i).unwrap();
-                ts.rename(tsq.timestamp_variable.as_ref().unwrap().variable.as_str());
+                if let Some(grvar) = &timestamp_grouping_colname {
+                    ts.rename(grvar);
+                } else {
+                    ts.rename(tsq.timestamp_variable.as_ref().unwrap().variable.as_str());
+                }
                 val.rename(colname);
                 if let Some(v) = series_map.get_mut(id) {
                     v.push((ts, val));
                 } else {
-                    series_map.insert(id.clone(), vec![(ts,val)]);
+                    series_map.insert(id.clone(), vec![(ts, val)]);
                 }
             }
-            let mut keys: Vec<String> = series_map.keys().map(|x|x.clone()).collect();
+            let mut keys: Vec<String> = series_map.keys().map(|x| x.clone()).collect();
             keys.sort();
             for k in keys {
                 let series_vec = series_map.remove(&k).unwrap();
@@ -148,12 +182,17 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                         first_ts = Some(ts);
                     }
                     value_vec.push(val);
-                };
-                let mut identifier_series = Series::new_empty(tsq.identifier_variable.as_ref().unwrap().as_str(), &DataType::Utf8);
-                identifier_series = identifier_series.extend_constant(AnyValue::Utf8(&k), first_ts.as_ref().unwrap().len()).unwrap();
+                }
+                let mut identifier_series = Series::new_empty(
+                    tsq.identifier_variable.as_ref().unwrap().as_str(),
+                    &DataType::Utf8,
+                );
+                identifier_series = identifier_series
+                    .extend_constant(AnyValue::Utf8(&k), first_ts.as_ref().unwrap().len())
+                    .unwrap();
                 value_vec.push(identifier_series);
                 value_vec.push(first_ts.unwrap());
-                value_vec.sort_by_key(|x|x.name().to_string());
+                value_vec.sort_by_key(|x| x.name().to_string());
                 dfs.push(DataFrame::new(value_vec).unwrap().lazy())
             }
         }
@@ -162,17 +201,21 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
     }
 }
 
-fn create_raw_details(start_time:Option<DateTime>, end_time:Option<DateTime>) -> ReadRawModifiedDetails {
+fn create_raw_details(start_time: DateTime, end_time: DateTime) -> ReadRawModifiedDetails {
     ReadRawModifiedDetails {
         is_read_modified: false,
-        start_time: start_time.unwrap(),
-        end_time: end_time.unwrap(),
+        start_time,
+        end_time,
         num_values_per_node: 0,
-        return_bounds: false
+        return_bounds: false,
     }
 }
 
-fn create_read_processed_details(tsq: &TimeSeriesQuery, start_time:Option<DateTime>, end_time:Option<DateTime>) -> ReadProcessedDetails {
+fn create_read_processed_details(
+    tsq: &TimeSeriesQuery,
+    start_time: DateTime,
+    end_time: DateTime,
+) -> (Option<String>, ReadProcessedDetails) {
     let aggregate_type = find_aggregate_types(tsq);
 
     let config = AggregateConfiguration {
@@ -182,21 +225,21 @@ fn create_read_processed_details(tsq: &TimeSeriesQuery, start_time:Option<DateTi
         percent_data_good: 0,
         use_sloped_extrapolation: false,
     };
-let interval_opt = find_grouping_interval(tsq);
-        let processing_interval = if let Some(interval) = interval_opt {
-            interval
-        } else {
-            0.0
-        };
+    let interval_opt = find_grouping_interval(tsq);
+    let (out_string, processing_interval) = if let Some((s,interval)) = interval_opt {
+        (Some(s),interval)
+    } else {
+        (None,0.0)
+    };
 
     let details = ReadProcessedDetails {
-        start_time: start_time.unwrap_or(Default::default()),
-        end_time: end_time.unwrap_or(Default::default()),
+        start_time,
+        end_time,
         processing_interval,
         aggregate_type,
         aggregate_configuration: config,
     };
-    details
+    (out_string, details)
 }
 
 fn history_data_to_series_tuple(hd: HistoryData) -> (Series, Series) {
@@ -211,9 +254,11 @@ fn history_data_to_series_tuple(hd: HistoryData) -> (Series, Series) {
         }
         if let Some(val) = data_value.value {
             let any_value = match val {
-                Variant::Double(d) => {AnyValue::Float64(d)},
-                Variant::Int64(i) => {AnyValue::Int64(i)},
-                _ => {todo!("Implement: {}", val)}
+                Variant::Double(d) => AnyValue::Float64(d),
+                Variant::Int64(i) => AnyValue::Int64(i),
+                _ => {
+                    todo!("Implement: {}", val)
+                }
             };
             any_value_vec.push(any_value);
         }
@@ -285,7 +330,11 @@ fn find_aggregate_types(tsq: &TimeSeriesQuery) -> Option<Vec<NodeId>> {
             };
             nodes.push(aggfunc);
         }
-        Some(nodes)
+        let mut outnodes = vec![];
+        for _ in tsq.ids.as_ref().unwrap() {
+            outnodes.extend_from_slice(nodes.as_slice())
+        }
+        Some(outnodes)
     } else {
         None
     }
@@ -296,7 +345,7 @@ enum FindTime {
     End,
 }
 
-fn find_time(tsq: &TimeSeriesQuery, find_time: &FindTime) -> Option<DateTime> {
+fn find_time(tsq: &TimeSeriesQuery, find_time: &FindTime) -> DateTime {
     let mut found_time = None;
     for c in &tsq.conditions {
         let e = &c.expression;
@@ -312,7 +361,11 @@ fn find_time(tsq: &TimeSeriesQuery, find_time: &FindTime) -> Option<DateTime> {
             found_time = found_time_opt;
         }
     }
-    found_time
+    if let Some(dt) = found_time {
+        dt
+    } else {
+        DateTime::null()
+    }
 }
 
 fn find_time_condition(
@@ -334,8 +387,41 @@ fn find_time_condition(
                 None
             }
         }
-        Expression::Greater(_, _) => {
-            todo!("No support for strictly greater yet")
+        Expression::Greater(left, right) => {
+            match find_time {
+                FindTime::Start => {
+                    //Must have form variable > literal_date
+                    if let Expression::Variable(v) = left.as_ref() {
+                        if v == timestamp_variable {
+                            datetime_from_expression(
+                                right,
+                                Some(Operation::Plus),
+                                Some(Duration::nanoseconds(1)),
+                            )
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+                FindTime::End => {
+                    //Must have form literal_date > variable
+                    if let Expression::Variable(v) = right.as_ref() {
+                        if v == timestamp_variable {
+                            datetime_from_expression(
+                                left,
+                                Some(Operation::Minus),
+                                Some(Duration::nanoseconds(1)),
+                            )
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+            }
         }
         Expression::GreaterOrEqual(left, right) => {
             match find_time {
@@ -343,7 +429,7 @@ fn find_time_condition(
                     //Must have form variable >= literal_date
                     if let Expression::Variable(v) = left.as_ref() {
                         if v == timestamp_variable {
-                            datetime_from_expression(right)
+                            datetime_from_expression(right, None, None)
                         } else {
                             None
                         }
@@ -355,7 +441,7 @@ fn find_time_condition(
                     //Must have form literal_date >= variable
                     if let Expression::Variable(v) = right.as_ref() {
                         if v == timestamp_variable {
-                            datetime_from_expression(left)
+                            datetime_from_expression(left, None, None)
                         } else {
                             None
                         }
@@ -365,8 +451,41 @@ fn find_time_condition(
                 }
             }
         }
-        Expression::Less(_, _) => {
-            todo!("No support for strictly less yet")
+        Expression::Less(left, right) => {
+            match find_time {
+                FindTime::Start => {
+                    //Must have form literal_date < variable
+                    if let Expression::Variable(v) = right.as_ref() {
+                        if v == timestamp_variable {
+                            datetime_from_expression(
+                                left,
+                                Some(Operation::Plus),
+                                Some(Duration::nanoseconds(1)),
+                            )
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+                FindTime::End => {
+                    //Must have form variable < literal_date
+                    if let Expression::Variable(v) = left.as_ref() {
+                        if v == timestamp_variable {
+                            datetime_from_expression(
+                                right,
+                                Some(Operation::Minus),
+                                Some(Duration::nanoseconds(1)),
+                            )
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                }
+            }
         }
         Expression::LessOrEqual(left, right) => {
             match find_time {
@@ -374,7 +493,7 @@ fn find_time_condition(
                     //Must have form literal_date <= variable
                     if let Expression::Variable(v) = right.as_ref() {
                         if v == timestamp_variable {
-                            datetime_from_expression(left)
+                            datetime_from_expression(left, None, None)
                         } else {
                             None
                         }
@@ -386,7 +505,7 @@ fn find_time_condition(
                     //Must have form variable <= literal_date
                     if let Expression::Variable(v) = left.as_ref() {
                         if v == timestamp_variable {
-                            datetime_from_expression(right)
+                            datetime_from_expression(right, None, None)
                         } else {
                             None
                         }
@@ -400,13 +519,39 @@ fn find_time_condition(
     }
 }
 
-fn datetime_from_expression(expr: &Expression) -> Option<DateTime> {
+enum Operation {
+    Plus,
+    Minus,
+}
+
+fn operation_duration(
+    dt: ChronoDateTime<Utc>,
+    op: Operation,
+    dur: Duration,
+) -> ChronoDateTime<Utc> {
+    match op {
+        Operation::Plus => dt + dur,
+        Operation::Minus => dt - dur,
+    }
+}
+
+fn datetime_from_expression(
+    expr: &Expression,
+    op: Option<Operation>,
+    dur: Option<Duration>,
+) -> Option<DateTime> {
     if let Expression::Literal(lit) = expr {
         if lit.datatype() == xsd::DATE_TIME {
             if let Ok(dt) = lit.value().parse::<NaiveDateTime>() {
-                let dt_with_tz_utc: ChronoDateTime<Utc> = Utc.from_utc_datetime(&dt);
+                let mut dt_with_tz_utc: ChronoDateTime<Utc> = Utc.from_utc_datetime(&dt);
+                if let (Some(op), Some(dur)) = (op, dur) {
+                    dt_with_tz_utc = operation_duration(dt_with_tz_utc, op, dur);
+                }
                 Some(DateTime::from(dt_with_tz_utc))
-            } else if let Ok(dt) = lit.value().parse::<ChronoDateTime<Utc>>() {
+            } else if let Ok(mut dt) = lit.value().parse::<ChronoDateTime<Utc>>() {
+                if let (Some(op), Some(dur)) = (op, dur) {
+                    dt = operation_duration(dt, op, dur);
+                }
                 Some(DateTime::from(dt))
             } else {
                 None
@@ -419,30 +564,47 @@ fn datetime_from_expression(expr: &Expression) -> Option<DateTime> {
     }
 }
 
-fn find_grouping_interval(tsq: &TimeSeriesQuery) -> Option<f64> {
+fn find_grouping_interval(tsq: &TimeSeriesQuery) -> Option<(String, f64)> {
     if let Some(grouping) = &tsq.grouping {
         let mut tsf = None;
+        let mut grvar = None;
         for v in &grouping.by {
             for (t, e) in &grouping.timeseries_funcs {
                 if t == v {
                     tsf = Some((t, &e.expression));
+                    grvar = Some(v);
                 }
             }
         }
         if let Some((_, e)) = tsf {
+            println!("Expr {}", e);
+            println!("Expr {:?}", e);
             if let Expression::Multiply(left, right) = e {
-                if let (Expression::FunctionCall(f, args), Expression::Literal(_)) = (left.as_ref(),right.as_ref()) {
-                    if f == &Function::Floor && args.len() == 1 {
-                        if let Expression::Divide(left, right) = args.get(0).unwrap() {
-                            if let (Expression::FunctionCall(f, args), Expression::Literal(lit)) =
-                                (left.as_ref(), right.as_ref())
-                            {
-                                if let Function::Custom(nn) = f {
-                                    if nn.as_str() == DATETIME_AS_SECONDS {
-                                        return from_numeric_datatype(lit);
-                                    }
-                                }
-                            }
+                let n = find_grouping_interval_multiplication(left, right);
+                let out = if n.is_some() {
+                    n
+                } else {
+                    find_grouping_interval_multiplication(right, left)
+                };
+                if let Some(f) = out {
+                    return Some((grvar.unwrap().as_str().to_string(), f))
+                }
+            }
+        }
+    }
+    None
+}
+
+fn find_grouping_interval_multiplication(a: &Expression, b: &Expression) -> Option<f64> {
+    if let (Expression::FunctionCall(f, args), Expression::Literal(_)) = (a, b) {
+        if f == &Function::Floor && args.len() == 1 {
+            if let Expression::Divide(left, right) = args.get(0).unwrap() {
+                if let (Expression::FunctionCall(f, args), Expression::Literal(lit)) =
+                    (left.as_ref(), right.as_ref())
+                {
+                    if let Function::Custom(nn) = f {
+                        if nn.as_str() == DATETIME_AS_SECONDS {
+                            return from_numeric_datatype(lit);
                         }
                     }
                 }

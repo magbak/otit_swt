@@ -14,13 +14,10 @@ use log::debug;
 use oxrdf::vocab::xsd;
 use polars::datatypes::DataType;
 use polars::frame::DataFrame;
-use polars::prelude::{
-    col, concat_str, Expr, IntoLazy, LazyFrame, LiteralValue, Operator, Series, TimeUnit,
-    UniqueKeepStrategy,
-};
+use polars::prelude::{col, concat_str, Expr, IntoLazy, LazyFrame, lit, LiteralValue, Operator, Series, TimeUnit, UniqueKeepStrategy};
 use spargebra::algebra::{Expression, Function};
 use std::collections::HashSet;
-use std::ops::Mul;
+use std::ops::{Div, Mul};
 
 pub fn lazy_expression(
     expr: &Expression,
@@ -568,19 +565,20 @@ pub fn lazy_expression(
                         let first_context = args_contexts.get(0).unwrap();
                         inner_lf = inner_lf.with_column(
                             col(&first_context.as_str())
-                                .dt()
-                                .nanosecond()//TODO: This is wrong, must be fixed..
-                                .alias(context.as_str()),
+                                .cast(DataType::Datetime(TimeUnit::Nanoseconds, None))
+                                .cast(DataType::UInt64)
+                                .alias(context.as_str())
                         );
                     } else if iri == DATETIME_AS_SECONDS {
                         assert_eq!(args.len(), 1);
                         let first_context = args_contexts.get(0).unwrap();
                         inner_lf = inner_lf.with_column(
                             col(&first_context.as_str())
-                                .dt()
-                                .second() //TODO: This is wrong, must be fixed..
-                                .alias(context.as_str()),
-                        );
+                                .cast(DataType::Datetime(TimeUnit::Milliseconds, None))
+                                .cast(DataType::UInt64)
+                                .div(lit(1000))
+                                .alias(context.as_str())
+                            );
                     } else if iri == NANOS_AS_DATETIME {
                         assert_eq!(args.len(), 1);
                         let first_context = args_contexts.get(0).unwrap();
