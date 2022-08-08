@@ -40,5 +40,36 @@ Currently, these tools are volatile works in progress, and should not be used by
 """)
 ```
 
+## Mapping
+```python
+from otit_swt_mapper import Mapping
+import polars as pl
+
+doc = """
+    @prefix ex:<http://example.net/ns#>.
+    ex:ExampleTemplate [?MyValue] :: {
+    ottr:Triple(ex:myObject, ex:hasValue, ?MyValue)
+    } .
+    """
+
+df = pl.DataFrame({"Key": ["A", "B"],
+                   "MyValue": [1, 2]})
+mapping = Mapping([doc])
+mapping.expand("http://example.net/ns#ExampleTemplate", df)
+triples = mapping.to_triples()
+print(triples)
+```
+
+Results in:
+```python
+[<http://example.net/ns#myObject> <http://example.net/ns#hasValue> "1"^^<http://www.w3.org/2001/XMLSchema#long>, 
+ <http://example.net/ns#myObject> <http://example.net/ns#hasValue> "2"^^<http://www.w3.org/2001/XMLSchema#long>]
+```
+
+## Installing pre-built wheels
+From the latest [release](https://github.com/magbak/otit_swt/releases), copy the appropriate .whl-file for your system, then run:
+```shell
+pip install https://github.com/magbak/otit_swt/releases/download/v0.1.5/otit_swt_mapper-0.1.5-cp310-cp310-manylinux_2_31_x86_64.whl
+```
 
 All code is licensed to [Prediktor AS](https://www.prediktor.com/) under the Apache 2.0 license unless otherwise noted, and has been financed by [The Research Council of Norway](https://www.forskningsradet.no/en/) (grant no. 316656) and [Prediktor AS](https://www.prediktor.com/) as part of a PhD Degree.  
