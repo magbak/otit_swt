@@ -1,4 +1,0 @@
-Remember to activate both rust and python:
-source ~/.profile
-cd into this folder
-source .env/bin/activate

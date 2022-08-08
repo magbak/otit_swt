@@ -1,20 +1,25 @@
 [package]
-name = "py-mapper"
-version = "0.1.1"
+name = "py-query"
+version = "0.1.2"
 edition = "2021"
 
 [workspace]
 
 [dependencies]
 pyo3 = {version = "0.16.5", features = ["extension-module"]}
-mapper = {path="../mapper"}
+dsl = {path="../dsl"}
+hybrid = {path="../hybrid"}
 thiserror="1.0.31"
 polars-core = {version="0.22.7"}
 oxrdf = "0.1.0"
+spargebra = "0.2.0"
 simple-error = "0.2.3"
+tokio="1.20.0"
+env_logger = "0.9.0"
+log="0.4.17"
 
 [lib]
-name = "otit_swt_mapper"
+name = "otit_swt_query"
 crate-type = ["cdylib"]
 
 [package.metadata.maturin]

@@ -24,16 +24,16 @@ jobs:
         pip install --upgrade pip
         pip install pytest maturin docker requests sparqlwrapper
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      working-directory: ./py-query
+      working-directory: ./py_otit_swt_query
 
     - name: Build install package
       run: |
         source .venv/bin/activate
         maturin develop
-      working-directory: ./py-query
+      working-directory: ./py_otit_swt_query
 
     - name: pytest
       run: |
         source ../.venv/bin/activate
         pytest
-      working-directory: ./py-query/tests
+      working-directory: ./py_otit_swt_query/tests

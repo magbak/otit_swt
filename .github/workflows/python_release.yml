@@ -12,9 +12,14 @@ env:
 jobs:
   release:
     runs-on: ubuntu-latest
-
+    strategy:
+          matrix:
+            python-version: ['3.8', '3.9', '3.10']
     steps:
     - uses: actions/checkout@v2
+    - uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
 
     - name: Create venv
       run: |
@@ -28,13 +33,13 @@ jobs:
       run: |
         source ../.venv/bin/activate
         maturin build
-      working-directory: ./py-query
+      working-directory: ./py_otit_swt_query
 
     - name: Build mapper wheels
       run: |
         source ../.venv/bin/activate
         maturin build
-      working-directory: ./py-mapper
+      working-directory: ./py_otit_swt_mapper
 
     - name: Release
       uses: softprops/action-gh-release@v1
