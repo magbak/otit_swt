@@ -1,3 +1,0 @@
-polars
-pyarrow
-rdflib
