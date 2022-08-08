@@ -45,5 +45,5 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          ./py-query/target/wheels/*.whl
-          ./py-mapper/target/wheels/*.whl
+          ./py_otit_swt_query/target/wheels/*.whl
+          ./py_otit_swt_mapper/target/wheels/*.whl
