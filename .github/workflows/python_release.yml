@@ -1,0 +1,46 @@
+name: Release tag
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_LOG: debug
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install dependencies
+      run: |
+        python -m venv .venv
+        source .venv/bin/activate
+        pip install --upgrade pip
+        pip install pytest maturin docker requests sparqlwrapper
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      working-directory: ./py-query
+
+    - name: Build query wheels
+      run: |
+        source .venv/bin/activate
+        maturin build
+      working-directory: ./py-query
+
+
+    - name: Build mapper wheels
+      run: |
+        source .venv/bin/activate
+        maturin build
+      working-directory: ./py-mapper
+
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          ./py-query/target/wheels/*.whl
+          ./py-mapper/target/wheels/*.whl
