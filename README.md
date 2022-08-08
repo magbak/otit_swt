@@ -43,8 +43,10 @@ Currently, these tools are volatile works in progress, and should not be used by
 ## Mapping
 ```python
 from otit_swt_mapper import Mapping
+#We use polars dataframes instead of pandas dataframes. The api is pretty similar.
 import polars as pl
 
+#Define a stOttr document with a template:
 doc = """
     @prefix ex:<http://example.net/ns#>.
     ex:ExampleTemplate [?MyValue] :: {
@@ -52,10 +54,17 @@ doc = """
     } .
     """
 
+#Define a data frame to instantiate:
 df = pl.DataFrame({"Key": ["A", "B"],
                    "MyValue": [1, 2]})
+
+#Create a mapping object
 mapping = Mapping([doc])
+
+#Expand the template using the data in the dataframe
 mapping.expand("http://example.net/ns#ExampleTemplate", df)
+
+#Export to rdflib-triples
 triples = mapping.to_triples()
 print(triples)
 ```
