@@ -16,25 +16,23 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Install dependencies
+    - name: Create venv
       run: |
         python -m venv .venv
         source .venv/bin/activate
         pip install --upgrade pip
-        pip install pytest maturin docker requests sparqlwrapper
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      working-directory: ./py-query
+        pip install maturin
+      working-directory: .
 
     - name: Build query wheels
       run: |
-        source .venv/bin/activate
+        source ../.venv/bin/activate
         maturin build
       working-directory: ./py-query
 
-
     - name: Build mapper wheels
       run: |
-        source .venv/bin/activate
+        source ../.venv/bin/activate
         maturin build
       working-directory: ./py-mapper
 
