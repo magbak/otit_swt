@@ -4,5 +4,4 @@ members=[
     "dsl",
     "hybrid",
     "mapper",
-    "integration"
 ]

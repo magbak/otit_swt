@@ -1,9 +1,0 @@
-[package]
-name = "integration"
-version = "0.1.5"
-edition = "2021"
-
-[dev-dependencies]
-dsl={path="../dsl"}
-hybrid={path="../hybrid"}
-rstest = "0.14.0"

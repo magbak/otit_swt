@@ -36,7 +36,7 @@ pub struct Mapping {
     data_property_triples: Option<DataFrame>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Part {
     Subject,
     Object,

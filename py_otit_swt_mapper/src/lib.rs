@@ -9,7 +9,7 @@ use mapper::document::document_from_str;
 use mapper::errors::MapperError;
 use mapper::mapping::ExpandOptions as RustExpandOptions;
 use mapper::mapping::MintingOptions as RustMintingOptions;
-use mapper::mapping::Part as RustPart;
+use mapper::mapping::Part;
 use mapper::mapping::PathColumn as RustPathColumn;
 use mapper::mapping::{ListLength, Mapping as InnerMapping, SuffixGenerator};
 use mapper::templates::TemplateDataset;
@@ -158,30 +158,39 @@ pub struct Mapping {
 
 #[pyclass]
 #[derive(Debug, Clone)]
-pub enum Part {
-    Subject,
-    Object,
-}
-
-#[derive(Debug, Clone)]
 pub struct PathColumn {
     path: String,
     part: Part,
+}
+
+#[pymethods]
+impl PathColumn {
+    #[new]
+    pub fn new(path:String, part:&str) -> PathColumn {
+        let part_lower = part.to_lowercase();
+        let use_part = if part_lower == "subject" {
+            Part::Subject
+        } else if part_lower == "object" {
+            Part::Object
+        } else {
+            panic!("Part should be Subject or Object, was {}", part)
+        };
+        PathColumn {
+             path,
+            part:use_part
+        }
+    }
 }
 
 impl PathColumn {
     fn to_rust_path_column(&self) -> RustPathColumn {
         RustPathColumn {
             path: self.path.clone(),
-            part: match self.part {
-                Part::Subject => RustPart::Subject,
-                Part::Object => RustPart::Object,
-            },
+            part: self.part.clone()
         }
     }
 }
 
-#[pyclass]
 #[derive(Debug, Clone)]
 pub struct ExpandOptions {
     pub language_tags: Option<HashMap<String, String>>,
@@ -226,6 +235,24 @@ pub struct MintingOptions {
     pub same_as_column_list_length: Option<String>,
 }
 
+#[pymethods]
+impl MintingOptions {
+    #[new]
+    pub fn new(
+        prefix: String,
+        numbering_suffix_start: usize,
+        constant_list_length: Option<usize>,
+        same_as_column_list_length: Option<String>,
+    ) -> MintingOptions {
+        MintingOptions {
+            prefix,
+            numbering_suffix_start,
+            constant_list_length,
+            same_as_column_list_length,
+        }
+    }
+}
+
 impl MintingOptions {
     fn to_rust_minting_options(&self) -> RustMintingOptions {
         RustMintingOptions {
@@ -263,16 +290,20 @@ impl Mapping {
         &mut self,
         template: &str,
         df: &PyAny,
-        options: Option<ExpandOptions>,
+        language_tags: Option<HashMap<String, String>>,
+        path_column_map: Option<HashMap<String, PathColumn>>,
+        mint_iris: Option<HashMap<String, MintingOptions>>,
     ) -> PyResult<()> {
         let df = polars_df_to_rust_df(&df)?;
-        let options = match options {
-            None => Default::default(),
-            Some(o) => o.to_rust_expand_options(),
+        let options = ExpandOptions {
+            language_tags,
+            path_column_map,
+            mint_iris,
         };
+
         let _report = self
             .inner
-            .expand(template, df, options)
+            .expand(template, df, options.to_rust_expand_options())
             .map_err(MapperError::from)
             .map_err(PyMapperError::from)?;
         Ok(())
@@ -373,6 +404,9 @@ impl Mapping {
 #[pymodule]
 fn otit_swt_mapper(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<Mapping>()?;
+    m.add_class::<PathColumn>()?;
+    m.add_class::<MintingOptions>()?;
+
     Ok(())
 }
 

@@ -1,6 +1,6 @@
 [package]
-name = "py-mapper"
-version = "0.1.5"
+name = "py_otit_swt_mapper"
+version = "0.1.6"
 edition = "2021"
 
 [workspace]
