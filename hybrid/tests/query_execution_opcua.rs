@@ -323,7 +323,9 @@ fn test_pushdown_group_by_five_second_hybrid_query(
                 .unwrap(),
         )
         .unwrap();
-    expected_df = expected_df.sort(vec!["w", "datetime_seconds"], false).unwrap();
+    expected_df = expected_df
+        .sort(vec!["w", "datetime_seconds"], false)
+        .unwrap();
 
     assert_eq!(expected_df, df);
 

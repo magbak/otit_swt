@@ -2,7 +2,10 @@ use crate::ast::{
     Annotation, Argument, ConstantLiteral, ConstantTerm, DefaultValue, Directive, Instance, PType,
     Parameter, Signature, Statement, StottrDocument, StottrLiteral, StottrTerm, Template,
 };
-use crate::constants::{OTTR_PREFIX, OTTR_PREFIX_IRI, RDF_PREFIX, RDF_PREFIX_IRI, RDFS_PREFIX, RDFS_PREFIX_IRI, XSD_PREFIX, XSD_PREFIX_IRI};
+use crate::constants::{
+    OTTR_PREFIX, OTTR_PREFIX_IRI, RDFS_PREFIX, RDFS_PREFIX_IRI, RDF_PREFIX, RDF_PREFIX_IRI,
+    XSD_PREFIX, XSD_PREFIX_IRI,
+};
 use crate::parsing::parsing_ast::{
     ResolvesToNamedNode, UnresolvedAnnotation, UnresolvedArgument, UnresolvedBaseTemplate,
     UnresolvedConstantLiteral, UnresolvedConstantTerm, UnresolvedDefaultValue, UnresolvedInstance,
@@ -320,7 +323,12 @@ fn build_prefix_map(
             }
         }
     }
-    let predefined = [(RDFS_PREFIX, RDFS_PREFIX_IRI), (RDF_PREFIX, RDF_PREFIX_IRI), (XSD_PREFIX, XSD_PREFIX_IRI), (OTTR_PREFIX, OTTR_PREFIX_IRI)];
+    let predefined = [
+        (RDFS_PREFIX, RDFS_PREFIX_IRI),
+        (RDF_PREFIX, RDF_PREFIX_IRI),
+        (XSD_PREFIX, XSD_PREFIX_IRI),
+        (OTTR_PREFIX, OTTR_PREFIX_IRI),
+    ];
     for (pre, iri) in predefined {
         if !map.contains_key(pre) {
             map.insert(pre.to_string(), NamedNode::new_unchecked(iri));

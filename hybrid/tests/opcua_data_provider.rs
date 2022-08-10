@@ -71,11 +71,11 @@ impl OPCUADataProvider {
                         .cast(PolarsDataType::Datetime(TimeUnit::Nanoseconds, None))
                         .cast(PolarsDataType::UInt64)
                         .alias("timestamp")
-                        .div(lit(interval.unwrap()*1_000_000.0))
+                        .div(lit(interval.unwrap() * 1_000_000.0))
                         .floor()
-                        .mul(lit(interval.unwrap()*1_000_000.0))
+                        .mul(lit(interval.unwrap() * 1_000_000.0))
                         .cast(PolarsDataType::UInt64)
-                        .cast(PolarsDataType::Datetime(TimeUnit::Nanoseconds, None))
+                        .cast(PolarsDataType::Datetime(TimeUnit::Nanoseconds, None)),
                 );
                 let lfgr = lf.groupby(&["timestamp"]);
                 let agg_func = aggregation_types.get(i).unwrap();

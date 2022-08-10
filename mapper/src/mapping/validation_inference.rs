@@ -6,20 +6,16 @@ use crate::chrono::TimeZone as ChronoTimeZone;
 use crate::constants::{XSD_DATETIME_WITHOUT_TZ_FORMAT, XSD_DATETIME_WITH_TZ_FORMAT};
 use crate::mapping::errors::MappingError;
 use crate::mapping::mint::mint_iri;
-use crate::mapping::{ExpandOptions, Part};
+use crate::mapping::ExpandOptions;
 use chrono::{Datelike, Timelike};
-use log::warn;
 use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
-use polars::toggle_string_cache;
 use polars_core::export::rayon::prelude::ParallelIterator;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    AnyValue, BooleanChunked, ChunkApply, DataType, IntoSeries, JoinType, NamedFrom, Series,
-    StructChunked, TimeZone,
+    AnyValue, BooleanChunked, ChunkApply, DataType, IntoSeries, Series, StructChunked, TimeZone,
 };
 use std::collections::{HashMap, HashSet};
-use crate::mapping::validation_inference::resolve_columns::resolve_path_key_column;
 
 #[derive(Clone, Debug)]
 pub struct PrimitiveColumn {
@@ -81,7 +77,12 @@ impl Mapping {
                     MappedColumn::PrimitiveColumn(column_data_type),
                 );
             } else if let Some(path_column) = path_column_map.get(variable_name) {
-                resolve_path_key_column(path_column, variable_name.as_str(), &mut df, df_columns)?;
+                self.resolve_path_key_column(
+                    path_column,
+                    variable_name.as_str(),
+                    &mut df,
+                    &mut df_columns,
+                )?;
                 map.insert(
                     variable_name.to_string(),
                     MappedColumn::PrimitiveColumn(PrimitiveColumn {

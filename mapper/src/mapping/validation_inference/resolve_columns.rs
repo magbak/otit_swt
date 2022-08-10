@@ -1,14 +1,14 @@
+use super::Mapping;
 use crate::mapping::errors::MappingError;
 use crate::mapping::{Part, PathColumn};
-use polars_core::frame::DataFrame;
-use std::collections::HashSet;
-use nom::Parser;
-use polars::prelude::range;
+use log::warn;
+use polars::prelude::SeriesOps;
 use polars_core::datatypes::DataType;
+use polars_core::frame::DataFrame;
 use polars_core::prelude::{JoinType, NamedFrom};
 use polars_core::series::Series;
 use polars_core::toggle_string_cache;
-use super::Mapping;
+use std::collections::HashSet;
 
 impl Mapping {
     pub fn resolve_path_key_column(
@@ -18,10 +18,10 @@ impl Mapping {
         df: &mut DataFrame,
         df_columns: &mut HashSet<String>,
     ) -> Result<(), MappingError> {
-        let key_column = format!("{}ForeignKey", variable_name.as_str());
+        let key_column = format!("{}ForeignKey", variable_name);
         if !df_columns.contains(&key_column) {
             return Err(MappingError::MissingForeignKeyColumn(
-                variable_name.as_str().to_string(),
+                variable_name.to_string(),
                 key_column,
             ));
         }
@@ -88,22 +88,31 @@ impl Mapping {
         join_df
             .rename(&path_column.part.to_string(), variable_name)
             .unwrap();
+        df.with_column(Series::new("ordering_column", 0..(df.height() as u64)))
+            .unwrap();
 
-        let mut input_df = DataFrame::new(df.columns([&key_column]).unwrap()).unwrap();
+        let use_series: Vec<Series> = df
+            .columns([&key_column, "ordering_column"])
+            .unwrap()
+            .into_iter()
+            .map(|x| x.clone())
+            .collect();
+        let mut input_df = DataFrame::new(use_series).unwrap();
         let mut key_col_is_list = false;
         if let DataType::List(_) = input_df.column(&key_column).unwrap().dtype() {
             input_df = unfold_list(input_df, &key_column);
             key_col_is_list = true;
         }
-        input_df.with_column(
-        input_df.column(&key_column)
-            .unwrap()
-            .cast(&DataType::Categorical(None))
-            .unwrap())
-        .unwrap();
+        input_df
+            .with_column(
+                input_df
+                    .column(&key_column)
+                    .unwrap()
+                    .cast(&DataType::Categorical(None))
+                    .unwrap(),
+            )
+            .unwrap();
         input_df.with_column(path_series).unwrap();
-
-
 
         input_df = input_df
             .join(
@@ -115,23 +124,18 @@ impl Mapping {
             )
             .unwrap()
             .drop("Path")
+            .unwrap()
+            .drop(&key_column)
             .unwrap();
         if key_col_is_list {
             input_df = fold_list(input_df, variable_name);
         }
+        input_df = input_df.sort(&["ordering_column"], false).unwrap();
 
         df_columns.remove(&key_column);
         toggle_string_cache(false);
 
-
-        df.with_column(df.column("Key").unwrap().cast(&DataType::Utf8).unwrap())
-            .unwrap();
-        df.with_column(
-            df.column(variable_name)
-                .unwrap()
-                .cast(&DataType::Utf8)
-                .unwrap(),
-        )
+        df.with_column(input_df.column(variable_name).unwrap().clone())
             .unwrap();
         let nullsum = df.column(variable_name).unwrap().null_count();
         if nullsum > 0 {
@@ -142,35 +146,51 @@ impl Mapping {
     }
 }
 
-fn unfold_list(mut df: DataFrame, column_name: &str) {
+fn unfold_list(mut df: DataFrame, column_name: &str) -> DataFrame {
     let mut found_bottom = false;
     let mut counter = 0u8;
     while !found_bottom {
-        df.with_column(Series::new(&level_name, 0..(df.height() as u64))).unwrap();
+        let level_name = format!("fold_list_level_{}", counter);
+        df.with_column(Series::new(&level_name, 0..(df.height() as u64)))
+            .unwrap();
         df = df.explode([column_name]).unwrap();
+        if let DataType::List(_) = df.column(column_name).unwrap().dtype() {
+            counter += 1;
+        } else {
+            found_bottom = true;
+        }
     }
+    df
 }
 
 fn fold_list(mut df: DataFrame, column_name: &str) -> DataFrame {
     let mut counters = vec![];
     for c in df.get_column_names() {
         if c.starts_with("fold_list_level_") {
-            let counter:u8 = c.strip_prefix("fold_list_level_").unwrap().parse().unwrap();
+            let counter: u8 = c.strip_prefix("fold_list_level_").unwrap().parse().unwrap();
             counters.push(counter)
         }
     }
-    level_cols.sort_by_key(|x|-x);
-    for counter in level_cols {
+    let mut counter_cols: Vec<String> = df
+        .get_column_names()
+        .into_iter()
+        .filter(|x| *x != column_name)
+        .map(|x| x.to_string())
+        .collect();
+    counters.sort();
+    for counter in counters.into_iter().rev() {
         let level_name = format!("fold_list_level_{}", counter);
-        df = DataFrame::new(df.columns([&level_name, column_name]).unwrap()).unwrap().groupby_stable([&level_name]).unwrap().agg_list().unwrap();
-        df.rename(&format!("{}_list", column_name), column_name).unwrap();
+        df = df
+            .groupby_stable(&counter_cols)
+            .unwrap()
+            .agg_list()
+            .unwrap();
+        counter_cols = counter_cols
+            .into_iter()
+            .filter(|x| x != &level_name)
+            .collect();
+        df.rename(&format!("{}_agg_list", column_name), column_name)
+            .unwrap();
     }
-
-    let mut found_bottom = false;
-    let mut counter = 0u8;
-    while !found_bottom {
-        let level_name = format!("fold_list_level_{}", counter);
-        df.with_column(Series::new(&level_name, 0..(df.height() as u64))).unwrap();
-        df = df.explode([column_name]).unwrap();
-    }
+    df
 }

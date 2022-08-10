@@ -77,7 +77,8 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
 
         let mut colnames_identifiers = vec![];
         if let Some(grouping) = &tsq.grouping {
-            let (colname, processed_details_some) = create_read_processed_details(tsq, start_time, end_time);
+            let (colname, processed_details_some) =
+                create_read_processed_details(tsq, start_time, end_time);
             processed_details = Some(processed_details_some);
             timestamp_grouping_colname = colname;
             for c in tsq.ids.as_ref().unwrap() {
@@ -226,10 +227,10 @@ fn create_read_processed_details(
         use_sloped_extrapolation: false,
     };
     let interval_opt = find_grouping_interval(tsq);
-    let (out_string, processing_interval) = if let Some((s,interval)) = interval_opt {
-        (Some(s),interval)
+    let (out_string, processing_interval) = if let Some((s, interval)) = interval_opt {
+        (Some(s), interval)
     } else {
-        (None,0.0)
+        (None, 0.0)
     };
 
     let details = ReadProcessedDetails {
@@ -585,7 +586,7 @@ fn find_grouping_interval(tsq: &TimeSeriesQuery) -> Option<(String, f64)> {
                     find_grouping_interval_multiplication(right, left)
                 };
                 if let Some(f) = out {
-                    return Some((grvar.unwrap().as_str().to_string(), f))
+                    return Some((grvar.unwrap().as_str().to_string(), f));
                 }
             }
         }
@@ -603,9 +604,9 @@ fn find_grouping_interval_multiplication(a: &Expression, b: &Expression) -> Opti
                     if let Function::Custom(nn) = f {
                         if nn.as_str() == DATETIME_AS_SECONDS {
                             if let Some(f) = from_numeric_datatype(lit) {
-                                return Some(f*1000.0); //Intervals are in milliseconds
+                                return Some(f * 1000.0); //Intervals are in milliseconds
                             } else {
-                                return None
+                                return None;
                             }
                         }
                     }

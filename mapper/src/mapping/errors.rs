@@ -114,7 +114,11 @@ impl Display for MappingError {
                 write!(f, "Invalid template name {}", t)
             }
             MappingError::MissingForeignKeyColumn(colname, expected_colname) => {
-                write!(f, "Expected that the column {} occurs in place of {}", expected_colname, colname)
+                write!(
+                    f,
+                    "Expected that the column {} occurs in place of {}",
+                    expected_colname, colname
+                )
             }
         }
     }

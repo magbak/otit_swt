@@ -1,10 +1,10 @@
 pub const OTTR_TRIPLE: &str = "http://ns.ottr.xyz/0.4/Triple";
 pub const OTTR_PREFIX: &str = "ottr";
 pub const OTTR_PREFIX_IRI: &str = "http://ns.ottr.xyz/0.4/";
-pub const RDF_PREFIX :&str ="rdf";
-pub const RDF_PREFIX_IRI :&str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+pub const RDF_PREFIX: &str = "rdf";
+pub const RDF_PREFIX_IRI: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
 pub const RDFS_PREFIX: &str = "rdfs";
-pub const RDFS_PREFIX_IRI: &str= "http://www.w3.org/2000/01/rdf-schema#";
+pub const RDFS_PREFIX_IRI: &str = "http://www.w3.org/2000/01/rdf-schema#";
 pub const XSD_PREFIX: &str = "xsd";
 pub const XSD_PREFIX_IRI: &str = "http://www.w3.org/2001/XMLSchema#";
 pub const XSD_DATETIME_WITHOUT_TZ_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.f";
