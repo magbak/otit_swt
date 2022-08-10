@@ -1,5 +1,6 @@
 use crate::ast::PType;
 use crate::mapping::{ListLength, MintingOptions, SuffixGenerator};
+use log::warn;
 use polars_core::prelude::{AnyValue, DataFrame, DataType, Series};
 use uuid::Uuid;
 
@@ -24,28 +25,31 @@ pub fn mint_iri(
     } else {
         false
     };
-    let series = if is_list {
-        if let Some(ll) = &minting_options.list_length {
-            match ll {
-                ListLength::Constant(c) => {
-                    let mut dummy_series = Series::new_empty("dummy", &DataType::Null);
-                    dummy_series = dummy_series
-                        .extend_constant(
-                            AnyValue::List(Series::full_null("dummy", *c, &DataType::Null)),
-                            df.height(),
-                        )
-                        .unwrap();
-                    mint_iri_series_same_as_column(&dummy_series, variable_name, n_start, prefix)
-                }
-                ListLength::SameAsColumn(c) => mint_iri_series_same_as_column(
-                    df.column(c).unwrap(),
-                    variable_name,
-                    n_start,
-                    prefix,
-                ),
+    let series = if let Some(ll) = &minting_options.list_length {
+        if !is_list {
+            warn!(
+                "Consider annotating the variable {} as a list",
+                variable_name
+            )
+        }
+
+        match ll {
+            ListLength::Constant(c) => {
+                let mut dummy_series = Series::new_empty("dummy", &DataType::Null);
+                dummy_series = dummy_series
+                    .extend_constant(
+                        AnyValue::List(Series::full_null("dummy", *c, &DataType::Null)),
+                        df.height(),
+                    )
+                    .unwrap();
+                mint_iri_series_same_as_column(&dummy_series, variable_name, n_start, prefix)
             }
-        } else {
-            todo!("Make nice error here")
+            ListLength::SameAsColumn(c) => mint_iri_series_same_as_column(
+                df.column(c).unwrap(),
+                variable_name,
+                n_start,
+                prefix,
+            ),
         }
     } else {
         mint_iri_numbering(variable_name, n_start, df.height(), prefix)

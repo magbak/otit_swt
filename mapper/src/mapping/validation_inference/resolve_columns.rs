@@ -35,7 +35,7 @@ impl Mapping {
                 if let Some(df) = &self.object_property_triples {
                     if path_series
                         .is_in(
-                            &df.column(variable_name)
+                            &df.column("Path")
                                 .unwrap()
                                 .cast(&DataType::Categorical(None))
                                 .unwrap()

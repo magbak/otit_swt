@@ -82,15 +82,18 @@ impl Default for ExpandOptions {
     }
 }
 
+#[derive(Debug)]
 pub enum SuffixGenerator {
     Numbering(usize),
 }
 
+#[derive(Debug)]
 pub enum ListLength {
     Constant(usize),
     SameAsColumn(String),
 }
 
+#[derive(Debug)]
 pub struct MintingOptions {
     pub prefix: String,
     pub suffix_generator: SuffixGenerator,
