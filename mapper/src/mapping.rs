@@ -60,14 +60,15 @@ impl Display for Part {
 }
 
 #[derive(Debug)]
-pub struct PathColumn {
+pub struct ResolveIRI {
+    pub key_column_name: String,
     pub path: String,
     pub part: Part,
 }
 
 pub struct ExpandOptions {
     pub language_tags: Option<HashMap<String, String>>,
-    pub path_column_map: Option<HashMap<String, PathColumn>>,
+    pub resolve_iris: Option<HashMap<String, ResolveIRI>>,
     pub mint_iris: Option<HashMap<String, MintingOptions>>,
 }
 
@@ -75,7 +76,7 @@ impl Default for ExpandOptions {
     fn default() -> Self {
         ExpandOptions {
             language_tags: None,
-            path_column_map: None,
+            resolve_iris: None,
             mint_iris: None,
         }
     }

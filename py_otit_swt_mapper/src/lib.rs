@@ -10,7 +10,7 @@ use mapper::errors::MapperError;
 use mapper::mapping::ExpandOptions as RustExpandOptions;
 use mapper::mapping::MintingOptions as RustMintingOptions;
 use mapper::mapping::Part;
-use mapper::mapping::PathColumn as RustPathColumn;
+use mapper::mapping::ResolveIRI as RustResolveIRI;
 use mapper::mapping::{ListLength, Mapping as InnerMapping, SuffixGenerator};
 use mapper::templates::TemplateDataset;
 use pyo3::basic::CompareOp;
@@ -158,15 +158,16 @@ pub struct Mapping {
 
 #[pyclass]
 #[derive(Debug, Clone)]
-pub struct PathColumn {
+pub struct ResolveIRI {
+    key_column_name: String,
     path: String,
     part: Part,
 }
 
 #[pymethods]
-impl PathColumn {
+impl ResolveIRI {
     #[new]
-    pub fn new(path:String, part:&str) -> PathColumn {
+    pub fn new(key_column_name:String, path:String, part:&str) -> ResolveIRI {
         let part_lower = part.to_lowercase();
         let use_part = if part_lower == "subject" {
             Part::Subject
@@ -175,16 +176,18 @@ impl PathColumn {
         } else {
             panic!("Part should be Subject or Object, was {}", part)
         };
-        PathColumn {
-             path,
+        ResolveIRI {
+            key_column_name,
+            path,
             part:use_part
         }
     }
 }
 
-impl PathColumn {
-    fn to_rust_path_column(&self) -> RustPathColumn {
-        RustPathColumn {
+impl ResolveIRI {
+    fn to_rust_resolve_iri(&self) -> RustResolveIRI {
+        RustResolveIRI {
+            key_column_name: self.key_column_name.clone(),
             path: self.path.clone(),
             part: self.part.clone()
         }
@@ -194,19 +197,19 @@ impl PathColumn {
 #[derive(Debug, Clone)]
 pub struct ExpandOptions {
     pub language_tags: Option<HashMap<String, String>>,
-    pub path_column_map: Option<HashMap<String, PathColumn>>,
+    pub resolve_iris: Option<HashMap<String, ResolveIRI>>,
     pub mint_iris: Option<HashMap<String, MintingOptions>>,
 }
 
 impl ExpandOptions {
     fn to_rust_expand_options(&self) -> RustExpandOptions {
-        let mut path_column_map = None;
-        if let Some(self_path_column_map) = &self.path_column_map {
+        let mut resolve_iris = None;
+        if let Some(resolve_map) = &self.resolve_iris {
             let mut map = HashMap::new();
-            for (k, v) in self_path_column_map {
-                map.insert(k.clone(), v.to_rust_path_column());
+            for (k, v) in resolve_map {
+                map.insert(k.clone(), v.to_rust_resolve_iri());
             }
-            path_column_map = Some(map);
+            resolve_iris = Some(map);
         }
 
         let mut mint_iris = None;
@@ -220,7 +223,7 @@ impl ExpandOptions {
 
         RustExpandOptions {
             language_tags: self.language_tags.clone(),
-            path_column_map,
+            resolve_iris,
             mint_iris,
         }
     }
@@ -290,14 +293,14 @@ impl Mapping {
         &mut self,
         template: &str,
         df: &PyAny,
-        path_column_map: Option<HashMap<String, PathColumn>>,
+        resolve_iris: Option<HashMap<String, ResolveIRI>>,
         mint_iris: Option<HashMap<String, MintingOptions>>,
         language_tags: Option<HashMap<String, String>>,
     ) -> PyResult<()> {
         let df = polars_df_to_rust_df(&df)?;
         let options = ExpandOptions {
             language_tags,
-            path_column_map,
+            resolve_iris,
             mint_iris,
         };
 
@@ -404,7 +407,7 @@ impl Mapping {
 #[pymodule]
 fn otit_swt_mapper(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<Mapping>()?;
-    m.add_class::<PathColumn>()?;
+    m.add_class::<ResolveIRI>()?;
     m.add_class::<MintingOptions>()?;
 
     Ok(())

@@ -4,7 +4,7 @@ extern crate core;
 mod utils;
 
 use crate::utils::triples_from_file;
-use mapper::mapping::{ExpandOptions, Mapping, MintingOptions, Part, PathColumn, SuffixGenerator};
+use mapper::mapping::{ExpandOptions, Mapping, MintingOptions, Part, ResolveIRI, SuffixGenerator};
 use oxrdf::{Literal, NamedNode, Subject, Term, Triple};
 use polars::frame::DataFrame;
 use polars::series::Series;
@@ -442,9 +442,10 @@ fn test_path_column() {
             "http://example.net/ns#ExampleTemplate2",
             df,
             ExpandOptions {
-                path_column_map: Some(HashMap::from([
+                resolve_iris: Some(HashMap::from([
                     ("myIRI2".to_string(),
-                     PathColumn {
+                     ResolveIRI {
+                         key_column_name: "myIRI2ForeignKey".into(),
                          path: "<http://example.net/ns#ExampleTemplate1>/<http://ns.ottr.xyz/0.4/Triple>".into(),
                          part: Part::Object })])),
                 ..Default::default()
@@ -554,9 +555,10 @@ fn test_path_column_with_list() {
             "http://example.net/ns#ExampleTemplate2",
             df,
             ExpandOptions {
-                path_column_map: Some(HashMap::from([
+                resolve_iris: Some(HashMap::from([
                     ("myIRI2".to_string(),
-                     PathColumn {
+                     ResolveIRI {
+                         key_column_name: "myIRI2ForeignKey".into(),
                          path: "<http://example.net/ns#ExampleTemplate1>/<http://ns.ottr.xyz/0.4/Triple>".into(),
                          part: Part::Object })])),
                 ..Default::default()

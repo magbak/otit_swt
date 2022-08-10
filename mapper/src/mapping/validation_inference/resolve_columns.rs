@@ -1,6 +1,6 @@
 use super::Mapping;
 use crate::mapping::errors::MappingError;
-use crate::mapping::{Part, PathColumn};
+use crate::mapping::{Part, ResolveIRI};
 use log::warn;
 use polars::prelude::SeriesOps;
 use polars_core::datatypes::DataType;
@@ -11,14 +11,14 @@ use polars_core::toggle_string_cache;
 use std::collections::HashSet;
 
 impl Mapping {
-    pub fn resolve_path_key_column(
+    pub fn resolve_iri_column(
         &self,
-        path_column: &PathColumn,
+        resolve_iri: &ResolveIRI,
         variable_name: &str,
         df: &mut DataFrame,
         df_columns: &mut HashSet<String>,
     ) -> Result<(), MappingError> {
-        let key_column = format!("{}ForeignKey", variable_name);
+        let key_column = resolve_iri.key_column_name.clone();
         if !df_columns.contains(&key_column) {
             return Err(MappingError::MissingForeignKeyColumn(
                 variable_name.to_string(),
@@ -26,11 +26,11 @@ impl Mapping {
             ));
         }
 
-        let mut path_series = Series::new("Path", [path_column.path.clone()]);
+        let mut path_series = Series::new("Path", [resolve_iri.path.clone()]);
         toggle_string_cache(true);
         path_series = path_series.cast(&DataType::Categorical(None)).unwrap();
 
-        let use_df = match &path_column.part {
+        let use_df = match &resolve_iri.part {
             Part::Subject => {
                 if let Some(df) = &self.object_property_triples {
                     if path_series
@@ -61,7 +61,7 @@ impl Mapping {
         };
 
         let mut join_df = use_df
-            .select(["Key", "Path", &path_column.part.to_string()])
+            .select(["Key", "Path", &resolve_iri.part.to_string()])
             .unwrap();
         join_df
             .with_column(
@@ -86,7 +86,7 @@ impl Mapping {
             .filter(&join_df.column("Path").unwrap().is_in(&path_series).unwrap())
             .unwrap();
         join_df
-            .rename(&path_column.part.to_string(), variable_name)
+            .rename(&resolve_iri.part.to_string(), variable_name)
             .unwrap();
         df.with_column(Series::new("ordering_column", 0..(df.height() as u64)))
             .unwrap();

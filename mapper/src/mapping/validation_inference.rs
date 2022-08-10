@@ -49,7 +49,7 @@ impl Mapping {
 
         let mut map = HashMap::new();
         let empty_path_column_map = HashMap::new();
-        let path_column_map = if let Some(m) = &options.path_column_map {
+        let path_column_map = if let Some(m) = &options.resolve_iris {
             m
         } else {
             &empty_path_column_map
@@ -77,7 +77,7 @@ impl Mapping {
                     MappedColumn::PrimitiveColumn(column_data_type),
                 );
             } else if let Some(path_column) = path_column_map.get(variable_name) {
-                self.resolve_path_key_column(
+                self.resolve_iri_column(
                     path_column,
                     variable_name.as_str(),
                     &mut df,
