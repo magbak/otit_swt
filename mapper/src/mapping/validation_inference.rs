@@ -78,6 +78,14 @@ impl Mapping {
                     MappedColumn::PrimitiveColumn(column_data_type),
                 );
             } else if let Some(path_column) = path_column_map.get(variable_name) {
+                let key_column = format!("{}ForeignKey", variable_name.as_str());
+                if !df_columns.contains(&key_column) {
+                    return Err(MappingError::MissingForeignKeyColumn(
+                        variable_name.as_str().to_string(),
+                        key_column,
+                    ));
+                }
+
                 let mut path_series = Series::new("Path", [path_column.path.clone()]);
                 toggle_string_cache(true);
                 path_series = path_series.cast(&DataType::Categorical(None)).unwrap();
@@ -143,7 +151,7 @@ impl Mapping {
 
                 df.with_column(path_series).unwrap();
                 df.with_column(
-                    df.column("Key")
+                    df.column(&key_column)
                         .unwrap()
                         .cast(&DataType::Categorical(None))
                         .unwrap(),
@@ -152,7 +160,7 @@ impl Mapping {
                 df = df
                     .join(
                         &join_df,
-                        ["Key", "Path"],
+                        [&key_column, "Path"],
                         ["Key", "Path"],
                         JoinType::Left,
                         None,
@@ -160,6 +168,7 @@ impl Mapping {
                     .unwrap()
                     .drop("Path")
                     .unwrap();
+                df_columns.remove(&key_column);
                 toggle_string_cache(false);
                 df.with_column(df.column("Key").unwrap().cast(&DataType::Utf8).unwrap())
                     .unwrap();

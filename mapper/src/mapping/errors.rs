@@ -10,6 +10,7 @@ pub enum MappingError {
     InvalidTemplateNameError(#[from] IriParseError),
     TemplateNotFound(String),
     MissingKeyColumn,
+    MissingForeignKeyColumn(String, String),
     KeyColumnContainsDuplicates(Series),
     KeyAndPathColumnOverlapsExisting(DataFrame),
     NonOptionalColumnHasNull(String, Series),
@@ -111,6 +112,9 @@ impl Display for MappingError {
             }
             MappingError::InvalidTemplateNameError(t) => {
                 write!(f, "Invalid template name {}", t)
+            }
+            MappingError::MissingForeignKeyColumn(colname, expected_colname) => {
+                write!(f, "Expected that the column {} occurs in place of {}", expected_colname, colname)
             }
         }
     }

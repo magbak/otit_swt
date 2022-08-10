@@ -290,9 +290,9 @@ impl Mapping {
         &mut self,
         template: &str,
         df: &PyAny,
-        language_tags: Option<HashMap<String, String>>,
         path_column_map: Option<HashMap<String, PathColumn>>,
         mint_iris: Option<HashMap<String, MintingOptions>>,
+        language_tags: Option<HashMap<String, String>>,
     ) -> PyResult<()> {
         let df = polars_df_to_rust_df(&df)?;
         let options = ExpandOptions {

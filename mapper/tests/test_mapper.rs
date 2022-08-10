@@ -431,7 +431,11 @@ fn test_path_column() {
         "http://example.net/things#otherSubject2".to_string(),
     ]);
     my_iri1.rename("myIRI1");
-    let series = [k, my_iri1];
+    let mut k2 = Series::from_iter(["KeyOne2", "KeyTwo2"]);
+    k2.rename("Key");
+    let mut fk = k.clone();
+    fk.rename("myIRI2ForeignKey");
+    let series = [k2, my_iri1, fk];
     let df = DataFrame::from_iter(series);
     let _report = mapping
         .expand(
