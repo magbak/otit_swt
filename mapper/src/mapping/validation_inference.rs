@@ -1,3 +1,5 @@
+mod resolve_columns;
+
 use super::Mapping;
 use crate::ast::{PType, Parameter, Signature};
 use crate::chrono::TimeZone as ChronoTimeZone;
@@ -17,6 +19,7 @@ use polars_core::prelude::{
     StructChunked, TimeZone,
 };
 use std::collections::{HashMap, HashSet};
+use crate::mapping::validation_inference::resolve_columns::resolve_path_key_column;
 
 #[derive(Clone, Debug)]
 pub struct PrimitiveColumn {
@@ -78,111 +81,7 @@ impl Mapping {
                     MappedColumn::PrimitiveColumn(column_data_type),
                 );
             } else if let Some(path_column) = path_column_map.get(variable_name) {
-                let key_column = format!("{}ForeignKey", variable_name.as_str());
-                if !df_columns.contains(&key_column) {
-                    return Err(MappingError::MissingForeignKeyColumn(
-                        variable_name.as_str().to_string(),
-                        key_column,
-                    ));
-                }
-
-                let mut path_series = Series::new("Path", [path_column.path.clone()]);
-                toggle_string_cache(true);
-                path_series = path_series.cast(&DataType::Categorical(None)).unwrap();
-
-                let use_df = match &path_column.part {
-                    Part::Subject => {
-                        if let Some(df) = &self.object_property_triples {
-                            if path_series
-                                .is_in(
-                                    &df.column(variable_name)
-                                        .unwrap()
-                                        .cast(&DataType::Categorical(None))
-                                        .unwrap()
-                                        .unique()
-                                        .unwrap(),
-                                )
-                                .unwrap()
-                                .any()
-                            {
-                                df
-                            } else if let Some(df) = &self.data_property_triples {
-                                df
-                            } else {
-                                panic!("Should not happen")
-                            }
-                        } else if let Some(df) = &self.data_property_triples {
-                            df
-                        } else {
-                            panic!("Should also not happen")
-                        }
-                    }
-                    Part::Object => self.object_property_triples.as_ref().unwrap(),
-                };
-
-                let mut join_df = use_df
-                    .select(["Key", "Path", &path_column.part.to_string()])
-                    .unwrap();
-                join_df
-                    .with_column(
-                        join_df
-                            .column("Path")
-                            .unwrap()
-                            .cast(&DataType::Categorical(None))
-                            .unwrap(),
-                    )
-                    .unwrap();
-                join_df
-                    .with_column(
-                        join_df
-                            .column("Key")
-                            .unwrap()
-                            .cast(&DataType::Categorical(None))
-                            .unwrap(),
-                    )
-                    .unwrap();
-
-                join_df = join_df
-                    .filter(&join_df.column("Path").unwrap().is_in(&path_series).unwrap())
-                    .unwrap();
-                join_df
-                    .rename(&path_column.part.to_string(), variable_name)
-                    .unwrap();
-
-                df.with_column(path_series).unwrap();
-                df.with_column(
-                    df.column(&key_column)
-                        .unwrap()
-                        .cast(&DataType::Categorical(None))
-                        .unwrap(),
-                )
-                .unwrap();
-                df = df
-                    .join(
-                        &join_df,
-                        [&key_column, "Path"],
-                        ["Key", "Path"],
-                        JoinType::Left,
-                        None,
-                    )
-                    .unwrap()
-                    .drop("Path")
-                    .unwrap();
-                df_columns.remove(&key_column);
-                toggle_string_cache(false);
-                df.with_column(df.column("Key").unwrap().cast(&DataType::Utf8).unwrap())
-                    .unwrap();
-                df.with_column(
-                    df.column(variable_name)
-                        .unwrap()
-                        .cast(&DataType::Utf8)
-                        .unwrap(),
-                )
-                .unwrap();
-                let nullsum = df.column(variable_name).unwrap().null_count();
-                if nullsum > 0 {
-                    warn!("Path column {} has {} non-matches", variable_name, nullsum);
-                }
+                resolve_path_key_column(path_column, variable_name.as_str(), &mut df, df_columns)?;
                 map.insert(
                     variable_name.to_string(),
                     MappedColumn::PrimitiveColumn(PrimitiveColumn {
