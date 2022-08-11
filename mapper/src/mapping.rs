@@ -37,8 +37,8 @@ pub struct Mapping {
 
 #[derive(Debug)]
 pub struct ResolveIRI {
-    pub key_column_name: String,
-    pub template: NamedNode,
+    pub key_column: String,
+    pub template: String,
     pub argument: String,
 }
 

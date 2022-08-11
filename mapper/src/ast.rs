@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use oxrdf::{BlankNode, NamedNode};
 use std::fmt::{Display, Formatter};
 
@@ -149,4 +150,5 @@ pub enum StottrTerm {
 pub struct StottrDocument {
     pub directives: Vec<Directive>,
     pub statements: Vec<Statement>,
+    pub prefix_map: HashMap<String, NamedNode>,
 }

@@ -5,7 +5,6 @@ use crate::ast::{PType, Parameter, Signature};
 use crate::chrono::TimeZone as ChronoTimeZone;
 use crate::constants::{XSD_DATETIME_WITHOUT_TZ_FORMAT, XSD_DATETIME_WITH_TZ_FORMAT};
 use crate::mapping::errors::MappingError;
-use crate::mapping::mint::mint_iri;
 use crate::mapping::ExpandOptions;
 use chrono::{Datelike, Timelike};
 use oxrdf::vocab::xsd;
@@ -97,7 +96,7 @@ impl Mapping {
                     .unwrap()
                     .contains_key(variable_name)
             {
-                let minted_iris = mint_iri(
+                let minted_iris = self.mint_iri(
                     &mut df,
                     variable_name,
                     &parameter.ptype,

@@ -17,7 +17,6 @@ use pyo3::basic::CompareOp;
 use pyo3::prelude::PyModule;
 use pyo3::*;
 use std::collections::HashMap;
-use oxrdf::NamedNode;
 
 #[pyclass]
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -160,18 +159,18 @@ pub struct Mapping {
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct ResolveIRI {
-    key_column_name: String,
-    template: NamedNode,
+    key_column: String,
+    template: String,
     argument: String,
 }
 
 #[pymethods]
 impl ResolveIRI {
     #[new]
-    pub fn new(key_column_name:String, template:String, argument:String) -> ResolveIRI {
+    pub fn new(key_column:String, template:String, argument:String) -> ResolveIRI {
         ResolveIRI {
-            key_column_name,
-            template:NamedNode::new(template).unwrap(),
+            key_column,
+            template,
             argument
         }
     }
@@ -180,7 +179,7 @@ impl ResolveIRI {
 impl ResolveIRI {
     fn to_rust_resolve_iri(&self) -> RustResolveIRI {
         RustResolveIRI {
-            key_column_name: self.key_column_name.clone(),
+            key_column: self.key_column.clone(),
             template: self.template.clone(),
             argument: self.argument.clone()
         }

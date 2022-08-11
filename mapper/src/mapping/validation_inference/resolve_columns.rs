@@ -1,6 +1,6 @@
 use super::Mapping;
 use crate::mapping::errors::MappingError;
-use crate::mapping::{ResolveIRI};
+use crate::mapping::ResolveIRI;
 use log::warn;
 use polars::prelude::SeriesOps;
 use polars_core::datatypes::DataType;
@@ -18,29 +18,59 @@ impl Mapping {
         df: &mut DataFrame,
         df_columns: &mut HashSet<String>,
     ) -> Result<(), MappingError> {
-        let key_column = resolve_iri.key_column_name.clone();
+        let key_column = resolve_iri.key_column.clone();
         if !df_columns.contains(&key_column) {
             return Err(MappingError::MissingForeignKeyColumn(
                 variable_name.to_string(),
                 key_column,
             ));
         }
+        let mut template_name = None;
 
-        let use_df = if let Some(df) = self.minted_iris.get(resolve_iri.template.as_str()) {
-            if let Ok(_) = df.column(&resolve_iri.argument) {
-                df
-            } else {
-                return Err(MappingError::NoMintedIRIsForArgument(resolve_iri.argument.clone(), df.get_column_names().into_iter().filter(|x|*x != "Key").map(|x|x.to_string()).collect()))
-            }
+        if self.minted_iris.contains_key(&resolve_iri.template) {
+            template_name = Some(resolve_iri.template.clone());
         } else {
-            return Err(MappingError::NoMintedIRIsForTemplate(resolve_iri.template.as_str().to_string()))
-        };
+            let mut split_colon = resolve_iri.template.split(":");
+            let prefix_maybe = split_colon.next();
+            if let Some(prefix) = prefix_maybe {
+                if let Some(nn) = self.template_dataset.prefix_map.get(prefix) {
+                    let possible_template_name =
+                        nn.as_str().to_string() + &split_colon.collect::<Vec<&str>>().join(":");
+                    if self.minted_iris.contains_key(&possible_template_name) {
+                        template_name = Some(possible_template_name);
+                    } else {
+                        return Err(MappingError::NoMintedIRIsForTemplateNameFromPrefix(
+                            possible_template_name,
+                        ));
+                    }
+                }
+            }
+        }
+
+        if template_name.is_none() {
+            return Err(MappingError::NoMintedIRIsForTemplate(
+                resolve_iri.template.clone(),
+            ));
+        }
+        let use_df = self
+            .minted_iris
+            .get(template_name.as_ref().unwrap())
+            .unwrap();
+
+        if let Err(_) = use_df.column(&resolve_iri.argument) {
+            return Err(MappingError::NoMintedIRIsForArgument(
+                resolve_iri.argument.clone(),
+                use_df.get_column_names()
+                    .into_iter()
+                    .filter(|x| *x != "Key")
+                    .map(|x| x.to_string())
+                    .collect(),
+            ));
+        }
 
         toggle_string_cache(true);
 
-        let mut join_df = use_df
-            .select(["Key", &resolve_iri.argument])
-            .unwrap();
+        let mut join_df = use_df.select(["Key", &resolve_iri.argument]).unwrap();
         join_df
             .with_column(
                 join_df

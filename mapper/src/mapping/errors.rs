@@ -27,6 +27,7 @@ pub enum MappingError {
     ConstantListHasInconsistentPType(ConstantTerm, PType, PType),
     NoMintedIRIsForArgument(String, Vec<String>),
     NoMintedIRIsForTemplate(String),
+    NoMintedIRIsForTemplateNameFromPrefix(String),
 }
 
 impl Display for MappingError {
@@ -132,6 +133,9 @@ impl Display for MappingError {
             }
             MappingError::NoMintedIRIsForTemplate(tmpl) => {
                 write!(f, "Could not find any minted IRIs for template {}", tmpl)
+            }
+            MappingError::NoMintedIRIsForTemplateNameFromPrefix(prefix) => {
+                write!(f, "Template {} inferred from prefix has no minted IRIs", prefix)
             }
         }
     }

@@ -64,6 +64,7 @@ pub(crate) fn resolve_document(
     Ok(StottrDocument {
         directives,
         statements,
+        prefix_map
     })
 }
 

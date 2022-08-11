@@ -3,60 +3,66 @@ use crate::mapping::{ListLength, MintingOptions, SuffixGenerator};
 use log::warn;
 use polars_core::prelude::{AnyValue, DataFrame, DataType, Series};
 use uuid::Uuid;
+use super::Mapping;
 
-pub fn mint_iri(
-    df: &mut DataFrame,
-    variable_name: &str,
-    ptype_opt: &Option<PType>,
-    minting_options: &MintingOptions,
-) -> Series {
-    assert!(!df.get_column_names().contains(&variable_name));
-    let n_start = match minting_options.suffix_generator {
-        SuffixGenerator::Numbering(numbering) => numbering,
-    };
-    let prefix = &minting_options.prefix;
-    let is_list = if let Some(ptype) = ptype_opt {
-        match ptype {
-            PType::BasicType(_) => false,
-            PType::LUBType(_) => true,
-            PType::ListType(_) => true,
-            PType::NEListType(_) => true,
-        }
-    } else {
-        false
-    };
-    let series = if let Some(ll) = &minting_options.list_length {
-        if !is_list {
-            warn!(
+impl Mapping {
+    pub(crate) fn mint_iri(
+        &self,
+        df: &mut DataFrame,
+        variable_name: &str,
+        ptype_opt: &Option<PType>,
+        minting_options: &MintingOptions,
+    ) -> Series {
+        assert!(!df.get_column_names().contains(&variable_name));
+        let n_start = match minting_options.suffix_generator {
+            SuffixGenerator::Numbering(numbering) => numbering,
+        };
+
+        let prefix = &minting_options.prefix;
+
+        let is_list = if let Some(ptype) = ptype_opt {
+            match ptype {
+                PType::BasicType(_) => false,
+                PType::LUBType(_) => true,
+                PType::ListType(_) => true,
+                PType::NEListType(_) => true,
+            }
+        } else {
+            false
+        };
+        let series = if let Some(ll) = &minting_options.list_length {
+            if !is_list {
+                warn!(
                 "Consider annotating the variable {} as a list",
                 variable_name
             )
-        }
-
-        match ll {
-            ListLength::Constant(c) => {
-                let mut dummy_series = Series::new_empty("dummy", &DataType::Null);
-                dummy_series = dummy_series
-                    .extend_constant(
-                        AnyValue::List(Series::full_null("dummy", *c, &DataType::Null)),
-                        df.height(),
-                    )
-                    .unwrap();
-                mint_iri_series_same_as_column(&dummy_series, variable_name, n_start, prefix)
             }
-            ListLength::SameAsColumn(c) => mint_iri_series_same_as_column(
-                df.column(c).unwrap(),
-                variable_name,
-                n_start,
-                prefix,
-            ),
-        }
-    } else {
-        mint_iri_numbering(variable_name, n_start, df.height(), prefix)
-    };
-    let out_series = series.clone();
-    df.with_column(series).unwrap();
-    out_series
+
+            match ll {
+                ListLength::Constant(c) => {
+                    let mut dummy_series = Series::new_empty("dummy", &DataType::Null);
+                    dummy_series = dummy_series
+                        .extend_constant(
+                            AnyValue::List(Series::full_null("dummy", *c, &DataType::Null)),
+                            df.height(),
+                        )
+                        .unwrap();
+                    mint_iri_series_same_as_column(&dummy_series, variable_name, n_start, prefix)
+                }
+                ListLength::SameAsColumn(c) => mint_iri_series_same_as_column(
+                    df.column(c).unwrap(),
+                    variable_name,
+                    n_start,
+                    prefix,
+                ),
+            }
+        } else {
+            mint_iri_numbering(variable_name, n_start, df.height(), prefix)
+        };
+        let out_series = series.clone();
+        df.with_column(series).unwrap();
+        out_series
+    }
 }
 
 fn mint_iri_series_same_as_column(

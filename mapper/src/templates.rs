@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use crate::ast::{
     Instance, PType, Parameter, Signature, Statement, StottrDocument, StottrTerm, StottrVariable,
     Template,
@@ -10,6 +11,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs::read_dir;
 use std::path::Path;
+use log::warn;
 
 #[derive(Debug)]
 pub struct TypingError {
@@ -49,13 +51,33 @@ impl Error for TypingError {}
 pub struct TemplateDataset {
     pub templates: Vec<Template>,
     pub ground_instances: Vec<Instance>,
+    pub prefix_map: HashMap<String, NamedNode>
 }
 
 impl TemplateDataset {
     pub fn new(mut documents: Vec<StottrDocument>) -> Result<TemplateDataset, TypingError> {
         let mut templates = vec![];
         let mut ground_instances = vec![];
+        let mut prefix_map = HashMap::new();
+        let mut defined_prefixes = HashSet::new();
         for d in &mut documents {
+            for (k,v) in d.prefix_map.drain() {
+                if defined_prefixes.contains(&k) {
+                    let mut remove = false;
+                    if let Some(v_prime) = prefix_map.get(&k) {
+                        if &v != v_prime {
+                            remove = true;
+                        }
+                    }
+                    if remove {
+                        prefix_map.remove(&k);
+                        warn!("Prefix {} has conflicting definitions across documents, consider harmonizing", k);
+                    }
+                    } else {
+                    defined_prefixes.insert(k.clone());
+                    prefix_map.insert(k, v);
+                }
+            }
             for i in d.statements.drain(0..d.statements.len()) {
                 match i {
                     Statement::Template(t) => {
@@ -70,6 +92,7 @@ impl TemplateDataset {
         let mut td = TemplateDataset {
             templates,
             ground_instances,
+            prefix_map
         };
         //TODO: Put in function, check not exists and consistent...
         let ottr_triple_subject = Parameter {

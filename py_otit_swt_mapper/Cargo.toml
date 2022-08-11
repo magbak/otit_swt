@@ -11,7 +11,6 @@ mapper = {path="../mapper"}
 arrow_python_utils = {path="../arrow_python_utils"}
 thiserror="1.0.31"
 polars-core = {version="0.22.7"}
-oxrdf = "0.1.0"
 
 [lib]
 name = "otit_swt_mapper"

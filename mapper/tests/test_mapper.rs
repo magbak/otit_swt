@@ -450,8 +450,8 @@ fn test_path_column() {
                 resolve_iris: Some(HashMap::from([
                     ("myIRI2".to_string(),
                      ResolveIRI {
-                         key_column_name: "myIRI2ForeignKey".into(),
-                         template: NamedNode::new("http://example.net/ns#ExampleTemplate1").unwrap(),
+                         key_column: "myIRI2ForeignKey".into(),
+                         template: "http://example.net/ns#ExampleTemplate1".to_string(),
                          argument: "myIRI2".to_string()
                      })])),
                 ..Default::default()
@@ -564,8 +564,8 @@ fn test_path_column_with_list() {
                 resolve_iris: Some(HashMap::from([
                     ("myIRI2".to_string(),
                      ResolveIRI {
-                         key_column_name: "myIRI2ForeignKey".into(),
-                         template: NamedNode::new("http://example.net/ns#ExampleTemplate1").unwrap(),
+                         key_column: "myIRI2ForeignKey".into(),
+                         template: "http://example.net/ns#ExampleTemplate1".to_string(),
                          argument: "myIRI2".to_string()
                      })])),
                 ..Default::default()
