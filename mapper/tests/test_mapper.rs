@@ -4,7 +4,7 @@ extern crate core;
 mod utils;
 
 use crate::utils::triples_from_file;
-use mapper::mapping::{ExpandOptions, Mapping, MintingOptions, Part, ResolveIRI, SuffixGenerator};
+use mapper::mapping::{ExpandOptions, Mapping, MintingOptions, ResolveIRI, SuffixGenerator};
 use oxrdf::{Literal, NamedNode, Subject, Term, Triple};
 use polars::frame::DataFrame;
 use polars::series::Series;
@@ -342,9 +342,9 @@ fn test_mint_iri_templates() {
         "http://example.net/things#subject2".to_string(),
     ]);
     my_iri1.rename("myIRI1");
-    let series = [k, my_iri1];
+    let series = [k.clone(), my_iri1];
     let df = DataFrame::from_iter(series);
-    let _report = mapping
+    let report = mapping
         .expand(
             "http://example.net/ns#ExampleTemplate",
             df,
@@ -361,6 +361,11 @@ fn test_mint_iri_templates() {
             },
         )
         .unwrap();
+    let expected_minted_iris_df = DataFrame::new(
+        vec![k.clone(), Series::new("myIRI2", ["http://example.net/things#3", "http://example.net/things#4"])]
+    ).unwrap();
+    assert_eq!(report.minted_iris.as_ref().unwrap(), &expected_minted_iris_df);
+
     let triples = mapping.export_oxrdf_triples();
     //println!("{:?}", triples);
     let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
@@ -446,8 +451,9 @@ fn test_path_column() {
                     ("myIRI2".to_string(),
                      ResolveIRI {
                          key_column_name: "myIRI2ForeignKey".into(),
-                         path: "<http://example.net/ns#ExampleTemplate1>/<http://ns.ottr.xyz/0.4/Triple>".into(),
-                         part: Part::Object })])),
+                         template: NamedNode::new("http://example.net/ns#ExampleTemplate1").unwrap(),
+                         argument: "myIRI2".to_string()
+                     })])),
                 ..Default::default()
             },
         )
@@ -559,8 +565,9 @@ fn test_path_column_with_list() {
                     ("myIRI2".to_string(),
                      ResolveIRI {
                          key_column_name: "myIRI2ForeignKey".into(),
-                         path: "<http://example.net/ns#ExampleTemplate1>/<http://ns.ottr.xyz/0.4/Triple>".into(),
-                         part: Part::Object })])),
+                         template: NamedNode::new("http://example.net/ns#ExampleTemplate1").unwrap(),
+                         argument: "myIRI2".to_string()
+                     })])),
                 ..Default::default()
             },
         )

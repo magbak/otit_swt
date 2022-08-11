@@ -30,7 +30,6 @@ use std::fmt::{Debug};
 use polars_core::error::{ArrowError, PolarsError};
 use thiserror::Error;
 use mapper::errors::MapperError;
-use simple_error::SimpleError;
 
 #[derive(Error, Debug)]
 pub enum PyMapperError {
@@ -40,8 +39,6 @@ pub enum PyMapperError {
     PolarsError(#[from] PolarsError),
     #[error(transparent)]
     Arrow(#[from] ArrowError),
-    #[error(transparent)]
-    Other(SimpleError)
 }
 
 impl std::convert::From<PyMapperError> for PyErr {

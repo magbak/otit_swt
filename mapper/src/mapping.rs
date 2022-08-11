@@ -13,7 +13,6 @@ use crate::document::document_from_str;
 use crate::mapping::errors::MappingError;
 use crate::mapping::validation_inference::{MappedColumn, PrimitiveColumn, RDFNodeType};
 use crate::templates::TemplateDataset;
-use log::debug;
 use ntriples_write::write_ntriples;
 use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
@@ -25,45 +24,22 @@ use polars::prelude::{
 use polars::prelude::{IntoSeries, NoEq, StructChunked};
 use std::collections::HashMap;
 use std::error::Error;
-use std::fmt::{Display, Formatter};
 use std::io::Write;
 use std::ops::{Deref, Not};
 use std::path::Path;
 
 pub struct Mapping {
+    minted_iris: HashMap<String, DataFrame>,
     template_dataset: TemplateDataset,
     object_property_triples: Option<DataFrame>,
     data_property_triples: Option<DataFrame>,
 }
 
-#[derive(Debug, Clone)]
-pub enum Part {
-    Subject,
-    Object,
-}
-
-impl Display for Part {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Part::Subject => {
-                    "subject"
-                }
-                Part::Object => {
-                    "object"
-                }
-            }
-        )
-    }
-}
-
 #[derive(Debug)]
 pub struct ResolveIRI {
     pub key_column_name: String,
-    pub path: String,
-    pub part: Part,
+    pub template: NamedNode,
+    pub argument: String,
 }
 
 pub struct ExpandOptions {
@@ -100,14 +76,16 @@ pub struct MintingOptions {
     pub list_length: Option<ListLength>,
 }
 
-pub struct MappingReport {}
+#[derive(Debug, PartialEq)]
+pub struct MappingReport {
+    pub minted_iris: Option<DataFrame>
+}
 
 impl Mapping {
     pub fn new(template_dataset: &TemplateDataset) -> Mapping {
         let utf8 = DataType::Utf8;
         let object_property_dataframe = DataFrame::new(vec![
             Series::new_empty("Key", &utf8),
-            Series::new_empty("Path", &utf8),
             Series::new_empty("subject", &utf8),
             Series::new_empty("verb", &utf8),
             Series::new_empty("object", &utf8),
@@ -115,7 +93,6 @@ impl Mapping {
         .unwrap();
         let data_property_dataframe = DataFrame::new(vec![
             Series::new_empty("Key", &utf8),
-            Series::new_empty("Path", &utf8),
             Series::new_empty("subject", &utf8),
             Series::new_empty("verb", &utf8),
             Series::new_empty("object", &DataType::Struct(literal_struct_fields())),
@@ -123,6 +100,7 @@ impl Mapping {
         .unwrap();
 
         Mapping {
+            minted_iris: HashMap::new(),
             template_dataset: template_dataset.clone(),
             object_property_triples: Some(object_property_dataframe),
             data_property_triples: Some(data_property_dataframe),
@@ -249,17 +227,26 @@ impl Mapping {
         let name = NamedNode::new(template).map_err(MappingError::from)?;
         self.validate_dataframe(&mut df)?;
         if let Some(target_template) = self.template_dataset.get(&name) {
-            let (df, columns) = self.find_validate_and_prepare_dataframe_columns(
+            let (df, columns, minted_iris) = self.find_validate_and_prepare_dataframe_columns(
                 &target_template.signature,
                 df,
                 &options,
             )?;
             let mut result_vec = vec![];
-            let path_here = vec![format!("<{}>", template)];
-            self._expand(&name, df.lazy(), columns, &mut result_vec, path_here)?;
+            self._expand(&name, df.lazy(), columns, &mut result_vec)?;
             self.process_results(result_vec);
 
-            Ok(MappingReport {})
+            if let Some(minted_iris_df) = &minted_iris {
+                if self.minted_iris.contains_key(name.as_str()) {
+                    let existing = self.minted_iris.remove(name.as_str()).unwrap();
+                    self.minted_iris.insert(name.as_str().to_string(), concat([existing.lazy(), minted_iris_df.clone().lazy()], true).unwrap().collect().unwrap());
+                } else {
+                    self.minted_iris.insert(name.as_str().to_string(), minted_iris_df.clone());
+                }
+            }
+            Ok(MappingReport {
+                minted_iris
+            })
         } else {
             Err(MappingError::TemplateNotFound(name.as_str().to_string()))
         }
@@ -271,18 +258,12 @@ impl Mapping {
         mut lf: LazyFrame,
         columns: HashMap<String, MappedColumn>,
         new_lfs_columns: &mut Vec<(LazyFrame, HashMap<String, MappedColumn>)>,
-        path_here: Vec<String>,
     ) -> Result<(), MappingError> {
-        debug!("Expansion with path here: {}", path_here.join("/"));
         //At this point, the lf should have columns with names appropriate for the template to be instantiated (named_node).
         if let Some(template) = self.template_dataset.get(name) {
             if template.signature.template_name.as_str() == OTTR_TRIPLE {
-                lf = lf.with_column(
-                    Expr::Literal(LiteralValue::Utf8(path_here.join("/"))).alias("Path"),
-                );
                 let keep_cols = vec![
                     col("Key"),
-                    col("Path"),
                     col("subject"),
                     col("verb"),
                     col("object"),
@@ -299,16 +280,11 @@ impl Mapping {
                         lf.clone(),
                         &columns,
                     )?;
-                    // We extend the path with the template name
-                    let mut new_path_here = path_here.clone();
-                    // To_string means we include < and > to avoid ambiguity
-                    new_path_here.push(i.template_name.to_string());
                     self._expand(
                         &i.template_name,
                         instance_lf,
                         instance_columns,
                         new_lfs_columns,
-                        new_path_here,
                     )?;
                 }
                 Ok(())

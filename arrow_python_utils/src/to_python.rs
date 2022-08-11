@@ -80,7 +80,7 @@ pub(crate) fn to_py_rb(
     Ok(record.to_object(py))
 }
 
-pub(crate) fn to_py_df(
+pub fn to_py_df(
     rb: &ArrowChunk,
     names: &[&str],
     py: Python,

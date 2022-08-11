@@ -41,13 +41,14 @@ impl Mapping {
         signature: &Signature,
         mut df: DataFrame,
         options: &ExpandOptions,
-    ) -> Result<(DataFrame, HashMap<String, MappedColumn>), MappingError> {
+    ) -> Result<(DataFrame, HashMap<String, MappedColumn>, Option<DataFrame>), MappingError> {
         let mut df_columns = HashSet::new();
         df_columns.extend(df.get_column_names().into_iter().map(|x| x.to_string()));
         let removed = df_columns.remove("Key");
         assert!(removed);
 
         let mut map = HashMap::new();
+        let mut all_minted_iris = vec![];
         let empty_path_column_map = HashMap::new();
         let path_column_map = if let Some(m) = &options.resolve_iris {
             m
@@ -96,7 +97,7 @@ impl Mapping {
                     .unwrap()
                     .contains_key(variable_name)
             {
-                mint_iri(
+                let minted_iris = mint_iri(
                     &mut df,
                     variable_name,
                     &parameter.ptype,
@@ -107,6 +108,7 @@ impl Mapping {
                         .get(variable_name)
                         .unwrap(),
                 );
+                all_minted_iris.push(minted_iris);
                 map.insert(
                     variable_name.to_string(),
                     MappedColumn::PrimitiveColumn(PrimitiveColumn {
@@ -124,7 +126,14 @@ impl Mapping {
                 df_columns.iter().map(|x| x.to_string()).collect(),
             ));
         }
-        Ok((df, map))
+        let minted_iris_df;
+        if all_minted_iris.len() > 0 {
+            all_minted_iris.insert(0, df.column("Key").unwrap().clone());
+            minted_iris_df = Some(DataFrame::new(all_minted_iris).unwrap());
+        } else {
+            minted_iris_df = None;
+        }
+        Ok((df, map, minted_iris_df))
     }
 }
 

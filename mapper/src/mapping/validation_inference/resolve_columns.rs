@@ -1,6 +1,6 @@
 use super::Mapping;
 use crate::mapping::errors::MappingError;
-use crate::mapping::{Part, ResolveIRI};
+use crate::mapping::{ResolveIRI};
 use log::warn;
 use polars::prelude::SeriesOps;
 use polars_core::datatypes::DataType;
@@ -26,51 +26,20 @@ impl Mapping {
             ));
         }
 
-        let mut path_series = Series::new("Path", [resolve_iri.path.clone()]);
-        toggle_string_cache(true);
-        path_series = path_series.cast(&DataType::Categorical(None)).unwrap();
-
-        let use_df = match &resolve_iri.part {
-            Part::Subject => {
-                if let Some(df) = &self.object_property_triples {
-                    if path_series
-                        .is_in(
-                            &df.column("Path")
-                                .unwrap()
-                                .cast(&DataType::Categorical(None))
-                                .unwrap()
-                                .unique()
-                                .unwrap(),
-                        )
-                        .unwrap()
-                        .any()
-                    {
-                        df
-                    } else if let Some(df) = &self.data_property_triples {
-                        df
-                    } else {
-                        panic!("Should not happen")
-                    }
-                } else if let Some(df) = &self.data_property_triples {
-                    df
-                } else {
-                    panic!("Should also not happen")
-                }
+        let use_df = if let Some(df) = self.minted_iris.get(resolve_iri.template.as_str()) {
+            if let Ok(_) = df.column(&resolve_iri.argument) {
+                df
+            } else {
+                return Err(MappingError::NoMintedIRIsForArgument(resolve_iri.argument.clone(), df.get_column_names().into_iter().filter(|x|*x != "Key").map(|x|x.to_string()).collect()))
             }
-            Part::Object => self.object_property_triples.as_ref().unwrap(),
+        } else {
+            return Err(MappingError::NoMintedIRIsForTemplate(resolve_iri.template.as_str().to_string()))
         };
 
+        toggle_string_cache(true);
+
         let mut join_df = use_df
-            .select(["Key", "Path", &resolve_iri.part.to_string()])
-            .unwrap();
-        join_df
-            .with_column(
-                join_df
-                    .column("Path")
-                    .unwrap()
-                    .cast(&DataType::Categorical(None))
-                    .unwrap(),
-            )
+            .select(["Key", &resolve_iri.argument])
             .unwrap();
         join_df
             .with_column(
@@ -82,11 +51,8 @@ impl Mapping {
             )
             .unwrap();
 
-        join_df = join_df
-            .filter(&join_df.column("Path").unwrap().is_in(&path_series).unwrap())
-            .unwrap();
         join_df
-            .rename(&resolve_iri.part.to_string(), variable_name)
+            .rename(&resolve_iri.argument, variable_name)
             .unwrap();
         df.with_column(Series::new("ordering_column", 0..(df.height() as u64)))
             .unwrap();
@@ -112,18 +78,15 @@ impl Mapping {
                     .unwrap(),
             )
             .unwrap();
-        input_df.with_column(path_series).unwrap();
 
         input_df = input_df
             .join(
                 &join_df,
-                [&key_column, "Path"],
-                ["Key", "Path"],
+                [&key_column],
+                [&"Key".to_string()],
                 JoinType::Left,
                 None,
             )
-            .unwrap()
-            .drop("Path")
             .unwrap()
             .drop(&key_column)
             .unwrap();

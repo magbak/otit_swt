@@ -1,6 +1,6 @@
 pub mod errors;
-mod to_python;
 
+use arrow_python_utils::to_python::to_py_df;
 use std::collections::HashMap;
 use crate::errors::PyQueryError;
 use hybrid::orchestrator::execute_hybrid_query;
@@ -83,7 +83,7 @@ impl Engine {
                 let chunk = df.as_single_chunk().iter_chunks().next().unwrap();
                 let pyarrow = PyModule::import(py, "pyarrow")?;
                 let polars = PyModule::import(py, "polars")?;
-                to_python::to_py_df(&chunk, names.as_slice(), py, pyarrow, polars)
+                to_py_df(&chunk, names.as_slice(), py, pyarrow, polars)
             }
             Err(err) => Err(PyErr::from(PyQueryError::QueryExecutionError(err))),
         }

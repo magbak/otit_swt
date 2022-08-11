@@ -22,15 +22,30 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+use polars_core::error::{ArrowError, PolarsError};
 use polars_core::utils::arrow::array::ArrayRef;
 use polars_core::utils::arrow::ffi;
 use polars_core::utils::rayon::iter::{ParallelIterator, IntoParallelIterator, IndexedParallelIterator};
 use polars_core::POOL;
 use polars_core::prelude::{DataFrame, Series, ArrowDataType};
 use polars_core::utils::accumulate_dataframes_vertical;
+use pyo3::create_exception;
+use pyo3::exceptions::PyException;
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
-use crate::error::PyMapperError;
+use thiserror::Error;
+use simple_error::SimpleError;
+
+#[derive(Error, Debug)]
+pub enum ToRustError {
+    #[error(transparent)]
+    Arrow(#[from] ArrowError),
+    #[error(transparent)]
+    Other(SimpleError),
+    #[error(transparent)]
+    PolarsError(#[from] PolarsError),
+}
 
 pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
     // prepare a pointer to receive the Array struct
@@ -48,8 +63,8 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
     )?;
 
     unsafe {
-        let field = ffi::import_field_from_c(schema.as_ref()).map_err(PyMapperError::from)?;
-        let array = ffi::import_array_from_c(Box::new(*array), field.data_type).map_err(PyMapperError::from)?;
+        let field = ffi::import_field_from_c(schema.as_ref()).map_err(ToRustError::from)?;
+        let array = ffi::import_array_from_c(Box::new(*array), field.data_type).map_err(ToRustError::from)?;
         Ok(array.into())
     }
 }
@@ -67,7 +82,7 @@ pub fn polars_df_to_rust_df(df: &PyAny) -> PyResult<DataFrame> {
 pub fn array_to_rust_df(rb: &[&PyAny]) -> PyResult<DataFrame> {
     let schema = rb
         .get(0)
-        .ok_or_else(|| PyMapperError::Other("empty table".into()))?
+        .ok_or_else(|| ToRustError::Other("empty table".into()))?
         .getattr("schema")?;
     let names = schema.getattr("names")?.extract::<Vec<String>>()?;
 
@@ -98,7 +113,7 @@ pub fn array_to_rust_df(rb: &[&PyAny]) -> PyResult<DataFrame> {
                         .enumerate()
                         .map(|(i, arr)| {
                             let s = Series::try_from((names[i].as_str(), arr))
-                                .map_err(PyMapperError::from)?;
+                                .map_err(ToRustError::from)?;
                             Ok(s)
                         })
                         .collect::<PyResult<Vec<_>>>()
@@ -109,15 +124,29 @@ pub fn array_to_rust_df(rb: &[&PyAny]) -> PyResult<DataFrame> {
                     .enumerate()
                     .map(|(i, arr)| {
                         let s = Series::try_from((names[i].as_str(), arr))
-                            .map_err(PyMapperError::from)?;
+                            .map_err(ToRustError::from)?;
                         Ok(s)
                     })
                     .collect::<PyResult<Vec<_>>>()
             }?;
 
-            Ok(DataFrame::new(columns).map_err(PyMapperError::from)?)
+            Ok(DataFrame::new(columns).map_err(ToRustError::from)?)
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    Ok(accumulate_dataframes_vertical(dfs).map_err(PyMapperError::from)?)
+    Ok(accumulate_dataframes_vertical(dfs).map_err(ToRustError::from)?)
 }
+
+
+impl std::convert::From<ToRustError> for PyErr {
+    fn from(err: ToRustError) -> PyErr {
+        let default = || PyRuntimeError::new_err(format!("{:?}", &err));
+
+        match &err {
+            ToRustError::Arrow(err) => ArrowErrorException::new_err(format!("{:?}", err)),
+            _ => default(),
+        }
+    }
+}
+
+create_exception!(exceptions, ArrowErrorException, PyException);

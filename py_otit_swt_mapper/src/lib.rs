@@ -1,15 +1,15 @@
 extern crate core;
 
 mod error;
-mod to_rust;
 
 use crate::error::PyMapperError;
-use crate::to_rust::polars_df_to_rust_df;
+use arrow_python_utils::to_rust::polars_df_to_rust_df;
+use arrow_python_utils::to_python::to_py_df;
+
 use mapper::document::document_from_str;
 use mapper::errors::MapperError;
 use mapper::mapping::ExpandOptions as RustExpandOptions;
 use mapper::mapping::MintingOptions as RustMintingOptions;
-use mapper::mapping::Part;
 use mapper::mapping::ResolveIRI as RustResolveIRI;
 use mapper::mapping::{ListLength, Mapping as InnerMapping, SuffixGenerator};
 use mapper::templates::TemplateDataset;
@@ -17,6 +17,7 @@ use pyo3::basic::CompareOp;
 use pyo3::prelude::PyModule;
 use pyo3::*;
 use std::collections::HashMap;
+use oxrdf::NamedNode;
 
 #[pyclass]
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -160,26 +161,18 @@ pub struct Mapping {
 #[derive(Debug, Clone)]
 pub struct ResolveIRI {
     key_column_name: String,
-    path: String,
-    part: Part,
+    template: NamedNode,
+    argument: String,
 }
 
 #[pymethods]
 impl ResolveIRI {
     #[new]
-    pub fn new(key_column_name:String, path:String, part:&str) -> ResolveIRI {
-        let part_lower = part.to_lowercase();
-        let use_part = if part_lower == "subject" {
-            Part::Subject
-        } else if part_lower == "object" {
-            Part::Object
-        } else {
-            panic!("Part should be Subject or Object, was {}", part)
-        };
+    pub fn new(key_column_name:String, template:String, argument:String) -> ResolveIRI {
         ResolveIRI {
             key_column_name,
-            path,
-            part:use_part
+            template:NamedNode::new(template).unwrap(),
+            argument
         }
     }
 }
@@ -188,8 +181,8 @@ impl ResolveIRI {
     fn to_rust_resolve_iri(&self) -> RustResolveIRI {
         RustResolveIRI {
             key_column_name: self.key_column_name.clone(),
-            path: self.path.clone(),
-            part: self.part.clone()
+            template: self.template.clone(),
+            argument: self.argument.clone()
         }
     }
 }
@@ -291,12 +284,13 @@ impl Mapping {
 
     pub fn expand(
         &mut self,
+        py: Python<'_>,
         template: &str,
         df: &PyAny,
         resolve_iris: Option<HashMap<String, ResolveIRI>>,
         mint_iris: Option<HashMap<String, MintingOptions>>,
         language_tags: Option<HashMap<String, String>>,
-    ) -> PyResult<()> {
+    ) -> PyResult<Option<PyObject>> {
         let df = polars_df_to_rust_df(&df)?;
         let options = ExpandOptions {
             language_tags,
@@ -304,12 +298,26 @@ impl Mapping {
             mint_iris,
         };
 
-        let _report = self
+        let mut report = self
             .inner
             .expand(template, df, options.to_rust_expand_options())
             .map_err(MapperError::from)
             .map_err(PyMapperError::from)?;
-        Ok(())
+        if let Some(mut df) = report.minted_iris.take() {
+            let names_vec: Vec<String> =
+                    df.get_column_names()
+                    .into_iter()
+                    .map(|x| x.to_string())
+                    .collect();
+            let names: Vec<&str> = names_vec.iter().map(|x| x.as_str()).collect();
+            let chunk = df.as_single_chunk().iter_chunks().next().unwrap();
+            let pyarrow = PyModule::import(py, "pyarrow")?;
+            let polars = PyModule::import(py, "polars")?;
+            let res = to_py_df(&chunk, names.as_slice(), py, pyarrow, polars)?;
+            Ok(Some(res))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn to_triples(&self) -> PyResult<Vec<Triple>> {

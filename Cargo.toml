@@ -4,4 +4,5 @@ members=[
     "dsl",
     "hybrid",
     "mapper",
+    "arrow_python_utils"
 ]

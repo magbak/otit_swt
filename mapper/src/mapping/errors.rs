@@ -25,6 +25,8 @@ pub enum MappingError {
     UnknownVariableError(String),
     ConstantDoesNotMatchDataType(ConstantTerm, PType, PType),
     ConstantListHasInconsistentPType(ConstantTerm, PType, PType),
+    NoMintedIRIsForArgument(String, Vec<String>),
+    NoMintedIRIsForTemplate(String),
 }
 
 impl Display for MappingError {
@@ -119,6 +121,17 @@ impl Display for MappingError {
                     "Expected that the column {} occurs in place of {}",
                     expected_colname, colname
                 )
+            }
+            MappingError::NoMintedIRIsForArgument(arg, existing_args) => {
+                write!(
+                    f,
+                    "Did not find argument {} among arguments with minted IRIs {}",
+                    arg,
+                    existing_args.join(",")
+                )
+            }
+            MappingError::NoMintedIRIsForTemplate(tmpl) => {
+                write!(f, "Could not find any minted IRIs for template {}", tmpl)
             }
         }
     }

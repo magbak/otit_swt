@@ -9,7 +9,7 @@ pub fn mint_iri(
     variable_name: &str,
     ptype_opt: &Option<PType>,
     minting_options: &MintingOptions,
-) {
+) -> Series {
     assert!(!df.get_column_names().contains(&variable_name));
     let n_start = match minting_options.suffix_generator {
         SuffixGenerator::Numbering(numbering) => numbering,
@@ -54,7 +54,9 @@ pub fn mint_iri(
     } else {
         mint_iri_numbering(variable_name, n_start, df.height(), prefix)
     };
+    let out_series = series.clone();
     df.with_column(series).unwrap();
+    out_series
 }
 
 fn mint_iri_series_same_as_column(
