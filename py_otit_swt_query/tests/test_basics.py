@@ -23,7 +23,7 @@ def test_simple_query(dremio_testdata, oxigraph_testdata):
     ]
     arrow_flight_sql_database = ArrowFlightSQLDatabase(host=DREMIO_HOST, port=DREMIO_PORT, username="dremio",
                                                        password="dremio123", tables=tables)
-    engine.arrow_flight_sql(arrow_flight_sql_database)
+    engine.set_arrow_flight_sql(arrow_flight_sql_database)
     df = engine.execute_hybrid_query("""
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX otit_swt:<https://github.com/magbak/otit_swt#>
@@ -56,7 +56,7 @@ def test_dsl_query(dremio_testdata, oxigraph_testdata):
     ]
     arrow_flight_sql_database = ArrowFlightSQLDatabase(host=DREMIO_HOST, port=DREMIO_PORT, username="dremio",
                                                        password="dremio123", tables=tables)
-    engine.arrow_flight_sql(arrow_flight_sql_database)
+    engine.set_arrow_flight_sql(arrow_flight_sql_database)
 
     engine.name_predicate("http://www.w3.org/2000/01/rdf-schema#label")
     engine.connective_mapping({".":"http://example.org/types#hasComponent"})
