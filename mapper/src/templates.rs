@@ -1,17 +1,17 @@
-use std::collections::{HashMap, HashSet};
 use crate::ast::{
     Instance, PType, Parameter, Signature, Statement, StottrDocument, StottrTerm, StottrVariable,
     Template,
 };
 use crate::constants::OTTR_TRIPLE;
 use crate::document::document_from_file;
+use log::warn;
 use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::fs::read_dir;
 use std::path::Path;
-use log::warn;
 
 #[derive(Debug)]
 pub struct TypingError {
@@ -51,7 +51,7 @@ impl Error for TypingError {}
 pub struct TemplateDataset {
     pub templates: Vec<Template>,
     pub ground_instances: Vec<Instance>,
-    pub prefix_map: HashMap<String, NamedNode>
+    pub prefix_map: HashMap<String, NamedNode>,
 }
 
 impl TemplateDataset {
@@ -61,7 +61,7 @@ impl TemplateDataset {
         let mut prefix_map = HashMap::new();
         let mut defined_prefixes = HashSet::new();
         for d in &mut documents {
-            for (k,v) in d.prefix_map.drain() {
+            for (k, v) in d.prefix_map.drain() {
                 if defined_prefixes.contains(&k) {
                     let mut remove = false;
                     if let Some(v_prime) = prefix_map.get(&k) {
@@ -73,7 +73,7 @@ impl TemplateDataset {
                         prefix_map.remove(&k);
                         warn!("Prefix {} has conflicting definitions across documents, consider harmonizing", k);
                     }
-                    } else {
+                } else {
                     defined_prefixes.insert(k.clone());
                     prefix_map.insert(k, v);
                 }
@@ -92,7 +92,7 @@ impl TemplateDataset {
         let mut td = TemplateDataset {
             templates,
             ground_instances,
-            prefix_map
+            prefix_map,
         };
         //TODO: Put in function, check not exists and consistent...
         let ottr_triple_subject = Parameter {

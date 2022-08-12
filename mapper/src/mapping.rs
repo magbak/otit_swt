@@ -5,7 +5,10 @@ mod ntriples_write;
 mod validation;
 mod validation_inference;
 
-use crate::ast::{ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Signature, StottrTerm, Template};
+use crate::ast::{
+    ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Signature, StottrTerm,
+    Template,
+};
 use crate::constants::{BLANK_NODE_IRI, NONE_IRI, OTTR_TRIPLE};
 use crate::document::document_from_str;
 use crate::mapping::errors::MappingError;
@@ -76,7 +79,7 @@ pub struct MintingOptions {
 
 #[derive(Debug, PartialEq)]
 pub struct MappingReport {
-    pub minted_iris: Option<DataFrame>
+    pub minted_iris: Option<DataFrame>,
 }
 
 impl Mapping {
@@ -216,7 +219,7 @@ impl Mapping {
         Ok(())
     }
 
-    fn resolve_template(&self, s:&str) -> Result<&Template, MappingError> {
+    fn resolve_template(&self, s: &str) -> Result<&Template, MappingError> {
         if let Some(t) = self.template_dataset.get(s) {
             return Ok(t);
         } else {
@@ -227,9 +230,11 @@ impl Mapping {
                     let possible_template_name =
                         nn.as_str().to_string() + &split_colon.collect::<Vec<&str>>().join(":");
                     if let Some(t) = self.template_dataset.get(&possible_template_name) {
-                        return Ok(t)
+                        return Ok(t);
                     } else {
-                        return Err(MappingError::NoTemplateForTemplateNameFromPrefix(possible_template_name))
+                        return Err(MappingError::NoTemplateForTemplateNameFromPrefix(
+                            possible_template_name,
+                        ));
                     }
                 }
             }
@@ -258,14 +263,19 @@ impl Mapping {
         if let Some(minted_iris_df) = &minted_iris {
             if self.minted_iris.contains_key(&target_template_name) {
                 let existing = self.minted_iris.remove(&target_template_name).unwrap();
-                self.minted_iris.insert(target_template_name, concat([existing.lazy(), minted_iris_df.clone().lazy()], true).unwrap().collect().unwrap());
+                self.minted_iris.insert(
+                    target_template_name,
+                    concat([existing.lazy(), minted_iris_df.clone().lazy()], true)
+                        .unwrap()
+                        .collect()
+                        .unwrap(),
+                );
             } else {
-                self.minted_iris.insert(target_template_name, minted_iris_df.clone());
+                self.minted_iris
+                    .insert(target_template_name, minted_iris_df.clone());
             }
         }
-        Ok(MappingReport {
-            minted_iris
-        })
+        Ok(MappingReport { minted_iris })
     }
 
     fn _expand(
@@ -278,18 +288,14 @@ impl Mapping {
         //At this point, the lf should have columns with names appropriate for the template to be instantiated (named_node).
         if let Some(template) = self.template_dataset.get(name) {
             if template.signature.template_name.as_str() == OTTR_TRIPLE {
-                let keep_cols = vec![
-                    col("Key"),
-                    col("subject"),
-                    col("verb"),
-                    col("object"),
-                ];
+                let keep_cols = vec![col("Key"), col("subject"), col("verb"), col("object")];
                 lf = lf.select(keep_cols.as_slice());
                 new_lfs_columns.push((lf, columns));
                 Ok(())
             } else {
                 for i in &template.pattern_list {
-                    let target_template = self.template_dataset.get(i.template_name.as_str()).unwrap();
+                    let target_template =
+                        self.template_dataset.get(i.template_name.as_str()).unwrap();
                     let (instance_lf, instance_columns) = create_remapped_lazy_frame(
                         i,
                         &target_template.signature,

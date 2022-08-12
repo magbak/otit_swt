@@ -1,6 +1,7 @@
 use crate::combiner::Combiner;
 use crate::groupby_pushdown::find_all_groupby_pushdowns;
 use crate::preprocessing::Preprocessor;
+use crate::pushdown_setting::PushdownSetting;
 use crate::rewriting::StaticQueryRewriter;
 use crate::sparql_result_to_polars::create_static_query_result_df;
 use crate::splitter::parse_sparql_select_query;
@@ -15,7 +16,6 @@ use sparesults::QuerySolution;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use crate::pushdown_setting::PushdownSetting;
 
 #[derive(Debug)]
 pub enum OrchestrationError {
@@ -64,9 +64,10 @@ impl Engine {
         let mut preprocessor = Preprocessor::new();
         let (preprocessed_query, variable_constraints) = preprocessor.preprocess(&parsed_query);
         debug!("Constraints: {:?}", variable_constraints);
-        let mut rewriter = StaticQueryRewriter::new(self.pushdown_settings.clone(), &variable_constraints);
+        let mut rewriter =
+            StaticQueryRewriter::new(self.pushdown_settings.clone(), &variable_constraints);
         let (static_rewrite, mut time_series_queries) =
-            rewriter.rewrite_query( preprocessed_query).unwrap();
+            rewriter.rewrite_query(preprocessed_query).unwrap();
         debug!("Produced static rewrite: {}", static_rewrite);
         let static_query_solutions = execute_sparql_query(endpoint, &static_rewrite).await?;
         complete_time_series_queries(&static_query_solutions, &mut time_series_queries)?;
@@ -78,14 +79,15 @@ impl Engine {
         } else {
             if self.pushdown_settings.contains(&PushdownSetting::GroupBy) {
                 find_all_groupby_pushdowns(
-                        & parsed_query,
+                    &parsed_query,
                     &static_result_df,
                     &mut time_series_queries,
                     &variable_constraints,
                 );
             }
-            let mut time_series =
-                self.execute_time_series_queries(time_series_queries).await?;
+            let mut time_series = self
+                .execute_time_series_queries(time_series_queries)
+                .await?;
             debug!("Time series: {:?}", time_series);
             let mut combiner = Combiner::new();
             let lazy_frame = combiner.combine_static_and_time_series_results(
@@ -103,10 +105,7 @@ impl Engine {
     ) -> Result<Vec<(TimeSeriesQuery, DataFrame)>, Box<dyn Error>> {
         let mut out = vec![];
         for tsq in time_series_queries {
-            let df_res = self
-                .time_series_database
-                .execute(&tsq)
-                .await;
+            let df_res = self.time_series_database.execute(&tsq).await;
             match df_res {
                 Ok(df) => {
                     match tsq.validate(&df) {

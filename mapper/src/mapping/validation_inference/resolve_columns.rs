@@ -60,7 +60,8 @@ impl Mapping {
         if let Err(_) = use_df.column(&resolve_iri.argument) {
             return Err(MappingError::NoMintedIRIsForArgument(
                 resolve_iri.argument.clone(),
-                use_df.get_column_names()
+                use_df
+                    .get_column_names()
                     .into_iter()
                     .filter(|x| *x != "Key")
                     .map(|x| x.to_string())

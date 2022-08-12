@@ -90,7 +90,9 @@ pub fn to_py_df(
     let py_rb = to_py_rb(rb, names, py.clone(), pyarrow)?;
     let py_rb_list = PyList::empty(py);
     py_rb_list.append(py_rb)?;
-    let py_table = pyarrow.getattr("Table")?.call_method1("from_batches", (py_rb_list,))?;
+    let py_table = pyarrow
+        .getattr("Table")?
+        .call_method1("from_batches", (py_rb_list,))?;
     let py_table = py_table.to_object(py);
     let df = polars.call_method1("from_arrow", (py_table,))?;
     Ok(df.to_object(py))

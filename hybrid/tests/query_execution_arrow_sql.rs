@@ -8,6 +8,8 @@ use bollard::image::BuildImageOptions;
 use bollard::models::{HostConfig, PortBinding};
 use bollard::Docker;
 use futures_util::stream::StreamExt;
+use hybrid::engine::Engine;
+use hybrid::pushdown_setting::all_pushdowns;
 use hybrid::timeseries_database::arrow_flight_sql_database::ArrowFlightSQLDatabase;
 use hybrid::timeseries_database::timeseries_sql_rewrite::TimeSeriesTable;
 use log::debug;
@@ -26,8 +28,6 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time::sleep;
-use hybrid::engine::Engine;
-use hybrid::pushdown_setting::AllPushdowns;
 
 const ARROW_SQL_DATABASE_ENDPOINT: &str = "grpc+tcp://127.0.0.1:32010";
 const DREMIO_ORIGIN: &str = "http://127.0.0.1:9047";
@@ -329,8 +329,9 @@ async fn test_simple_hybrid_query(
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime && ?v < 200) .
     }
     "#;
-    let mut engine = Engine::new(AllPushdowns(), Box::new(db));
-    let mut df = engine.execute_hybrid_query(query, QUERY_ENDPOINT)
+    let mut engine = Engine::new(all_pushdowns(), Box::new(db));
+    let mut df = engine
+        .execute_hybrid_query(query, QUERY_ENDPOINT)
         .await
         .expect("Hybrid error");
     df.with_column(

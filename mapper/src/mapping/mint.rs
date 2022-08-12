@@ -1,9 +1,9 @@
+use super::Mapping;
 use crate::ast::PType;
 use crate::mapping::{ListLength, MintingOptions, SuffixGenerator};
 use log::warn;
 use polars_core::prelude::{AnyValue, DataFrame, DataType, Series};
 use uuid::Uuid;
-use super::Mapping;
 
 impl Mapping {
     pub(crate) fn mint_iri(
@@ -33,9 +33,9 @@ impl Mapping {
         let series = if let Some(ll) = &minting_options.list_length {
             if !is_list {
                 warn!(
-                "Consider annotating the variable {} as a list",
-                variable_name
-            )
+                    "Consider annotating the variable {} as a list",
+                    variable_name
+                )
             }
 
             match ll {

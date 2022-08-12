@@ -136,10 +136,18 @@ impl Display for MappingError {
                 write!(f, "Could not find any minted IRIs for template {}", tmpl)
             }
             MappingError::NoMintedIRIsForTemplateNameFromPrefix(prefix) => {
-                write!(f, "Template {} inferred from prefix has no minted IRIs", prefix)
+                write!(
+                    f,
+                    "Template {} inferred from prefix has no minted IRIs",
+                    prefix
+                )
             }
             MappingError::NoTemplateForTemplateNameFromPrefix(prefix) => {
-                write!(f, "Template name {} inferred from prefix could not be found", prefix)
+                write!(
+                    f,
+                    "Template name {} inferred from prefix could not be found",
+                    prefix
+                )
             }
         }
     }

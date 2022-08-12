@@ -272,7 +272,7 @@ fn history_data_to_series_tuple(hd: HistoryData) -> (Series, Series) {
 fn find_aggregate_types(tsq: &TimeSeriesQuery) -> Option<Vec<NodeId>> {
     if let Some(grouping) = &tsq.grouping {
         let mut nodes = vec![];
-        for (v, a) in &grouping.aggregations {
+        for (_, a) in &grouping.aggregations {
             let agg = &a.aggregate_expression;
             let value_var_str = tsq.value_variable.as_ref().unwrap().variable.as_str();
             let expr_is_ok = |expr: &Expression| -> bool {

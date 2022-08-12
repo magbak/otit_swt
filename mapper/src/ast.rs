@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use oxrdf::{BlankNode, NamedNode};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
 #[derive(PartialEq, Debug, Clone)]

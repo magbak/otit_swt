@@ -8,6 +8,7 @@ mod pushups;
 use crate::change_types::ChangeType;
 use crate::constants::{HAS_DATA_POINT, HAS_TIMESTAMP, HAS_VALUE};
 use crate::constraints::{Constraint, VariableConstraints};
+use crate::pushdown_setting::PushdownSetting;
 use crate::query_context::PathEntry::ExtendExpression;
 use crate::query_context::{Context, PathEntry, VariableInContext};
 use crate::rewriting::expressions::ExReturn;
@@ -20,7 +21,6 @@ use spargebra::Query;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
-use crate::pushdown_setting::PushdownSetting;
 
 #[derive(Debug)]
 pub struct StaticQueryRewriter {
@@ -32,7 +32,10 @@ pub struct StaticQueryRewriter {
 }
 
 impl StaticQueryRewriter {
-    pub fn new(pushdown_settings:HashSet<PushdownSetting>, variable_constraints: &VariableConstraints) -> StaticQueryRewriter {
+    pub fn new(
+        pushdown_settings: HashSet<PushdownSetting>,
+        variable_constraints: &VariableConstraints,
+    ) -> StaticQueryRewriter {
         StaticQueryRewriter {
             pushdown_settings,
             variable_counter: 0,

@@ -23,19 +23,21 @@
 // SOFTWARE.
 
 use polars_core::error::{ArrowError, PolarsError};
+use polars_core::prelude::{ArrowDataType, DataFrame, Series};
+use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::utils::arrow::array::ArrayRef;
 use polars_core::utils::arrow::ffi;
-use polars_core::utils::rayon::iter::{ParallelIterator, IntoParallelIterator, IndexedParallelIterator};
+use polars_core::utils::rayon::iter::{
+    IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
+};
 use polars_core::POOL;
-use polars_core::prelude::{DataFrame, Series, ArrowDataType};
-use polars_core::utils::accumulate_dataframes_vertical;
 use pyo3::create_exception;
 use pyo3::exceptions::PyException;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
-use thiserror::Error;
 use simple_error::SimpleError;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ToRustError {
@@ -64,7 +66,8 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
 
     unsafe {
         let field = ffi::import_field_from_c(schema.as_ref()).map_err(ToRustError::from)?;
-        let array = ffi::import_array_from_c(Box::new(*array), field.data_type).map_err(ToRustError::from)?;
+        let array = ffi::import_array_from_c(Box::new(*array), field.data_type)
+            .map_err(ToRustError::from)?;
         Ok(array.into())
     }
 }
@@ -73,7 +76,7 @@ pub fn polars_df_to_rust_df(df: &PyAny) -> PyResult<DataFrame> {
     let arr = df.call_method0("to_arrow")?;
     let batches = arr.call_method1("to_batches", (u32::MAX,))?;
     let batches_len = batches.call_method0("__len__")?;
-    let l:u32 = batches_len.extract()?;
+    let l: u32 = batches_len.extract()?;
     assert_eq!(l, 1);
     let batch = batches.call_method1("__getitem__", (0,))?;
     array_to_rust_df(&[batch])
@@ -136,7 +139,6 @@ pub fn array_to_rust_df(rb: &[&PyAny]) -> PyResult<DataFrame> {
 
     Ok(accumulate_dataframes_vertical(dfs).map_err(ToRustError::from)?)
 }
-
 
 impl std::convert::From<ToRustError> for PyErr {
     fn from(err: ToRustError) -> PyErr {

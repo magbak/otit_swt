@@ -6,10 +6,11 @@ use dsl::connective_mapping::ConnectiveMapping;
 use dsl::costants::{REPLACE_STR_LITERAL, REPLACE_VARIABLE_NAME};
 use dsl::parser::ts_query;
 use dsl::translator::Translator;
-use hybrid::orchestrator::execute_hybrid_query;
 use hybrid::timeseries_database::arrow_flight_sql_database::ArrowFlightSQLDatabase as RustArrowFlightSQLDatabase;
 use hybrid::timeseries_database::opcua_history_read::OPCUAHistoryRead as RustOPCUAHistoryRead;
 use hybrid::timeseries_database::timeseries_sql_rewrite::TimeSeriesTable as RustTimeSeriesTable;
+use hybrid::engine::Engine as RustEngine;
+use hybrid::pushdown_setting::{PushdownSetting, all_pushdowns};
 use log::debug;
 use oxrdf::vocab::{rdf, xsd};
 use oxrdf::{IriParseError, Literal, NamedNode, Variable};
@@ -18,11 +19,10 @@ use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use std::collections::HashMap;
 use tokio::runtime::{Builder, Runtime};
 
-#[pyclass]
+#[pyclass(unsendable)]
 pub struct Engine {
+    engine: Option<RustEngine>,
     endpoint: String,
-    arrow_flight_sql_db: Option<RustArrowFlightSQLDatabase>,
-    opc_ua_history_read_db: Option<RustOPCUAHistoryRead>,
     connective_mapping: Option<ConnectiveMapping>,
     name_predicate: Option<String>,
 }
@@ -32,15 +32,17 @@ impl Engine {
     #[new]
     pub fn new(endpoint: &str) -> Box<Engine> {
         Box::new(Engine {
+            engine: None,
             endpoint: endpoint.to_string(),
-            arrow_flight_sql_db: None,
-            opc_ua_history_read_db: None,
             connective_mapping: None,
             name_predicate: None,
         })
     }
 
-    pub fn arrow_flight_sql(&mut self, db: &ArrowFlightSQLDatabase) -> PyResult<()> {
+    pub fn set_arrow_flight_sql(&mut self, db: &ArrowFlightSQLDatabase) -> PyResult<()> {
+        if self.engine.is_some() {
+            return Err(PyQueryError::TimeSeriesDatabaseAlreadyDefined.into());
+        }
         let endpoint = format!("http://{}:{}", &db.host, &db.port);
         let mut new_tables = vec![];
         for t in &db.tables {
@@ -55,18 +57,28 @@ impl Engine {
                 &db.password,
                 new_tables,
             ));
-        let afsqldb = afsqldb_result.map_err(PyQueryError::from)?;
-        self.arrow_flight_sql_db = Some(afsqldb);
+        let db = afsqldb_result.map_err(PyQueryError::from)?;
+        self.engine = Some(RustEngine::new(
+                    all_pushdowns(), Box::new(db)
+                ));
         Ok(())
     }
 
-    pub fn opc_ua_read(&mut self, db: &OPCUAHistoryRead) -> PyResult<()> {
+    pub fn set_opc_ua_read(&mut self, db: &OPCUAHistoryRead) -> PyResult<()> {
+        if self.engine.is_some() {
+            return Err(PyQueryError::TimeSeriesDatabaseAlreadyDefined.into());
+        }
         let actual_db = RustOPCUAHistoryRead::new(&db.endpoint, db.namespace);
-        self.opc_ua_history_read_db = Some(actual_db);
+        self.engine = Some(RustEngine::new(
+                    [PushdownSetting::GroupBy].into(), Box::new(actual_db)
+                ));
         Ok(())
     }
 
     pub fn execute_hybrid_query(&mut self, py: Python<'_>, sparql: &str) -> PyResult<PyObject> {
+        if self.engine.is_none() {
+            return Err(PyQueryError::MissingTimeSeriesDatabaseError.into());
+        }
         let res = env_logger::try_init();
         match res {
             Ok(_) => {}
@@ -76,21 +88,10 @@ impl Engine {
         }
         let mut builder = Builder::new_multi_thread();
         builder.enable_all();
-        let df_result = if self.arrow_flight_sql_db.is_some() {
-            builder.build().unwrap().block_on(execute_hybrid_query(
+        let df_result = builder.build().unwrap().block_on(self.engine.as_mut().unwrap().execute_hybrid_query(
                 sparql,
-                &self.endpoint,
-                Box::new(self.arrow_flight_sql_db.as_mut().unwrap()),
-            ))
-        } else if self.opc_ua_history_read_db.is_some() {
-            builder.build().unwrap().block_on(execute_hybrid_query(
-                sparql,
-                &self.endpoint,
-                Box::new(self.opc_ua_history_read_db.as_mut().unwrap()),
-            ))
-        } else {
-            return Err(PyQueryError::MissingTimeSeriesDatabaseError.into());
-        };
+                &self.endpoint
+            ));
         match df_result {
             Ok(mut df) => {
                 let names_vec: Vec<String> = df

@@ -1,4 +1,5 @@
 use hybrid::preprocessing::Preprocessor;
+use hybrid::pushdown_setting::all_pushdowns;
 use hybrid::query_context::{Context, ExpressionInContext, PathEntry, VariableInContext};
 use hybrid::rewriting::StaticQueryRewriter;
 use hybrid::splitter::parse_sparql_select_query;
@@ -9,7 +10,6 @@ use spargebra::algebra::Expression;
 use spargebra::algebra::Expression::{And, Greater, Less};
 use spargebra::term::Variable;
 use spargebra::Query;
-use hybrid::pushdown_setting::AllPushdowns;
 
 #[test]
 fn test_simple_query() {
@@ -25,7 +25,7 @@ fn test_simple_query() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(AllPushdowns(), &has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
 
     let expected_str = r#"
@@ -56,7 +56,7 @@ fn test_filtered_query() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(AllPushdowns(),&has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_external_id_0 WHERE {
@@ -88,7 +88,7 @@ fn test_complex_expression_filter() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(AllPushdowns(),&has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_external_id_0 WHERE {
@@ -121,7 +121,7 @@ fn test_complex_expression_filter_projection() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(AllPushdowns(),&has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_external_id_0 ?pv WHERE {
@@ -154,7 +154,7 @@ fn test_complex_nested_expression_filter() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(AllPushdowns(),&has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_external_id_0 ?pv WHERE {
@@ -189,7 +189,7 @@ fn test_option_expression_filter_projection() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(AllPushdowns(),&has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?pv ?ts_datatype_0 ?ts_external_id_0 WHERE {
@@ -236,7 +236,7 @@ fn test_union_expression() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(AllPushdowns(),&has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?pv ?ts_datatype_0 ?ts_datatype_1 ?ts_external_id_0 ?ts_external_id_1 WHERE {
@@ -285,7 +285,7 @@ fn test_bind_expression() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(AllPushdowns(),&has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_datatype_1 ?ts_external_id_0 ?ts_external_id_1 WHERE {
@@ -319,7 +319,7 @@ fn test_fix_dropped_triple() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(AllPushdowns(),&has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
     let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -416,7 +416,7 @@ fn test_property_path_expression() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(AllPushdowns(),&has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
     let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_datatype_1 ?ts_external_id_0 ?ts_external_id_1 WHERE {
@@ -540,7 +540,7 @@ fn test_having_query() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(AllPushdowns(),&has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?w ?ts_datatype_0 ?ts_external_id_0 WHERE {
@@ -573,7 +573,7 @@ fn test_exists_query() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(AllPushdowns(),&has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?w ?s ?ts ?ts_datatype_0 ?ts_external_id_0 WHERE {

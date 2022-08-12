@@ -361,10 +361,18 @@ fn test_mint_iri_templates() {
             },
         )
         .unwrap();
-    let expected_minted_iris_df = DataFrame::new(
-        vec![k.clone(), Series::new("myIRI2", ["http://example.net/things#3", "http://example.net/things#4"])]
-    ).unwrap();
-    assert_eq!(report.minted_iris.as_ref().unwrap(), &expected_minted_iris_df);
+    let expected_minted_iris_df = DataFrame::new(vec![
+        k.clone(),
+        Series::new(
+            "myIRI2",
+            ["http://example.net/things#3", "http://example.net/things#4"],
+        ),
+    ])
+    .unwrap();
+    assert_eq!(
+        report.minted_iris.as_ref().unwrap(),
+        &expected_minted_iris_df
+    );
 
     let triples = mapping.export_oxrdf_triples();
     //println!("{:?}", triples);
@@ -447,13 +455,14 @@ fn test_path_column() {
             "http://example.net/ns#ExampleTemplate2",
             df,
             ExpandOptions {
-                resolve_iris: Some(HashMap::from([
-                    ("myIRI2".to_string(),
-                     ResolveIRI {
-                         key_column: "myIRI2ForeignKey".into(),
-                         template: "http://example.net/ns#ExampleTemplate1".to_string(),
-                         argument: "myIRI2".to_string()
-                     })])),
+                resolve_iris: Some(HashMap::from([(
+                    "myIRI2".to_string(),
+                    ResolveIRI {
+                        key_column: "myIRI2ForeignKey".into(),
+                        template: "http://example.net/ns#ExampleTemplate1".to_string(),
+                        argument: "myIRI2".to_string(),
+                    },
+                )])),
                 ..Default::default()
             },
         )
@@ -561,13 +570,14 @@ fn test_path_column_with_list() {
             "http://example.net/ns#ExampleTemplate2",
             df,
             ExpandOptions {
-                resolve_iris: Some(HashMap::from([
-                    ("myIRI2".to_string(),
-                     ResolveIRI {
-                         key_column: "myIRI2ForeignKey".into(),
-                         template: "http://example.net/ns#ExampleTemplate1".to_string(),
-                         argument: "myIRI2".to_string()
-                     })])),
+                resolve_iris: Some(HashMap::from([(
+                    "myIRI2".to_string(),
+                    ResolveIRI {
+                        key_column: "myIRI2ForeignKey".into(),
+                        template: "http://example.net/ns#ExampleTemplate1".to_string(),
+                        argument: "myIRI2".to_string(),
+                    },
+                )])),
                 ..Default::default()
             },
         )
