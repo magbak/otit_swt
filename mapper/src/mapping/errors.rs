@@ -28,6 +28,7 @@ pub enum MappingError {
     NoMintedIRIsForArgument(String, Vec<String>),
     NoMintedIRIsForTemplate(String),
     NoMintedIRIsForTemplateNameFromPrefix(String),
+    NoTemplateForTemplateNameFromPrefix(String),
 }
 
 impl Display for MappingError {
@@ -136,6 +137,9 @@ impl Display for MappingError {
             }
             MappingError::NoMintedIRIsForTemplateNameFromPrefix(prefix) => {
                 write!(f, "Template {} inferred from prefix has no minted IRIs", prefix)
+            }
+            MappingError::NoTemplateForTemplateNameFromPrefix(prefix) => {
+                write!(f, "Template name {} inferred from prefix could not be found", prefix)
             }
         }
     }

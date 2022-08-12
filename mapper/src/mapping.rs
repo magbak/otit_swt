@@ -5,9 +5,7 @@ mod ntriples_write;
 mod validation;
 mod validation_inference;
 
-use crate::ast::{
-    ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Signature, StottrTerm,
-};
+use crate::ast::{ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Signature, StottrTerm, Template};
 use crate::constants::{BLANK_NODE_IRI, NONE_IRI, OTTR_TRIPLE};
 use crate::document::document_from_str;
 use crate::mapping::errors::MappingError;
@@ -218,43 +216,61 @@ impl Mapping {
         Ok(())
     }
 
+    fn resolve_template(&self, s:&str) -> Result<&Template, MappingError> {
+        if let Some(t) = self.template_dataset.get(s) {
+            return Ok(t);
+        } else {
+            let mut split_colon = s.split(":");
+            let prefix_maybe = split_colon.next();
+            if let Some(prefix) = prefix_maybe {
+                if let Some(nn) = self.template_dataset.prefix_map.get(prefix) {
+                    let possible_template_name =
+                        nn.as_str().to_string() + &split_colon.collect::<Vec<&str>>().join(":");
+                    if let Some(t) = self.template_dataset.get(&possible_template_name) {
+                        return Ok(t)
+                    } else {
+                        return Err(MappingError::NoTemplateForTemplateNameFromPrefix(possible_template_name))
+                    }
+                }
+            }
+        }
+        Err(MappingError::TemplateNotFound(s.to_string()))
+    }
+
     pub fn expand(
         &mut self,
         template: &str,
         mut df: DataFrame,
         options: ExpandOptions,
     ) -> Result<MappingReport, MappingError> {
-        let name = NamedNode::new(template).map_err(MappingError::from)?;
         self.validate_dataframe(&mut df)?;
-        if let Some(target_template) = self.template_dataset.get(&name) {
-            let (df, columns, minted_iris) = self.find_validate_and_prepare_dataframe_columns(
-                &target_template.signature,
-                df,
-                &options,
-            )?;
-            let mut result_vec = vec![];
-            self._expand(&name, df.lazy(), columns, &mut result_vec)?;
-            self.process_results(result_vec);
+        let target_template = self.resolve_template(template)?.clone();
+        let target_template_name = target_template.signature.template_name.as_str().to_string();
+        let (df, columns, minted_iris) = self.find_validate_and_prepare_dataframe_columns(
+            &target_template.signature,
+            df,
+            &options,
+        )?;
+        let mut result_vec = vec![];
+        self._expand(&target_template_name, df.lazy(), columns, &mut result_vec)?;
+        self.process_results(result_vec);
 
-            if let Some(minted_iris_df) = &minted_iris {
-                if self.minted_iris.contains_key(name.as_str()) {
-                    let existing = self.minted_iris.remove(name.as_str()).unwrap();
-                    self.minted_iris.insert(name.as_str().to_string(), concat([existing.lazy(), minted_iris_df.clone().lazy()], true).unwrap().collect().unwrap());
-                } else {
-                    self.minted_iris.insert(name.as_str().to_string(), minted_iris_df.clone());
-                }
+        if let Some(minted_iris_df) = &minted_iris {
+            if self.minted_iris.contains_key(&target_template_name) {
+                let existing = self.minted_iris.remove(&target_template_name).unwrap();
+                self.minted_iris.insert(target_template_name, concat([existing.lazy(), minted_iris_df.clone().lazy()], true).unwrap().collect().unwrap());
+            } else {
+                self.minted_iris.insert(target_template_name, minted_iris_df.clone());
             }
-            Ok(MappingReport {
-                minted_iris
-            })
-        } else {
-            Err(MappingError::TemplateNotFound(name.as_str().to_string()))
         }
+        Ok(MappingReport {
+            minted_iris
+        })
     }
 
     fn _expand(
         &self,
-        name: &NamedNode,
+        name: &str,
         mut lf: LazyFrame,
         columns: HashMap<String, MappedColumn>,
         new_lfs_columns: &mut Vec<(LazyFrame, HashMap<String, MappedColumn>)>,
@@ -273,7 +289,7 @@ impl Mapping {
                 Ok(())
             } else {
                 for i in &template.pattern_list {
-                    let target_template = self.template_dataset.get(&i.template_name).unwrap();
+                    let target_template = self.template_dataset.get(i.template_name.as_str()).unwrap();
                     let (instance_lf, instance_columns) = create_remapped_lazy_frame(
                         i,
                         &target_template.signature,
@@ -281,7 +297,7 @@ impl Mapping {
                         &columns,
                     )?;
                     self._expand(
-                        &i.template_name,
+                        i.template_name.as_str(),
                         instance_lf,
                         instance_columns,
                         new_lfs_columns,
@@ -290,7 +306,7 @@ impl Mapping {
                 Ok(())
             }
         } else {
-            Err(MappingError::TemplateNotFound(name.as_str().to_string()))
+            Err(MappingError::TemplateNotFound(name.to_string()))
         }
     }
 

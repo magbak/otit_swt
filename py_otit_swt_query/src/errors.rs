@@ -13,7 +13,9 @@ pub enum PyQueryError {
     #[error(transparent)]
     QueryExecutionError(Box<dyn std::error::Error>),
     #[error("DSL parsing error")]
-    DSLParsingError
+    DSLParsingError,
+    #[error("Missing time series database")]
+    MissingTimeSeriesDatabaseError
 }
 
 impl std::convert::From<PyQueryError> for PyErr {
@@ -31,6 +33,9 @@ impl std::convert::From<PyQueryError> for PyErr {
             PyQueryError::DSLParsingError => {
                 DSLParsingError::new_err("")
             }
+            PyQueryError::MissingTimeSeriesDatabaseError => {
+                MissingTimeSeriesDatabaseError::new_err("")
+            }
         }
     }
 }
@@ -39,3 +44,4 @@ create_exception!(exceptions, ArrowFlightSQLError, PyException);
 create_exception!(exceptions, DatatypeIRIParseError, PyException);
 create_exception!(exceptions, QueryExecutionError, PyException);
 create_exception!(exceptions, DSLParsingError, PyException);
+create_exception!(exceptions, MissingTimeSeriesDatabaseError, PyException);

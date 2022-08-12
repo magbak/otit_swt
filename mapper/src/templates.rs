@@ -161,9 +161,9 @@ impl TemplateDataset {
         Ok(TemplateDataset::new(vec![doc])?)
     }
 
-    pub fn get(&self, named_node: &NamedNode) -> Option<&Template> {
+    pub fn get(&self, template: &str) -> Option<&Template> {
         for t in &self.templates {
-            if &t.signature.template_name == named_node {
+            if t.signature.template_name.as_str() == template {
                 return Some(t);
             }
         }

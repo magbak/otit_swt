@@ -1,28 +1,30 @@
 pub mod errors;
 
-use arrow_python_utils::to_python::to_py_df;
-use std::collections::HashMap;
 use crate::errors::PyQueryError;
-use hybrid::orchestrator::execute_hybrid_query;
-use hybrid::timeseries_database::arrow_flight_sql_database::ArrowFlightSQLDatabase as RustArrowFlightSQLDatabase;
-use hybrid::timeseries_database::timeseries_sql_rewrite::TimeSeriesTable as RustTimeSeriesTable;
-use oxrdf::{IriParseError, Literal, NamedNode, Variable};
-use pyo3::prelude::*;
-use tokio::runtime::{Runtime, Builder};
-use log::debug;
-use oxrdf::vocab::{rdf, xsd};
-use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
+use arrow_python_utils::to_python::to_py_df;
 use dsl::connective_mapping::ConnectiveMapping;
 use dsl::costants::{REPLACE_STR_LITERAL, REPLACE_VARIABLE_NAME};
 use dsl::parser::ts_query;
 use dsl::translator::Translator;
+use hybrid::orchestrator::execute_hybrid_query;
+use hybrid::timeseries_database::arrow_flight_sql_database::ArrowFlightSQLDatabase as RustArrowFlightSQLDatabase;
+use hybrid::timeseries_database::opcua_history_read::OPCUAHistoryRead as RustOPCUAHistoryRead;
+use hybrid::timeseries_database::timeseries_sql_rewrite::TimeSeriesTable as RustTimeSeriesTable;
+use log::debug;
+use oxrdf::vocab::{rdf, xsd};
+use oxrdf::{IriParseError, Literal, NamedNode, Variable};
+use pyo3::prelude::*;
+use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
+use std::collections::HashMap;
+use tokio::runtime::{Builder, Runtime};
 
 #[pyclass]
 pub struct Engine {
     endpoint: String,
     arrow_flight_sql_db: Option<RustArrowFlightSQLDatabase>,
+    opc_ua_history_read_db: Option<RustOPCUAHistoryRead>,
     connective_mapping: Option<ConnectiveMapping>,
-    name_predicate: Option<String>
+    name_predicate: Option<String>,
 }
 
 #[pymethods]
@@ -32,6 +34,7 @@ impl Engine {
         Box::new(Engine {
             endpoint: endpoint.to_string(),
             arrow_flight_sql_db: None,
+            opc_ua_history_read_db: None,
             connective_mapping: None,
             name_predicate: None,
         })
@@ -57,6 +60,12 @@ impl Engine {
         Ok(())
     }
 
+    pub fn opc_ua_read(&mut self, db: &OPCUAHistoryRead) -> PyResult<()> {
+        let actual_db = RustOPCUAHistoryRead::new(&db.endpoint, db.namespace);
+        self.opc_ua_history_read_db = Some(actual_db);
+        Ok(())
+    }
+
     pub fn execute_hybrid_query(&mut self, py: Python<'_>, sparql: &str) -> PyResult<PyObject> {
         let res = env_logger::try_init();
         match res {
@@ -67,11 +76,21 @@ impl Engine {
         }
         let mut builder = Builder::new_multi_thread();
         builder.enable_all();
-        let df_result = builder.build().unwrap().block_on(execute_hybrid_query(
-            sparql,
-            &self.endpoint,
-            Box::new(self.arrow_flight_sql_db.as_mut().unwrap()),
-        ));
+        let df_result = if self.arrow_flight_sql_db.is_some() {
+            builder.build().unwrap().block_on(execute_hybrid_query(
+                sparql,
+                &self.endpoint,
+                Box::new(self.arrow_flight_sql_db.as_mut().unwrap()),
+            ))
+        } else if self.opc_ua_history_read_db.is_some() {
+            builder.build().unwrap().block_on(execute_hybrid_query(
+                sparql,
+                &self.endpoint,
+                Box::new(self.opc_ua_history_read_db.as_mut().unwrap()),
+            ))
+        } else {
+            return Err(PyQueryError::MissingTimeSeriesDatabaseError.into());
+        };
         match df_result {
             Ok(mut df) => {
                 let names_vec: Vec<String> = df
@@ -89,21 +108,25 @@ impl Engine {
         }
     }
 
-    pub fn name_predicate(&mut self, name_predicate:&str) -> PyResult<()> {
+    pub fn name_predicate(&mut self, name_predicate: &str) -> PyResult<()> {
         self.name_predicate = Some(name_predicate.into());
         Ok(())
     }
 
     pub fn connective_mapping(&mut self, map: HashMap<String, String>) -> PyResult<()> {
-        self.connective_mapping = Some(ConnectiveMapping {map});
+        self.connective_mapping = Some(ConnectiveMapping { map });
         Ok(())
     }
 
-    pub fn execute_dsl_query(&mut self, py: Python<'_>, query:&str) -> PyResult<PyObject> {
-        let (_, parsed) = ts_query(query).map_err(|_|PyQueryError::DSLParsingError)?;
+    pub fn execute_dsl_query(&mut self, py: Python<'_>, query: &str) -> PyResult<PyObject> {
+        let (_, parsed) = ts_query(query).map_err(|_| PyQueryError::DSLParsingError)?;
         let use_name_template = name_template(self.name_predicate.as_ref().unwrap());
         let use_type_name_template = type_name_template(self.name_predicate.as_ref().unwrap());
-        let mut translator = Translator::new(use_name_template, use_type_name_template, self.connective_mapping.as_ref().unwrap().clone());
+        let mut translator = Translator::new(
+            use_name_template,
+            use_type_name_template,
+            self.connective_mapping.as_ref().unwrap().clone(),
+        );
         let sparql = translator.translate(&parsed).to_string();
         println!("Q: {}", sparql);
         self.execute_hybrid_query(py, &sparql)
@@ -119,9 +142,7 @@ fn type_name_template(predicate: &str) -> Vec<TriplePattern> {
     };
     let type_name_triple = TriplePattern {
         subject: TermPattern::Variable(type_variable),
-        predicate: NamedNodePattern::NamedNode(NamedNode::new(
-            predicate,
-        ).unwrap()),
+        predicate: NamedNodePattern::NamedNode(NamedNode::new(predicate).unwrap()),
         object: TermPattern::Literal(Literal::new_typed_literal(REPLACE_STR_LITERAL, xsd::STRING)),
     };
     vec![type_triple, type_name_triple]
@@ -130,9 +151,7 @@ fn type_name_template(predicate: &str) -> Vec<TriplePattern> {
 fn name_template(predicate: &str) -> Vec<TriplePattern> {
     let name_triple = TriplePattern {
         subject: TermPattern::Variable(Variable::new_unchecked(REPLACE_VARIABLE_NAME)),
-        predicate: NamedNodePattern::NamedNode(NamedNode::new_unchecked(
-            predicate,
-        )),
+        predicate: NamedNodePattern::NamedNode(NamedNode::new_unchecked(predicate)),
         object: TermPattern::Literal(Literal::new_typed_literal(REPLACE_STR_LITERAL, xsd::STRING)),
     };
     vec![name_triple]
@@ -164,6 +183,24 @@ impl ArrowFlightSQLDatabase {
             host,
             port,
             tables,
+        }
+    }
+}
+
+#[pyclass]
+#[derive(Clone)]
+pub struct OPCUAHistoryRead {
+    namespace: u16,
+    endpoint: String,
+}
+
+#[pymethods]
+impl OPCUAHistoryRead {
+    #[new]
+    pub fn new(endpoint: String, namespace: u16) -> OPCUAHistoryRead {
+        OPCUAHistoryRead {
+            namespace,
+            endpoint,
         }
     }
 }
@@ -219,5 +256,6 @@ fn otit_swt_query(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<Engine>()?;
     m.add_class::<TimeSeriesTable>()?;
     m.add_class::<ArrowFlightSQLDatabase>()?;
+    m.add_class::<OPCUAHistoryRead>()?;
     Ok(())
 }
