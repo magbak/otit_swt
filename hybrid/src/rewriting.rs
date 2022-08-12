@@ -20,6 +20,7 @@ use spargebra::Query;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
+use crate::pushdown_setting::PushdownSetting;
 
 #[derive(Debug)]
 pub struct StaticQueryRewriter {
@@ -27,11 +28,13 @@ pub struct StaticQueryRewriter {
     additional_projections: HashSet<Variable>,
     variable_constraints: VariableConstraints,
     pub time_series_queries: Vec<TimeSeriesQuery>,
+    pushdown_settings: HashSet<PushdownSetting>,
 }
 
 impl StaticQueryRewriter {
-    pub fn new(variable_constraints: &VariableConstraints) -> StaticQueryRewriter {
+    pub fn new(pushdown_settings:HashSet<PushdownSetting>, variable_constraints: &VariableConstraints) -> StaticQueryRewriter {
         StaticQueryRewriter {
+            pushdown_settings,
             variable_counter: 0,
             additional_projections: Default::default(),
             variable_constraints: variable_constraints.clone(),

@@ -33,7 +33,7 @@ impl Combiner {
 
     pub fn combine_static_and_time_series_results(
         &mut self,
-        query: Query,
+        query: &Query,
         static_result_df: DataFrame,
         time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
     ) -> LazyFrame {
@@ -45,7 +45,7 @@ impl Combiner {
             dataset: _,
             pattern,
             base_iri: _,
-        } = &query
+        } = query
         {
             if let GraphPattern::Project { inner, variables } = pattern {
                 project_variables = variables.clone();

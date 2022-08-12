@@ -1,7 +1,6 @@
 mod common;
 mod opcua_data_provider;
 
-use hybrid::orchestrator::execute_hybrid_query;
 use hybrid::timeseries_database::opcua_history_read::OPCUAHistoryRead;
 use log::debug;
 use opcua_server::prelude::*;
@@ -16,6 +15,8 @@ use std::path::PathBuf;
 use std::thread::{sleep, JoinHandle};
 use std::{thread, time};
 use tokio::runtime::Builder;
+use hybrid::engine::Engine;
+use hybrid::pushdown_setting::AllPushdowns;
 
 use crate::common::{add_sparql_testdata, start_sparql_container, QUERY_ENDPOINT};
 use crate::opcua_data_provider::OPCUADataProvider;
@@ -140,7 +141,7 @@ fn test_basic_query(
     let path = "/";
 
     let endpoint = format!("opc.tcp://{}:{}{}", hostname().unwrap(), port, path);
-    let mut opcua_tsdb = OPCUAHistoryRead::new(&endpoint, 1);
+    let opcua_tsdb = OPCUAHistoryRead::new(&endpoint, 1);
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX otit_swt:<https://github.com/magbak/otit_swt#>
@@ -158,11 +159,11 @@ fn test_basic_query(
     let mut builder = Builder::new_multi_thread();
     builder.enable_all();
     let runtime = builder.build().unwrap();
+    let mut engine = Engine::new(AllPushdowns(), Box::new(opcua_tsdb));
     let mut df = runtime
-        .block_on(execute_hybrid_query(
+        .block_on(engine.execute_hybrid_query(
             query,
-            QUERY_ENDPOINT,
-            Box::new(&mut opcua_tsdb),
+            QUERY_ENDPOINT
         ))
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -208,7 +209,7 @@ fn test_basic_no_end_time_query(
     let path = "/";
 
     let endpoint = format!("opc.tcp://{}:{}{}", hostname().unwrap(), port, path);
-    let mut opcua_tsdb = OPCUAHistoryRead::new(&endpoint, 1);
+    let opcua_tsdb = OPCUAHistoryRead::new(&endpoint, 1);
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX otit_swt:<https://github.com/magbak/otit_swt#>
@@ -226,11 +227,11 @@ fn test_basic_no_end_time_query(
     let mut builder = Builder::new_multi_thread();
     builder.enable_all();
     let runtime = builder.build().unwrap();
+    let mut engine = Engine::new(AllPushdowns(), Box::new(opcua_tsdb));
     let mut df = runtime
-        .block_on(execute_hybrid_query(
+        .block_on(engine.execute_hybrid_query(
             query,
             QUERY_ENDPOINT,
-            Box::new(&mut opcua_tsdb),
         ))
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -276,7 +277,7 @@ fn test_pushdown_group_by_five_second_hybrid_query(
     let path = "/";
 
     let endpoint = format!("opc.tcp://{}:{}{}", hostname().unwrap(), port, path);
-    let mut opcua_tsdb = OPCUAHistoryRead::new(&endpoint, 1);
+    let opcua_tsdb = OPCUAHistoryRead::new(&endpoint, 1);
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX otit_swt:<https://github.com/magbak/otit_swt#>
@@ -294,11 +295,11 @@ fn test_pushdown_group_by_five_second_hybrid_query(
     let mut builder = Builder::new_multi_thread();
     builder.enable_all();
     let runtime = builder.build().unwrap();
+    let mut engine = Engine::new(AllPushdowns(), Box::new(opcua_tsdb));
     let mut df = runtime
-        .block_on(execute_hybrid_query(
+        .block_on(engine.execute_hybrid_query(
             query,
             QUERY_ENDPOINT,
-            Box::new(&mut opcua_tsdb),
         ))
         .expect("Hybrid error");
     df = df.sort(vec!["w", "datetime_seconds"], false).unwrap();
