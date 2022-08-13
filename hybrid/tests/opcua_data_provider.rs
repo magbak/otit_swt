@@ -7,7 +7,6 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::TimeUnit;
 use std::collections::HashMap;
 use std::ops::{Div, Mul};
-use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 const OPCUA_AGG_FUNC_AVERAGE: u32 = 2342;
@@ -36,7 +35,7 @@ impl OPCUADataProvider {
         let mut results = vec![];
         for (i, n) in nodes_to_read.iter().enumerate() {
             let NodeId {
-                namespace,
+                namespace:_,
                 identifier,
             } = &n.node_id;
             let idstring = if let Identifier::String(uas) = identifier {
@@ -175,7 +174,7 @@ impl HistoricalDataProvider for OPCUADataProvider {
         &self,
         _address_space: Arc<RwLock<AddressSpace>>,
         request: ReadProcessedDetails,
-        timestamps_to_return: TimestampsToReturn,
+        _timestamps_to_return: TimestampsToReturn,
         _release_continuation_points: bool,
         nodes_to_read: &[HistoryReadValueId],
     ) -> Result<Vec<HistoryReadResult>, StatusCode> {

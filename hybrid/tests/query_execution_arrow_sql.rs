@@ -314,7 +314,7 @@ async fn test_simple_hybrid_query(
     let _ = use_logger;
     let _ = with_sparql_testdata.await;
     let _ = with_timeseries_testdata.await;
-    let mut db = ts_sql_db(timeseries_table).await;
+    let db = ts_sql_db(timeseries_table).await;
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX otit_swt:<https://github.com/magbak/otit_swt#>

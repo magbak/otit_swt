@@ -336,6 +336,7 @@ fn test_fix_dropped_triple() {
     assert_eq!(static_rewrite, expected_query);
 
     let expected_time_series_queries = vec![TimeSeriesQuery {
+        pushdown_settings: all_pushdowns(),
         identifier_variable: Some(Variable::new_unchecked("ts_external_id_0")),
         timeseries_variable: Some(VariableInContext::new(
             Variable::new_unchecked("ts"),
@@ -431,6 +432,7 @@ fn test_property_path_expression() {
     let expected_query = Query::parse(expected_str, None).unwrap();
     let expected_time_series_queries = vec![
         TimeSeriesQuery {
+            pushdown_settings: all_pushdowns(),
             identifier_variable: Some(Variable::new_unchecked("ts_external_id_0")),
             timeseries_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("blank_replacement_0"),
@@ -471,6 +473,7 @@ fn test_property_path_expression() {
             conditions: vec![],
         },
         TimeSeriesQuery {
+                    pushdown_settings: all_pushdowns(),
             identifier_variable: Some(Variable::new_unchecked("ts_external_id_1")),
             timeseries_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("blank_replacement_1"),

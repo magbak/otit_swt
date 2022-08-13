@@ -154,7 +154,7 @@ impl StaticQueryRewriter {
 
     fn pushdown_expression(&mut self, expr: &Expression, context: &Context) {
         for t in &mut self.time_series_queries {
-            t.try_rewrite_expression(expr, context);
+            t.try_rewrite_condition_expression(expr, context);
         }
     }
 
@@ -234,7 +234,7 @@ impl StaticQueryRewriter {
         datatype_variable: &Variable,
         context: &Context,
     ) {
-        let mut ts_query = TimeSeriesQuery::new();
+        let mut ts_query = TimeSeriesQuery::new_empty(self.pushdown_settings.clone());
         ts_query.identifier_variable = Some(time_series_id_variable.clone());
         ts_query.datatype_variable = Some(datatype_variable.clone());
         ts_query.timeseries_variable = Some(VariableInContext::new(

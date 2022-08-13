@@ -1,4 +1,5 @@
 use crate::change_types::ChangeType;
+use crate::pushdown_setting::PushdownSetting;
 use crate::query_context::{
     AggregateExpressionInContext, Context, ExpressionInContext, PathEntry, VariableInContext,
 };
@@ -12,6 +13,12 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) enum TimeSeriesExpressionRewriteContext {
+    Condition,
+    Aggregate,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Grouping {
     pub graph_pattern_hash: u64,
     pub by: Vec<Variable>,
@@ -21,6 +28,7 @@ pub struct Grouping {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimeSeriesQuery {
+    pub pushdown_settings: HashSet<PushdownSetting>,
     pub identifier_variable: Option<Variable>,
     pub timeseries_variable: Option<VariableInContext>,
     pub data_point_variable: Option<VariableInContext>,
@@ -100,6 +108,7 @@ impl TimeSeriesQuery {
         by: Vec<Variable>,
         context: &Context,
     ) {
+        let rewrite_context = TimeSeriesExpressionRewriteContext::Aggregate;
         let mut keep_aggregates = vec![];
         for (v, a) in aggregations {
             let mut keep_aggregate = None;
@@ -107,6 +116,7 @@ impl TimeSeriesQuery {
                 AggregateExpression::Count { expr, distinct } => {
                     if let Some(inner_expr) = expr {
                         if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
+                            &rewrite_context,
                             inner_expr,
                             &ChangeType::NoChange,
                             &context.extension_with(PathEntry::AggregationOperation),
@@ -120,6 +130,7 @@ impl TimeSeriesQuery {
                 }
                 AggregateExpression::Sum { expr, distinct } => {
                     if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
+                        &rewrite_context,
                         expr,
                         &ChangeType::NoChange,
                         &context.extension_with(PathEntry::AggregationOperation),
@@ -132,6 +143,7 @@ impl TimeSeriesQuery {
                 }
                 AggregateExpression::Avg { expr, distinct } => {
                     if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
+                        &rewrite_context,
                         expr,
                         &ChangeType::NoChange,
                         &context.extension_with(PathEntry::AggregationOperation),
@@ -144,6 +156,7 @@ impl TimeSeriesQuery {
                 }
                 AggregateExpression::Min { expr, distinct } => {
                     if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
+                        &rewrite_context,
                         expr,
                         &ChangeType::NoChange,
                         &context.extension_with(PathEntry::AggregationOperation),
@@ -156,6 +169,7 @@ impl TimeSeriesQuery {
                 }
                 AggregateExpression::Max { expr, distinct } => {
                     if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
+                        &rewrite_context,
                         expr,
                         &ChangeType::NoChange,
                         &context.extension_with(PathEntry::AggregationOperation),
@@ -172,6 +186,7 @@ impl TimeSeriesQuery {
                     separator,
                 } => {
                     if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
+                        &rewrite_context,
                         expr,
                         &ChangeType::NoChange,
                         &context.extension_with(PathEntry::AggregationOperation),
@@ -185,6 +200,7 @@ impl TimeSeriesQuery {
                 }
                 AggregateExpression::Sample { expr, distinct } => {
                     if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
+                        &rewrite_context,
                         expr,
                         &ChangeType::NoChange,
                         &context.extension_with(PathEntry::AggregationOperation),
@@ -201,6 +217,7 @@ impl TimeSeriesQuery {
                     distinct,
                 } => {
                     if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
+                        &rewrite_context,
                         expr,
                         &ChangeType::NoChange,
                         &context.extension_with(PathEntry::AggregationOperation),
@@ -230,10 +247,17 @@ impl TimeSeriesQuery {
         }
     }
 
-    pub(crate) fn try_rewrite_expression(&mut self, expr: &Expression, context: &Context) {
-        if let Some((expression_rewrite, _)) =
-            self.try_recursive_rewrite_expression(expr, &ChangeType::Relaxed, context)
-        {
+    pub(crate) fn try_rewrite_condition_expression(
+        &mut self,
+        expr: &Expression,
+        context: &Context,
+    ) {
+        if let Some((expression_rewrite, _)) = self.try_recursive_rewrite_expression(
+            &TimeSeriesExpressionRewriteContext::Condition,
+            expr,
+            &ChangeType::Relaxed,
+            context,
+        ) {
             self.conditions.push(ExpressionInContext::new(
                 expression_rewrite,
                 context.clone(),
@@ -243,6 +267,7 @@ impl TimeSeriesQuery {
 
     fn try_recursive_rewrite_expression(
         &self,
+        rewrite_context: &TimeSeriesExpressionRewriteContext,
         expression: &Expression,
         required_change_direction: &ChangeType,
         context: &Context,
@@ -261,18 +286,28 @@ impl TimeSeriesQuery {
                     || (self.value_variable.is_some()
                         && self.value_variable.as_ref().unwrap().equivalent(v, context))
                 {
-                    return Some((Expression::Variable(v.clone()), ChangeType::NoChange));
+                    if rewrite_context == &TimeSeriesExpressionRewriteContext::Aggregate
+                        || self
+                            .pushdown_settings
+                            .contains(&PushdownSetting::ValueConditions)
+                    {
+                        return Some((Expression::Variable(v.clone()), ChangeType::NoChange));
+                    } else {
+                        return None;
+                    }
                 } else {
                     return None;
                 }
             }
             Expression::Or(left, right) => {
                 let left_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     left,
                     required_change_direction,
                     &context.extension_with(PathEntry::OrLeft),
                 );
                 let right_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     right,
                     required_change_direction,
                     &context.extension_with(PathEntry::OrRight),
@@ -373,11 +408,13 @@ impl TimeSeriesQuery {
             }
             Expression::And(left, right) => {
                 let left_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     left,
                     required_change_direction,
                     &context.extension_with(PathEntry::AndLeft),
                 );
                 let right_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     right,
                     required_change_direction,
                     &context.extension_with(PathEntry::AndRight),
@@ -478,11 +515,13 @@ impl TimeSeriesQuery {
             }
             Expression::Equal(left, right) => {
                 let left_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     left,
                     required_change_direction,
                     &context.extension_with(PathEntry::EqualLeft),
                 );
                 let right_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     right,
                     required_change_direction,
                     &context.extension_with(PathEntry::EqualRight),
@@ -501,11 +540,13 @@ impl TimeSeriesQuery {
             }
             Expression::Greater(left, right) => {
                 let left_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     left,
                     required_change_direction,
                     &context.extension_with(PathEntry::GreaterLeft),
                 );
                 let right_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     right,
                     required_change_direction,
                     &context.extension_with(PathEntry::GreaterRight),
@@ -524,11 +565,13 @@ impl TimeSeriesQuery {
             }
             Expression::GreaterOrEqual(left, right) => {
                 let left_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     left,
                     required_change_direction,
                     &context.extension_with(PathEntry::GreaterOrEqualLeft),
                 );
                 let right_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     right,
                     required_change_direction,
                     &context.extension_with(PathEntry::GreaterOrEqualRight),
@@ -547,11 +590,13 @@ impl TimeSeriesQuery {
             }
             Expression::Less(left, right) => {
                 let left_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     left,
                     required_change_direction,
                     &context.extension_with(PathEntry::LessLeft),
                 );
                 let right_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     right,
                     required_change_direction,
                     &context.extension_with(PathEntry::LessRight),
@@ -570,11 +615,13 @@ impl TimeSeriesQuery {
             }
             Expression::LessOrEqual(left, right) => {
                 let left_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     left,
                     required_change_direction,
                     &context.extension_with(PathEntry::LessOrEqualLeft),
                 );
                 let right_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     right,
                     required_change_direction,
                     &context.extension_with(PathEntry::LessOrEqualRight),
@@ -593,6 +640,7 @@ impl TimeSeriesQuery {
             }
             Expression::In(left, right) => {
                 let left_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     left,
                     &ChangeType::NoChange,
                     &context.extension_with(PathEntry::InLeft),
@@ -603,6 +651,7 @@ impl TimeSeriesQuery {
                         .enumerate()
                         .map(|(i, e)| {
                             self.try_recursive_rewrite_expression(
+                                rewrite_context,
                                 e,
                                 required_change_direction,
                                 &context.extension_with(PathEntry::InRight(i as u16)),
@@ -652,11 +701,13 @@ impl TimeSeriesQuery {
             }
             Expression::Add(left, right) => {
                 let left_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     left,
                     required_change_direction,
                     &context.extension_with(PathEntry::AddLeft),
                 );
                 let right_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     right,
                     required_change_direction,
                     &context.extension_with(PathEntry::AddRight),
@@ -675,11 +726,13 @@ impl TimeSeriesQuery {
             }
             Expression::Subtract(left, right) => {
                 let left_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     left,
                     required_change_direction,
                     &context.extension_with(PathEntry::SubtractLeft),
                 );
                 let right_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     right,
                     required_change_direction,
                     &context.extension_with(PathEntry::SubtractRight),
@@ -698,11 +751,13 @@ impl TimeSeriesQuery {
             }
             Expression::Multiply(left, right) => {
                 let left_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     left,
                     required_change_direction,
                     &context.extension_with(PathEntry::MultiplyLeft),
                 );
                 let right_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     right,
                     required_change_direction,
                     &context.extension_with(PathEntry::MultiplyRight),
@@ -721,11 +776,13 @@ impl TimeSeriesQuery {
             }
             Expression::Divide(left, right) => {
                 let left_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     left,
                     required_change_direction,
                     &context.extension_with(PathEntry::DivideLeft),
                 );
                 let right_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     right,
                     required_change_direction,
                     &context.extension_with(PathEntry::DivideRight),
@@ -744,6 +801,7 @@ impl TimeSeriesQuery {
             }
             Expression::UnaryPlus(inner) => {
                 let inner_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     inner,
                     required_change_direction,
                     &context.extension_with(PathEntry::UnaryPlus),
@@ -758,6 +816,7 @@ impl TimeSeriesQuery {
             }
             Expression::UnaryMinus(inner) => {
                 let inner_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     inner,
                     required_change_direction,
                     &context.extension_with(PathEntry::UnaryMinus),
@@ -777,6 +836,7 @@ impl TimeSeriesQuery {
                     ChangeType::NoChange => ChangeType::NoChange,
                 };
                 let inner_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     inner,
                     &use_direction,
                     &context.extension_with(PathEntry::Not),
@@ -807,16 +867,19 @@ impl TimeSeriesQuery {
             }
             Expression::If(left, middle, right) => {
                 let left_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     left,
                     required_change_direction,
                     &context.extension_with(PathEntry::IfLeft),
                 );
                 let middle_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     middle,
                     required_change_direction,
                     &context.extension_with(PathEntry::IfMiddle),
                 );
                 let right_rewrite_opt = self.try_recursive_rewrite_expression(
+                    rewrite_context,
                     right,
                     required_change_direction,
                     &context.extension_with(PathEntry::IfRight),
@@ -844,6 +907,7 @@ impl TimeSeriesQuery {
                     .enumerate()
                     .map(|(i, e)| {
                         self.try_recursive_rewrite_expression(
+                            rewrite_context,
                             e,
                             required_change_direction,
                             &context.extension_with(PathEntry::Coalesce(i as u16)),
@@ -875,6 +939,7 @@ impl TimeSeriesQuery {
                     .enumerate()
                     .map(|(i, e)| {
                         self.try_recursive_rewrite_expression(
+                            rewrite_context,
                             e,
                             required_change_direction,
                             &context.extension_with(PathEntry::FunctionCall(i as u16)),
@@ -907,8 +972,9 @@ impl TimeSeriesQuery {
 }
 
 impl TimeSeriesQuery {
-    pub fn new() -> TimeSeriesQuery {
+    pub fn new_empty(pushdown_settings:HashSet<PushdownSetting>) -> TimeSeriesQuery {
         TimeSeriesQuery {
+            pushdown_settings,
             identifier_variable: None,
             timeseries_variable: None,
             data_point_variable: None,

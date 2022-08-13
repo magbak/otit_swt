@@ -73,7 +73,7 @@ fn inmem_time_series_database(testdata_path: PathBuf) -> InMemoryTimeseriesDatab
 }
 
 #[fixture]
-fn engine(mut inmem_time_series_database: InMemoryTimeseriesDatabase) -> Engine {
+fn engine(inmem_time_series_database: InMemoryTimeseriesDatabase) -> Engine {
     Engine::new(all_pushdowns(), Box::new(inmem_time_series_database))
 }
 

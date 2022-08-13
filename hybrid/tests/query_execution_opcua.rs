@@ -2,12 +2,12 @@ mod common;
 mod opcua_data_provider;
 
 use hybrid::engine::Engine;
-use hybrid::pushdown_setting::all_pushdowns;
+use hybrid::pushdown_setting::{all_pushdowns, PushdownSetting};
 use hybrid::timeseries_database::opcua_history_read::OPCUAHistoryRead;
 use log::debug;
 use opcua_server::prelude::*;
-use polars::io::{SerReader, SerWriter};
-use polars::prelude::{CsvReader, CsvWriter};
+use polars::io::{SerReader};
+use polars::prelude::{CsvReader};
 use polars_core::frame::DataFrame;
 use rstest::*;
 use serial_test::serial;
@@ -52,6 +52,7 @@ fn sparql_endpoint() {
 
 #[fixture]
 fn with_testdata(sparql_endpoint: (), testdata_path: PathBuf) {
+    let _ = sparql_endpoint;
     let mut testdata_path = testdata_path.clone();
     testdata_path.push("testdata.sparql");
     let mut builder = Builder::new_multi_thread();
@@ -133,7 +134,7 @@ fn engine() -> Engine {
     let path = "/";
     let endpoint = format!("opc.tcp://{}:{}{}", hostname().unwrap(), port, path);
     let opcua_tsdb = OPCUAHistoryRead::new(&endpoint, 1);
-    let engine = Engine::new(all_pushdowns(), Box::new(opcua_tsdb));
+    let engine = Engine::new([PushdownSetting::GroupBy].into(), Box::new(opcua_tsdb));
     engine
 }
 
@@ -148,6 +149,7 @@ fn test_basic_query(
 ) {
     let _ = with_testdata;
     let _ = use_logger;
+    let _ = opcua_server_fixture;
 
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -166,12 +168,12 @@ fn test_basic_query(
     let mut builder = Builder::new_multi_thread();
     builder.enable_all();
     let runtime = builder.build().unwrap();
-    let mut df = runtime
+    let df = runtime
         .block_on(engine.execute_hybrid_query(query, QUERY_ENDPOINT))
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_basic_query.csv");
-    let file = File::open(file_path.as_path()).expect("Read file problem");
+    let file = File::open(file_path.as_path()).expect( "Read file problem");
     let mut expected_df = CsvReader::new(file)
         .infer_schema(None)
         .has_header(true)
@@ -209,6 +211,7 @@ fn test_basic_no_end_time_query(
 ) {
     let _ = with_testdata;
     let _ = use_logger;
+    let _ = opcua_server_fixture;
 
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -227,7 +230,7 @@ fn test_basic_no_end_time_query(
     let mut builder = Builder::new_multi_thread();
     builder.enable_all();
     let runtime = builder.build().unwrap();
-    let mut df = runtime
+    let df = runtime
         .block_on(engine.execute_hybrid_query(query, QUERY_ENDPOINT))
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
@@ -270,6 +273,7 @@ fn test_pushdown_group_by_five_second_hybrid_query(
 ) {
     let _ = with_testdata;
     let _ = use_logger;
+    let _ = opcua_server_fixture;
 
     let query = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
