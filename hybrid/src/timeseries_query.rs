@@ -29,6 +29,7 @@ pub struct Grouping {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimeSeriesQuery {
     pub pushdown_settings: HashSet<PushdownSetting>,
+    pub dropped_value_expression: bool, //Used to hinder pushdown when a value filter is dropped
     pub identifier_variable: Option<Variable>,
     pub timeseries_variable: Option<VariableInContext>,
     pub data_point_variable: Option<VariableInContext>,
@@ -266,7 +267,7 @@ impl TimeSeriesQuery {
     }
 
     fn try_recursive_rewrite_expression(
-        &self,
+        &mut self,
         rewrite_context: &TimeSeriesExpressionRewriteContext,
         expression: &Expression,
         required_change_direction: &ChangeType,
@@ -277,14 +278,16 @@ impl TimeSeriesQuery {
                 return Some((Expression::Literal(lit.clone()), ChangeType::NoChange));
             }
             Expression::Variable(v) => {
-                if (self.timestamp_variable.is_some()
+                if self.timestamp_variable.is_some()
                     && self
                         .timestamp_variable
                         .as_ref()
                         .unwrap()
-                        .equivalent(v, context))
-                    || (self.value_variable.is_some()
-                        && self.value_variable.as_ref().unwrap().equivalent(v, context))
+                        .equivalent(v, context)
+                {
+                    return Some((Expression::Variable(v.clone()), ChangeType::NoChange));
+                } else if self.value_variable.is_some()
+                    && self.value_variable.as_ref().unwrap().equivalent(v, context)
                 {
                     if rewrite_context == &TimeSeriesExpressionRewriteContext::Aggregate
                         || self
@@ -293,6 +296,7 @@ impl TimeSeriesQuery {
                     {
                         return Some((Expression::Variable(v.clone()), ChangeType::NoChange));
                     } else {
+                        self.dropped_value_expression = true;
                         return None;
                     }
                 } else {
@@ -972,9 +976,10 @@ impl TimeSeriesQuery {
 }
 
 impl TimeSeriesQuery {
-    pub fn new_empty(pushdown_settings:HashSet<PushdownSetting>) -> TimeSeriesQuery {
+    pub fn new_empty(pushdown_settings: HashSet<PushdownSetting>) -> TimeSeriesQuery {
         TimeSeriesQuery {
             pushdown_settings,
+            dropped_value_expression: false,
             identifier_variable: None,
             timeseries_variable: None,
             data_point_variable: None,

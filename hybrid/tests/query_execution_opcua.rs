@@ -6,8 +6,8 @@ use hybrid::pushdown_setting::{all_pushdowns, PushdownSetting};
 use hybrid::timeseries_database::opcua_history_read::OPCUAHistoryRead;
 use log::debug;
 use opcua_server::prelude::*;
-use polars::io::{SerReader};
-use polars::prelude::{CsvReader};
+use polars::io::{SerReader, SerWriter};
+use polars::prelude::{CsvReader, CsvWriter};
 use polars_core::frame::DataFrame;
 use rstest::*;
 use serial_test::serial;
@@ -173,7 +173,7 @@ fn test_basic_query(
         .expect("Hybrid error");
     let mut file_path = testdata_path.clone();
     file_path.push("expected_basic_query.csv");
-    let file = File::open(file_path.as_path()).expect( "Read file problem");
+    let file = File::open(file_path.as_path()).expect("Read file problem");
     let mut expected_df = CsvReader::new(file)
         .infer_schema(None)
         .has_header(true)
@@ -328,3 +328,70 @@ fn test_pushdown_group_by_five_second_hybrid_query(
     // writer.finish(&mut df).expect("writeok");
     // println!("{}", df);
 }
+
+#[rstest]
+#[serial]
+fn test_no_pushdown_because_of_filter_query(
+    with_testdata: (),
+    use_logger: (),
+    opcua_server_fixture: JoinHandle<()>,
+    testdata_path: PathBuf,
+    mut engine: Engine,
+) {
+    let _ = with_testdata;
+    let _ = use_logger;
+    let _ = opcua_server_fixture;
+
+    let query = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX otit_swt:<https://github.com/magbak/otit_swt#>
+    PREFIX types:<http://example.org/types#>
+    SELECT ?w ?datetime_seconds (SUM(?v) as ?sum_v) WHERE {
+        ?w types:hasSensor ?s .
+        ?s otit_swt:hasTimeseries ?ts .
+        ?ts otit_swt:hasDataPoint ?dp .
+        ?dp otit_swt:hasTimestamp ?t .
+        ?dp otit_swt:hasValue ?v .
+        BIND(xsd:integer(5 * FLOOR(otit_swt:DateTimeAsSeconds(?t) / 5.0)) as ?datetime_seconds)
+        FILTER(?v > 100 && ?t > "2022-06-01T08:46:53"^^xsd:dateTime)
+    } GROUP BY ?w ?datetime_seconds
+    "#;
+    let mut builder = Builder::new_multi_thread();
+    builder.enable_all();
+    let runtime = builder.build().unwrap();
+    let mut df = runtime
+        .block_on(engine.execute_hybrid_query(query, QUERY_ENDPOINT))
+        .expect("Hybrid error");
+    df = df.sort(vec!["w", "datetime_seconds"], false).unwrap();
+    let mut file_path = testdata_path.clone();
+    file_path.push("expected_no_pushdown_because_of_filter_query.csv");
+    let file = File::open(file_path.as_path()).expect("Read file problem");
+    let mut expected_df = CsvReader::new(file)
+        .infer_schema(None)
+        .has_header(true)
+        .with_parse_dates(true)
+        .finish()
+        .expect("DF read error");
+    expected_df
+        .with_column(
+            expected_df
+                .column("datetime_seconds")
+                .unwrap()
+                .cast(&polars::prelude::DataType::Datetime(
+                    polars::prelude::TimeUnit::Milliseconds,
+                    None,
+                ))
+                .unwrap(),
+        )
+        .unwrap();
+    expected_df = expected_df
+        .sort(vec!["w", "datetime_seconds"], false)
+        .unwrap();
+
+    assert_eq!(expected_df, df);
+//
+//     let file = File::create(file_path.as_path()).expect("could not open file");
+//     let mut writer = CsvWriter::new(file);
+//     writer.finish(&mut df).expect("writeok");
+//     println!("{}", df);
+// }

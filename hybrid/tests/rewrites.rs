@@ -473,7 +473,7 @@ fn test_property_path_expression() {
             conditions: vec![],
         },
         TimeSeriesQuery {
-                    pushdown_settings: all_pushdowns(),
+            pushdown_settings: all_pushdowns(),
             identifier_variable: Some(Variable::new_unchecked("ts_external_id_1")),
             timeseries_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("blank_replacement_1"),

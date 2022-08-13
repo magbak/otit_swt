@@ -201,93 +201,96 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 })
                 .collect();
             'outer: for tsq in time_series_queries {
-                for (v, c) in &vs_and_cs {
-                    let in_tsq = match c {
-                        Constraint::ExternalTimeseries => {
-                            tsq.timeseries_variable.is_some()
-                                && tsq
-                                    .timeseries_variable
-                                    .as_ref()
-                                    .unwrap()
-                                    .equivalent(v, context)
-                        }
-                        Constraint::ExternalDataPoint => {
-                            tsq.data_point_variable.is_some()
-                                && tsq
-                                    .data_point_variable
-                                    .as_ref()
-                                    .unwrap()
-                                    .equivalent(v, context)
-                        }
-                        Constraint::ExternalDataValue => {
-                            tsq.value_variable.is_some()
-                                && tsq.value_variable.as_ref().unwrap().equivalent(v, context)
-                        }
-                        Constraint::ExternalTimestamp => {
-                            tsq.timestamp_variable.is_some()
-                                && tsq
-                                    .timestamp_variable
-                                    .as_ref()
-                                    .unwrap()
-                                    .equivalent(v, context)
-                        }
-                        Constraint::ExternallyDerived => {
-                            true //true since we do not want to disqualify our timeseries query.. TODO figure out
-                        }
-                    };
-                    if !in_tsq {
-                        continue 'outer;
-                    }
-                }
-                let mut timeseries_funcs = vec![];
-                find_all_timeseries_funcs_in_graph_pattern(
-                    inner,
-                    &mut timeseries_funcs,
-                    tsq,
-                    &context.extension_with(PathEntry::GroupInner),
-                );
-                let mut static_grouping_variables = vec![];
-                let mut dynamic_grouping_variables = vec![];
-                'forvar: for v in variables {
-                    if let Some(tsv) = &tsq.timestamp_variable {
-                        if tsv.equivalent(v, context) {
-                            dynamic_grouping_variables.push(tsv.variable.clone());
-                            continue 'forvar;
+                if !tsq.dropped_value_expression {
+                    for (v, c) in &vs_and_cs {
+                        let in_tsq = match c {
+                            Constraint::ExternalTimeseries => {
+                                tsq.timeseries_variable.is_some()
+                                    && tsq
+                                        .timeseries_variable
+                                        .as_ref()
+                                        .unwrap()
+                                        .equivalent(v, context)
+                            }
+                            Constraint::ExternalDataPoint => {
+                                tsq.data_point_variable.is_some()
+                                    && tsq
+                                        .data_point_variable
+                                        .as_ref()
+                                        .unwrap()
+                                        .equivalent(v, context)
+                            }
+                            Constraint::ExternalDataValue => {
+                                tsq.value_variable.is_some()
+                                    && tsq.value_variable.as_ref().unwrap().equivalent(v, context)
+                            }
+                            Constraint::ExternalTimestamp => {
+                                tsq.timestamp_variable.is_some()
+                                    && tsq
+                                        .timestamp_variable
+                                        .as_ref()
+                                        .unwrap()
+                                        .equivalent(v, context)
+                            }
+                            Constraint::ExternallyDerived => {
+                                true //true since we do not want to disqualify our timeseries query.. TODO figure out
+                            }
+                        };
+                        if !in_tsq {
+                            continue 'outer;
                         }
                     }
-                    if let Some(vv) = &tsq.value_variable {
-                        if vv.equivalent(v, context) {
-                            dynamic_grouping_variables.push(vv.variable.clone());
-                            continue 'forvar;
-                        }
-                    }
-                    for (fv, _) in &timeseries_funcs {
-                        if fv == v {
-                            dynamic_grouping_variables.push(fv.clone());
-                            continue 'forvar;
-                        }
-                    }
-                    static_grouping_variables.push(v.clone())
-                }
-                //Todo: impose constraints on graph pattern structure here ..
-                if (static_grouping_variables.is_empty() && !dynamic_grouping_variables.is_empty())
-                    || variables_isomorphic_to_time_series_id(
-                        &static_grouping_variables,
-                        tsq.identifier_variable.as_ref().unwrap().as_str(),
-                        static_query_df,
-                    )
-                {
-                    let mut by = dynamic_grouping_variables;
-                    if !static_grouping_variables.is_empty() {
-                        by.push(tsq.identifier_variable.as_ref().unwrap().clone());
-                    }
-                    tsq.try_pushdown_aggregates(
-                        aggregates,
-                        graph_pattern,
-                        timeseries_funcs,
-                        by,
-                        context,
+                    let mut timeseries_funcs = vec![];
+                    find_all_timeseries_funcs_in_graph_pattern(
+                        inner,
+                        &mut timeseries_funcs,
+                        tsq,
+                        &context.extension_with(PathEntry::GroupInner),
                     );
+                    let mut static_grouping_variables = vec![];
+                    let mut dynamic_grouping_variables = vec![];
+                    'forvar: for v in variables {
+                        if let Some(tsv) = &tsq.timestamp_variable {
+                            if tsv.equivalent(v, context) {
+                                dynamic_grouping_variables.push(tsv.variable.clone());
+                                continue 'forvar;
+                            }
+                        }
+                        if let Some(vv) = &tsq.value_variable {
+                            if vv.equivalent(v, context) {
+                                dynamic_grouping_variables.push(vv.variable.clone());
+                                continue 'forvar;
+                            }
+                        }
+                        for (fv, _) in &timeseries_funcs {
+                            if fv == v {
+                                dynamic_grouping_variables.push(fv.clone());
+                                continue 'forvar;
+                            }
+                        }
+                        static_grouping_variables.push(v.clone())
+                    }
+                    //Todo: impose constraints on graph pattern structure here ..
+                    if (static_grouping_variables.is_empty()
+                        && !dynamic_grouping_variables.is_empty())
+                        || variables_isomorphic_to_time_series_id(
+                            &static_grouping_variables,
+                            tsq.identifier_variable.as_ref().unwrap().as_str(),
+                            static_query_df,
+                        )
+                    {
+                        let mut by = dynamic_grouping_variables;
+                        if !static_grouping_variables.is_empty() {
+                            by.push(tsq.identifier_variable.as_ref().unwrap().clone());
+                        }
+                        tsq.try_pushdown_aggregates(
+                            aggregates,
+                            graph_pattern,
+                            timeseries_funcs,
+                            by,
+                            context,
+                        );
+                    }
                 }
             }
         }

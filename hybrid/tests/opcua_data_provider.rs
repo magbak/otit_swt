@@ -35,7 +35,7 @@ impl OPCUADataProvider {
         let mut results = vec![];
         for (i, n) in nodes_to_read.iter().enumerate() {
             let NodeId {
-                namespace:_,
+                namespace: _,
                 identifier,
             } = &n.node_id;
             let idstring = if let Identifier::String(uas) = identifier {
