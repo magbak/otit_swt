@@ -389,9 +389,11 @@ fn test_no_pushdown_because_of_filter_query(
         .unwrap();
 
     assert_eq!(expected_df, df);
+}
+
 //
 //     let file = File::create(file_path.as_path()).expect("could not open file");
 //     let mut writer = CsvWriter::new(file);
 //     writer.finish(&mut df).expect("writeok");
 //     println!("{}", df);
-// }
+//
