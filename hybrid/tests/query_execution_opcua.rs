@@ -369,21 +369,8 @@ fn test_no_pushdown_because_of_filter_query(
     let mut expected_df = CsvReader::new(file)
         .infer_schema(None)
         .has_header(true)
-        .with_parse_dates(true)
         .finish()
         .expect("DF read error");
-    expected_df
-        .with_column(
-            expected_df
-                .column("datetime_seconds")
-                .unwrap()
-                .cast(&polars::prelude::DataType::Datetime(
-                    polars::prelude::TimeUnit::Milliseconds,
-                    None,
-                ))
-                .unwrap(),
-        )
-        .unwrap();
     expected_df = expected_df
         .sort(vec!["w", "datetime_seconds"], false)
         .unwrap();
