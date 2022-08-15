@@ -25,6 +25,11 @@ jobs:
         pip install pytest maturin
       working-directory: ./py_otit_swt_mapper
 
+    - name: Set up nightly rust
+      run: |
+        rustup toolchain install nightly
+        rustup default nightly
+
     - name: Build install package
       run: |
         source .venv/bin/activate

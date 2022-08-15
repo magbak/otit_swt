@@ -44,6 +44,11 @@ jobs:
         pip install maturin
       working-directory: .
 
+    - name: Set up nightly rust
+      run: |
+        rustup toolchain install nightly
+        rustup default nightly
+
     - name: Build query wheels
       run: |
         source ../.venv/bin/activate
