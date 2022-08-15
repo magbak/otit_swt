@@ -397,7 +397,7 @@ impl Preprocessor {
                 TermPattern::Variable(var.clone())
             } else {
                 let var =
-                    Variable::new("blank_replacement_".to_string() + &self.counter.to_string())
+                    Variable::new("blank_replacement_".to_string() + self.counter.to_string().as_str())
                         .expect("Name is ok");
                 self.counter += 1;
                 self.blank_node_rename.insert(bn.clone(), var.clone());

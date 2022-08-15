@@ -7,6 +7,7 @@ This repository provides experimental tools for moving between the world of [Ope
 
 Currently, these tools are volatile works in progress, and should not be used by anyone for anything important. 
 
+TODO: Switched to simd with nightly, write up.. 
 ## Queries
 ```python
   from otit_swt_query import Engine, ArrowFlightSQLDatabase, TimeSeriesTable

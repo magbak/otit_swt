@@ -1,4 +1,4 @@
-// From: https://github.com/pola-rs/polars/blob/3a941854b57dd45f4ea42fe6e81af2989ba06ccf/py-polars/src/arrow_interop/to_py.rs
+// From: https://github.com/pola-rs/polars/blob/master/py-polars/src/arrow_interop/to_py.rs
 // Edited to remove dependencies on py-polars
 // Original licence:
 //
@@ -23,8 +23,7 @@
 // SOFTWARE.
 
 use polars_core::frame::ArrowChunk;
-use polars_core::prelude::ArrowField;
-use polars_core::utils::arrow::array::ArrayRef;
+use polars_core::prelude::{ArrayRef, ArrowField};
 use polars_core::utils::arrow::ffi;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
@@ -32,29 +31,21 @@ use pyo3::types::PyList;
 
 /// Arrow array to Python.
 pub(crate) fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
-    let array_ptr = Box::new(ffi::ArrowArray::empty());
-    let schema_ptr = Box::new(ffi::ArrowSchema::empty());
+    let schema = Box::new(ffi::export_field_to_c(&ArrowField::new(
+        "",
+        array.data_type().clone(),
+        true,
+    )));
+    let array = Box::new(ffi::export_array_to_c(array));
 
-    let array_ptr = Box::into_raw(array_ptr);
-    let schema_ptr = Box::into_raw(schema_ptr);
+    let schema_ptr: *const ffi::ArrowSchema = &*schema;
+    let array_ptr: *const ffi::ArrowArray = &*array;
 
-    unsafe {
-        ffi::export_field_to_c(
-            &ArrowField::new("", array.data_type().clone(), true),
-            schema_ptr,
-        );
-        ffi::export_array_to_c(array, array_ptr);
-    };
 
     let array = pyarrow.getattr("Array")?.call_method1(
         "_import_from_c",
         (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
     )?;
-
-    unsafe {
-        Box::from_raw(array_ptr);
-        Box::from_raw(schema_ptr);
-    };
 
     Ok(array.to_object(py))
 }

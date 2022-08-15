@@ -326,7 +326,7 @@ impl Combiner {
                 inner_lf
             }
             GraphPattern::Minus { left, right } => {
-                let minus_column = "minus_column".to_string() + &self.counter.to_string();
+                let minus_column = "minus_column".to_string() + self.counter.to_string().as_str();
                 self.counter += 1;
                 debug!("Left graph pattern {}", left);
                 let mut left_df = self
@@ -404,7 +404,8 @@ impl Combiner {
                         .iter()
                         .map(|c| col(c.as_str()))
                         .collect::<Vec<Expr>>(),
-                    asc_ordering.iter().map(|asc| !asc).collect(),
+                    asc_ordering.iter().map(|asc| !asc).collect::<Vec<bool>>(),
+                    true,
                 );
                 inner_lf = inner_lf.drop_columns(
                     inner_contexts

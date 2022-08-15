@@ -1,4 +1,4 @@
-// From: https://github.com/pola-rs/polars/blob/3a941854b57dd45f4ea42fe6e81af2989ba06ccf/py-polars/src/arrow_interop/to_rust.rs
+// From: https://github.com/pola-rs/polars/blob/master/py-polars/src/arrow_interop/to_rust.rs
 // Edited to remove dependencies on py-polars, remove unused functionality
 // Licence:
 //
@@ -23,9 +23,8 @@
 // SOFTWARE.
 
 use polars_core::error::{ArrowError, PolarsError};
-use polars_core::prelude::{ArrowDataType, DataFrame, Series};
+use polars_core::prelude::{ArrayRef, ArrowDataType, DataFrame, Series};
 use polars_core::utils::accumulate_dataframes_vertical;
-use polars_core::utils::arrow::array::ArrayRef;
 use polars_core::utils::arrow::ffi;
 use polars_core::utils::rayon::iter::{
     IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
@@ -66,8 +65,7 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
 
     unsafe {
         let field = ffi::import_field_from_c(schema.as_ref()).map_err(ToRustError::from)?;
-        let array = ffi::import_array_from_c(Box::new(*array), field.data_type)
-            .map_err(ToRustError::from)?;
+        let array = ffi::import_array_from_c(*array, field.data_type).map_err(ToRustError::from)?;
         Ok(array.into())
     }
 }

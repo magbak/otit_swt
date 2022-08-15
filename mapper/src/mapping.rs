@@ -18,11 +18,8 @@ use ntriples_write::write_ntriples;
 use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
 use polars::lazy::prelude::{col, concat, Expr, LiteralValue};
-use polars::prelude::{
-    concat_lst, concat_str, AnyValue, DataFrame, DataType, Field, IntoLazy, LazyFrame, PolarsError,
-    Series,
-};
-use polars::prelude::{IntoSeries, NoEq, StructChunked};
+use polars::prelude::{concat_lst, concat_str, AnyValue, DataFrame, DataType, Field, IntoLazy, LazyFrame, PolarsError, Series, SpecialEq};
+use polars::prelude::{IntoSeries, StructChunked};
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::Write;
@@ -137,7 +134,7 @@ impl Mapping {
     pub fn write_n_triples(&self, buffer: &mut dyn Write) -> Result<(), PolarsError> {
         //TODO: Refactor all of this stuff.. obviously poorly thought out..
         let constant_utf8_series = |s, n| {
-            Expr::Literal(LiteralValue::Series(NoEq::new(
+            Expr::Literal(LiteralValue::Series(SpecialEq::new(
                 Series::new_empty("lbrace", &DataType::Utf8)
                     .extend_constant(AnyValue::Utf8(s), n)
                     .unwrap(),
@@ -228,7 +225,7 @@ impl Mapping {
             if let Some(prefix) = prefix_maybe {
                 if let Some(nn) = self.template_dataset.prefix_map.get(prefix) {
                     let possible_template_name =
-                        nn.as_str().to_string() + &split_colon.collect::<Vec<&str>>().join(":");
+                        nn.as_str().to_string() + split_colon.collect::<Vec<&str>>().join(":").as_str();
                     if let Some(t) = self.template_dataset.get(&possible_template_name) {
                         return Ok(t);
                     } else {
@@ -488,7 +485,7 @@ fn constant_to_expr(
                 .into_series();
 
                 (
-                    Expr::Literal(LiteralValue::Series(NoEq::new(struct_series))),
+                    Expr::Literal(LiteralValue::Series(SpecialEq::new(struct_series))),
                     PType::BasicType(lit.data_type_iri.as_ref().unwrap().clone()),
                     RDFNodeType::Literal,
                 )
@@ -540,7 +537,7 @@ fn constant_to_expr(
                 }
                 let out_series = first.to_list().unwrap().into_series();
                 (
-                    Expr::Literal(LiteralValue::Series(NoEq::new(out_series))),
+                    Expr::Literal(LiteralValue::Series(SpecialEq::new(out_series))),
                     out_ptype,
                     out_rdf_node_type,
                 )

@@ -2,12 +2,12 @@ mod common;
 mod opcua_data_provider;
 
 use hybrid::engine::Engine;
-use hybrid::pushdown_setting::{all_pushdowns, PushdownSetting};
+use hybrid::pushdown_setting::{PushdownSetting};
 use hybrid::timeseries_database::opcua_history_read::OPCUAHistoryRead;
 use log::debug;
 use opcua_server::prelude::*;
-use polars::io::{SerReader, SerWriter};
-use polars::prelude::{CsvReader, CsvWriter};
+use polars::io::{SerReader};
+use polars::prelude::{CsvReader};
 use polars_core::frame::DataFrame;
 use rstest::*;
 use serial_test::serial;
