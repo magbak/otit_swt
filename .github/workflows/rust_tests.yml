@@ -17,9 +17,12 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Upgrade rust and pull oxigraph and dremio image
+    - name: Upgrade rust with nightly and pull oxigraph and dremio image
       run: |
         rustup update
+        rustup toolchain install nightly
+        rustup default nightly
+
         docker pull oxigraph/oxigraph:v0.3.2
         docker pull dremio/dremio-oss:22.0.0
 
