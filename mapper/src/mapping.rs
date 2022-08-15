@@ -18,7 +18,10 @@ use ntriples_write::write_ntriples;
 use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
 use polars::lazy::prelude::{col, concat, Expr, LiteralValue};
-use polars::prelude::{concat_lst, concat_str, AnyValue, DataFrame, DataType, Field, IntoLazy, LazyFrame, PolarsError, Series, SpecialEq};
+use polars::prelude::{
+    concat_lst, concat_str, AnyValue, DataFrame, DataType, Field, IntoLazy, LazyFrame, PolarsError,
+    Series, SpecialEq,
+};
 use polars::prelude::{IntoSeries, StructChunked};
 use std::collections::HashMap;
 use std::error::Error;
@@ -224,8 +227,8 @@ impl Mapping {
             let prefix_maybe = split_colon.next();
             if let Some(prefix) = prefix_maybe {
                 if let Some(nn) = self.template_dataset.prefix_map.get(prefix) {
-                    let possible_template_name =
-                        nn.as_str().to_string() + split_colon.collect::<Vec<&str>>().join(":").as_str();
+                    let possible_template_name = nn.as_str().to_string()
+                        + split_colon.collect::<Vec<&str>>().join(":").as_str();
                     if let Some(t) = self.template_dataset.get(&possible_template_name) {
                         return Ok(t);
                     } else {

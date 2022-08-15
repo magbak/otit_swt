@@ -32,12 +32,14 @@ impl StaticQueryRewriter {
                     if obj_constr == &Constraint::ExternalTimeseries {
                         if !external_ids_in_scope.contains_key(object_var) {
                             let external_id_var = Variable::new(
-                                "ts_external_id_".to_string() + self.variable_counter.to_string().as_str(),
+                                "ts_external_id_".to_string()
+                                    + self.variable_counter.to_string().as_str(),
                             )
                             .unwrap();
 
                             let datatype_var = Variable::new(
-                                "ts_datatype_".to_string() + self.variable_counter.to_string().as_str(),
+                                "ts_datatype_".to_string()
+                                    + self.variable_counter.to_string().as_str(),
                             )
                             .unwrap();
                             self.variable_counter += 1;

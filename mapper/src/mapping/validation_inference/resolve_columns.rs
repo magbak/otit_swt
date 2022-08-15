@@ -34,8 +34,8 @@ impl Mapping {
             let prefix_maybe = split_colon.next();
             if let Some(prefix) = prefix_maybe {
                 if let Some(nn) = self.template_dataset.prefix_map.get(prefix) {
-                    let possible_template_name =
-                        nn.as_str().to_string() + split_colon.collect::<Vec<&str>>().join(":").as_str();
+                    let possible_template_name = nn.as_str().to_string()
+                        + split_colon.collect::<Vec<&str>>().join(":").as_str();
                     if self.minted_iris.contains_key(&possible_template_name) {
                         template_name = Some(possible_template_name);
                     } else {
