@@ -22,7 +22,7 @@ jobs:
         python -m venv .venv
         source .venv/bin/activate
         pip install --upgrade pip
-        pip install pytest maturin docker requests sparqlwrapper
+        pip install -r tests/requirements.txt
       working-directory: ./py_otit_swt_query
 
     - name: Set up nightly rust

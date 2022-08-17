@@ -22,7 +22,7 @@ jobs:
         python -m venv .venv
         source .venv/bin/activate
         pip install --upgrade pip
-        pip install pytest maturin
+        pip install -r requirements.txt
       working-directory: ./py_otit_swt_mapper
 
     - name: Set up nightly rust

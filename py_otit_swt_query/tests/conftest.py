@@ -23,11 +23,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 import time
+
 from SPARQLWrapper import SPARQLWrapper, JSON, POST
 import docker
 import pytest
 import pathlib
 import requests
+
 
 PATH_HERE = pathlib.Path(__file__).parent
 print(PATH_HERE)
@@ -175,5 +177,3 @@ def dremio_testdata(dremio_db):
     )
     assert(file_promotion_resp.ok)
     print(file_promotion_resp.json())
-
-
