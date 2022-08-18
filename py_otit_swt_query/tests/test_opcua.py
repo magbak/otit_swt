@@ -22,7 +22,7 @@ OXIGRAPH_UPDATE_ENDPOINT = "http://127.0.0.1:7878/update"
 OXIGRAPH_QUERY_ENDPOINT = "http://127.0.0.1:7878/query"
 OPCUA_ENDPOINT = "opc.tcp://127.0.0.1:4841/freeopcua/server/"
 
-async def start_opcua_server() -> Server:
+async def start_opcua_server():
     # setup our server
     server = Server()
 
