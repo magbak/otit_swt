@@ -4,9 +4,10 @@ use crate::timeseries_query::TimeSeriesQuery;
 use async_trait::async_trait;
 use opcua_client::prelude::{
     AggregateConfiguration, AttributeService, ByteString, Client, ClientBuilder, DateTime,
-    EndpointDescription, HistoryData, HistoryReadAction, HistoryReadResult, HistoryReadValueId,
-    Identifier, IdentityToken, MessageSecurityMode, NodeId, QualifiedName, ReadProcessedDetails,
-    ReadRawModifiedDetails, Session, TimestampsToReturn, UAString, UserTokenPolicy, Variant,
+    EndpointDescription, Guid, HistoryData, HistoryReadAction, HistoryReadResult,
+    HistoryReadValueId, Identifier, IdentityToken, MessageSecurityMode, NodeId, QualifiedName,
+    ReadProcessedDetails, ReadRawModifiedDetails, Session, TimestampsToReturn, UAString,
+    UserTokenPolicy, Variant,
 };
 use oxrdf::vocab::xsd;
 use oxrdf::{Literal, Variable};
@@ -18,6 +19,8 @@ use polars_core::series::Series;
 use spargebra::algebra::{AggregateExpression, Expression, Function};
 use std::collections::HashMap;
 use std::error::Error;
+use std::fmt::{Display, Formatter};
+use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 const OPCUA_AGG_FUNC_AVERAGE: u32 = 2342;
@@ -31,6 +34,23 @@ pub struct OPCUAHistoryRead {
     session: Arc<RwLock<Session>>,
     namespace: u16,
 }
+
+#[derive(Debug)]
+pub enum OPCUAHistoryReadError {
+    InvalidNodeIdError(String),
+}
+
+impl Display for OPCUAHistoryReadError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OPCUAHistoryReadError::InvalidNodeIdError(s) => {
+                write!(f, "Invalid NodeId {}", s)
+            }
+        }
+    }
+}
+
+impl Error for OPCUAHistoryReadError {}
 
 impl OPCUAHistoryRead {
     pub fn new(endpoint: &str, namespace: u16) -> OPCUAHistoryRead {
@@ -104,10 +124,7 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
         let mut nodes_to_read_vec = vec![];
         for (_, id) in &colnames_identifiers {
             let hrvi = HistoryReadValueId {
-                node_id: NodeId::new(
-                    self.namespace,
-                    Identifier::String(UAString::from(id.to_string())),
-                ),
+                node_id: node_id_from_string(id)?,
                 index_range: UAString::null(),
                 data_encoding: QualifiedName::null(),
                 continuation_point: ByteString::null(),
@@ -632,5 +649,59 @@ fn from_numeric_datatype(lit: &Literal) -> Option<f64> {
         Some(f)
     } else {
         None
+    }
+}
+
+fn node_id_from_string(s: &str) -> Result<NodeId, OPCUAHistoryReadError> {
+    let mut splitstring = s.split(";");
+    let ns_str = if let Some(ns_str) = splitstring.next() {
+        ns_str
+    } else {
+        return Err(OPCUAHistoryReadError::InvalidNodeIdError(s.to_string()));
+    };
+    let identifier_string = splitstring.collect::<Vec<&str>>().join(";");
+    let namespace: u16 = if let Some(namespace_str) = ns_str.strip_prefix("ns=") {
+        namespace_str.parse().map_err(|_| OPCUAHistoryReadError::InvalidNodeIdError(s.to_string()))?
+    } else {
+        return Err(OPCUAHistoryReadError::InvalidNodeIdError(s.to_string()));
+    };
+    if identifier_string.starts_with("s=") {
+        let identifier = identifier_string.strip_prefix("s=").unwrap();
+        Ok(NodeId {
+            namespace,
+            identifier: Identifier::String(UAString::from(identifier.to_string())),
+        })
+    } else if identifier_string.starts_with("i=") {
+        let identifier: u32 = identifier_string
+            .strip_prefix("i=")
+            .unwrap()
+            .parse()
+            .map_err(|_| OPCUAHistoryReadError::InvalidNodeIdError(s.to_string()))?;
+        Ok(NodeId {
+            namespace,
+            identifier: Identifier::Numeric(identifier),
+        })
+    } else if identifier_string.starts_with("g=") {
+        let identifier = identifier_string.strip_prefix("g=").unwrap();
+        Ok(NodeId {
+            namespace,
+            identifier: Identifier::Guid(
+                Guid::from_str(identifier)
+                    .map_err(|_| OPCUAHistoryReadError::InvalidNodeIdError(s.to_string()))?,
+            ),
+        })
+    } else if identifier_string.starts_with("b=") {
+        let identifier = identifier_string.strip_prefix("g=").unwrap();
+        let byte_string = if let Some(byte_string) = ByteString::from_base64(identifier) {
+            byte_string
+        } else {
+            return Err(OPCUAHistoryReadError::InvalidNodeIdError(s.to_string()));
+        };
+        Ok(NodeId {
+            namespace,
+            identifier: Identifier::ByteString(byte_string),
+        })
+    } else {
+        Err(OPCUAHistoryReadError::InvalidNodeIdError(s.to_string()))
     }
 }
