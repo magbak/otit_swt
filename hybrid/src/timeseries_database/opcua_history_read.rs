@@ -661,7 +661,9 @@ fn node_id_from_string(s: &str) -> Result<NodeId, OPCUAHistoryReadError> {
     };
     let identifier_string = splitstring.collect::<Vec<&str>>().join(";");
     let namespace: u16 = if let Some(namespace_str) = ns_str.strip_prefix("ns=") {
-        namespace_str.parse().map_err(|_| OPCUAHistoryReadError::InvalidNodeIdError(s.to_string()))?
+        namespace_str
+            .parse()
+            .map_err(|_| OPCUAHistoryReadError::InvalidNodeIdError(s.to_string()))?
     } else {
         return Err(OPCUAHistoryReadError::InvalidNodeIdError(s.to_string()));
     };
