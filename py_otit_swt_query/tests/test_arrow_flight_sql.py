@@ -13,7 +13,7 @@ DREMIO_PORT = 32010
 PATH_HERE = pathlib.Path(__file__).parent
 TESTDATA_PATH = PATH_HERE / "testdata"
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def oxigraph_testdata(oxigraph_db):
     ep = SPARQLWrapper(OXIGRAPH_UPDATE_ENDPOINT)
     with open(PATH_HERE / "testdata" / "testdata_arrow_flight_sql.sparql") as f:

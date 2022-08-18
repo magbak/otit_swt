@@ -75,7 +75,7 @@ def opcua_server():
     time.sleep(2)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def oxigraph_testdata(oxigraph_db):
     ep = SPARQLWrapper(OXIGRAPH_UPDATE_ENDPOINT)
     with open(PATH_HERE / "testdata" / "testdata_opcua_history_read.sparql") as f:

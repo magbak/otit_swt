@@ -39,7 +39,7 @@ DREMIO_ORIGIN = "http://127.0.0.1:9047"
 OXIGRAPH_CONTAINER_NAME ="my-oxigraph-server"
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def oxigraph_db():
     client = docker.from_env()
     try:
@@ -70,7 +70,7 @@ def oxigraph_db():
     container.remove()
     print("all done!")
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def dremio_db():
     client = docker.from_env()
     try:
@@ -103,7 +103,7 @@ def dremio_db():
     print("all done!")
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def dremio_testdata(dremio_db):
     auth_resp = requests.post(
         url=f"{DREMIO_ORIGIN}/apiv2/login",
