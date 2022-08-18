@@ -64,7 +64,7 @@ impl Engine {
         Ok(())
     }
 
-    pub fn set_opc_ua_read(&mut self, db: &OPCUAHistoryRead) -> PyResult<()> {
+    pub fn set_opcua_history_read(&mut self, db: &OPCUAHistoryRead) -> PyResult<()> {
         if self.engine.is_some() {
             return Err(PyQueryError::TimeSeriesDatabaseAlreadyDefined.into());
         }

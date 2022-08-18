@@ -77,7 +77,7 @@ def test_simplified_opcua_case(opcua_server, oxigraph_testdata):
     print("defined engine")
     opcua_backend = OPCUAHistoryRead(namespace=2, endpoint=OPCUA_ENDPOINT)
     print("created opcua backend")
-    engine.set_opc_ua_read(opcua_backend)
+    engine.set_opcua_history_read(opcua_backend)
     print("Set backend")
     df = engine.execute_hybrid_query("""
         PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
