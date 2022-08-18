@@ -22,6 +22,6 @@ INSERT DATA {
     case:myTimeseries1 otit_swt:hasDatatype xsd:unsignedInt .
     case:mySensor2 otit_swt:hasTimeseries case:myTimeseries2 .
     case:myTimeseries2 otit_swt:hasDatatype xsd:unsignedInt .
-    case:myTimeseries1 otit_swt:hasExternalId "ns=2;s=ts1" .
-    case:myTimeseries2 otit_swt:hasExternalId "ns=2;s=ts2" .
+    case:myTimeseries1 otit_swt:hasExternalId "ts1" .
+    case:myTimeseries2 otit_swt:hasExternalId "ts2" .
 }
