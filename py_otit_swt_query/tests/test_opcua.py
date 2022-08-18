@@ -13,12 +13,12 @@ from asyncua.ua import NodeId, String, Int16, DataValue, Variant
 from datetime import datetime
 
 from otit_swt_query import Engine, OPCUAHistoryRead, TimeSeriesTable
-from py_otit_swt_query.tests.conftest import OXIGRAPH_UPDATE_ENDPOINT
 
 PATH_HERE = pathlib.Path(__file__).parent
 TESTDATA_PATH = PATH_HERE / "testdata"
 HISTORY_DB_PATH = PATH_HERE / "history.db"
 
+OXIGRAPH_UPDATE_ENDPOINT = "http://127.0.0.1:7878/update"
 OXIGRAPH_QUERY_ENDPOINT = "http://127.0.0.1:7878/query"
 OPCUA_ENDPOINT = "opc.tcp://127.0.0.1:4841/freeopcua/server/"
 

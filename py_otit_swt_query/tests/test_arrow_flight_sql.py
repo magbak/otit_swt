@@ -6,8 +6,7 @@ from SPARQLWrapper import SPARQLWrapper, POST, JSON
 from otit_swt_query import Engine, ArrowFlightSQLDatabase, TimeSeriesTable
 import polars as pl
 
-from py_otit_swt_query.tests.conftest import OXIGRAPH_UPDATE_ENDPOINT
-
+OXIGRAPH_UPDATE_ENDPOINT = "http://127.0.0.1:7878/update"
 OXIGRAPH_QUERY_ENDPOINT = "http://127.0.0.1:7878/query"
 DREMIO_HOST = "127.0.0.1"
 DREMIO_PORT = 32010

@@ -36,7 +36,6 @@ OXIGRAPH_SERVER_IMAGE = "oxigraph/oxigraph:v0.3.2"
 DREMIO_DOCKER_PATH = PATH_HERE / "dremio_docker"
 DREMIO_CONTAINER_NAME = "my-dremio-server"
 DREMIO_ORIGIN = "http://127.0.0.1:9047"
-OXIGRAPH_UPDATE_ENDPOINT = "http://127.0.0.1:7878/update"
 OXIGRAPH_CONTAINER_NAME ="my-oxigraph-server"
 
 
