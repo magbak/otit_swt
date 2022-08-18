@@ -24,7 +24,6 @@
 # SOFTWARE.
 import time
 
-from SPARQLWrapper import SPARQLWrapper, JSON, POST
 import docker
 import pytest
 import pathlib
@@ -71,19 +70,6 @@ def oxigraph_db():
     print("Deleting container")
     container.remove()
     print("all done!")
-
-
-@pytest.fixture(scope="session")
-def oxigraph_testdata(oxigraph_db):
-    ep = SPARQLWrapper(OXIGRAPH_UPDATE_ENDPOINT)
-    with open(PATH_HERE / "testdata" / "testdata.sparql") as f:
-        query = f.read()
-    ep.setMethod(POST)
-    ep.setReturnFormat(JSON)
-    ep.setQuery(query)
-    res = ep.query()
-    print(res)
-
 
 @pytest.fixture(scope="session")
 def dremio_db():

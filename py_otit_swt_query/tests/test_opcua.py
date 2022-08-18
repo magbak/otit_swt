@@ -6,12 +6,15 @@ from multiprocessing import Process
 import polars as pl
 
 import pytest
+from SPARQLWrapper import SPARQLWrapper, POST, JSON
 from asyncua import Server, ua
 from asyncua.server.history_sql import HistorySQLite
 from asyncua.ua import NodeId, String, Int16, DataValue, Variant
 from datetime import datetime
 
 from otit_swt_query import Engine, OPCUAHistoryRead, TimeSeriesTable
+from py_otit_swt_query.tests.conftest import OXIGRAPH_UPDATE_ENDPOINT
+
 PATH_HERE = pathlib.Path(__file__).parent
 TESTDATA_PATH = PATH_HERE / "testdata"
 HISTORY_DB_PATH = PATH_HERE / "history.db"
@@ -70,6 +73,18 @@ def opcua_server():
         target=asyncio.run, args=(start_opcua_server(),), daemon=True)
     p.start()
     time.sleep(2)
+
+
+@pytest.fixture(scope="session")
+def oxigraph_testdata(oxigraph_db):
+    ep = SPARQLWrapper(OXIGRAPH_UPDATE_ENDPOINT)
+    with open(PATH_HERE / "testdata" / "testdata_opcua_history_read.sparql") as f:
+        query = f.read()
+    ep.setMethod(POST)
+    ep.setReturnFormat(JSON)
+    ep.setQuery(query)
+    res = ep.query()
+    #print(res)
 
 def test_simplified_opcua_case(opcua_server, oxigraph_testdata):
     print("Begin test")

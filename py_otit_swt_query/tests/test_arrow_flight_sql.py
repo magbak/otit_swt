@@ -1,7 +1,12 @@
 import pathlib
 
+import pytest
+from SPARQLWrapper import SPARQLWrapper, POST, JSON
+
 from otit_swt_query import Engine, ArrowFlightSQLDatabase, TimeSeriesTable
 import polars as pl
+
+from py_otit_swt_query.tests.conftest import OXIGRAPH_UPDATE_ENDPOINT
 
 OXIGRAPH_QUERY_ENDPOINT = "http://127.0.0.1:7878/query"
 DREMIO_HOST = "127.0.0.1"
@@ -9,6 +14,16 @@ DREMIO_PORT = 32010
 PATH_HERE = pathlib.Path(__file__).parent
 TESTDATA_PATH = PATH_HERE / "testdata"
 
+@pytest.fixture(scope="session")
+def oxigraph_testdata(oxigraph_db):
+    ep = SPARQLWrapper(OXIGRAPH_UPDATE_ENDPOINT)
+    with open(PATH_HERE / "testdata" / "testdata_arrow_flight_sql.sparql") as f:
+        query = f.read()
+    ep.setMethod(POST)
+    ep.setReturnFormat(JSON)
+    ep.setQuery(query)
+    res = ep.query()
+    print(res)
 
 def test_simple_query(dremio_testdata, oxigraph_testdata):
     engine = Engine(OXIGRAPH_QUERY_ENDPOINT)
