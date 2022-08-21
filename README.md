@@ -6,42 +6,43 @@ This repository provides experimental tools for moving between the world of [Ope
 - __Domain Specific Query Language:__ A customizable query language for accessing time series data using simple generalized paths such as those found in the [Reference Designation System](https://www.iso.org/standard/82229.html) or in [OPC UA](https://opcfoundation.org/about/opc-technologies/opc-ua/) information models. The DSQL is parsed with [nom](https://docs.rs/nom/latest/nom/) and translated to the Hybrid Query language.
 
 Currently, these tools are volatile works in progress, and should not be used by anyone for anything important. 
-
-TODO: Switched to simd with nightly, write up.. 
 ## Queries
+We can make queries in Python. The code assumes that we have a SPARQL-endpoint and an Arrow Flight SQL-endpoint (Dremio) set up. 
 ```python
-  from otit_swt_query import Engine, ArrowFlightSQLDatabase, TimeSeriesTable
-  SPARQL_QUERY_ENDPOINT = "http://127.0.0.1:7878/query"
-  DREMIO_HOST = "127.0.0.1"
-  DREMIO_PORT = 32010
+import pathlib
+from otit_swt_query import Engine, ArrowFlightSQLDatabase, TimeSeriesTable
 
-  engine = Engine(SPARQL_QUERY_ENDPOINT)
-  tables = [TimeSeriesTable(
-      schema="my_schema", time_series_table="my_table",
-      value_column="values", timestamp_column="timestamps", 
-      identifier_column="identifiers",
-      value_datatype="http://www.w3.org/2001/XMLSchema#unsignedInt")]
-  arrow_flight_sql_database = ArrowFlightSQLDatabase(
-      host=DREMIO_HOST, port=DREMIO_PORT, 
-      username="dremio", password="dremio123", tables=tables)
-  engine.arrow_flight_sql(arrow_flight_sql_database)
-  
-  df = engine.execute_hybrid_query("""
-  PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
-  PREFIX otit_swt:<https://github.com/magbak/otit_swt#>
-  PREFIX types:<http://example.org/types#>
-  SELECT ?w ?s ?t ?v WHERE {
+engine = Engine(OXIGRAPH_QUERY_ENDPOINT)
+    tables = [
+        TimeSeriesTable(
+            schema="my_nas",
+            time_series_table="ts.parquet",
+            value_column="v",
+            timestamp_column="ts",
+            identifier_column="id",
+            value_datatype="http://www.w3.org/2001/XMLSchema#unsignedInt")
+    ]
+arrow_flight_sql_database = ArrowFlightSQLDatabase(host=DREMIO_HOST, port=DREMIO_PORT, username="dremio",
+                                                   password="dremio123", tables=tables)
+engine.set_arrow_flight_sql(arrow_flight_sql_database)
+df = engine.execute_hybrid_query("""
+PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+PREFIX otit_swt:<https://github.com/magbak/otit_swt#>
+PREFIX types:<http://example.org/types#>
+SELECT ?w ?s ?t ?v WHERE {
     ?w a types:BigWidget .
     ?w types:hasSensor ?s .
     ?s otit_swt:hasTimeseries ?ts .
     ?ts otit_swt:hasDataPoint ?dp .
     ?dp otit_swt:hasTimestamp ?t .
     ?dp otit_swt:hasValue ?v .
-    FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime && ?v < 200) .}
-""")
+    FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime && ?v < 200) .
+}
+    """)
 ```
 
 ## Mapping
+We can easily map DataFrames to RDF-graphs using the Python library. 
 ```python
 from otit_swt_mapper import Mapping
 #We use polars dataframes instead of pandas dataframes. The api is pretty similar.
@@ -58,14 +59,11 @@ doc = """
 #Define a data frame to instantiate:
 df = pl.DataFrame({"Key": ["A", "B"],
                    "MyValue": [1, 2]})
-
 #Create a mapping object
 mapping = Mapping([doc])
-
 #Expand the template using the data in the dataframe
 mapping.expand("http://example.net/ns#ExampleTemplate", df)
-
-#Export to rdflib-triples
+#Export triples
 triples = mapping.to_triples()
 print(triples)
 ```
@@ -76,10 +74,14 @@ Results in:
  <http://example.net/ns#myObject> <http://example.net/ns#hasValue> "2"^^<http://www.w3.org/2001/XMLSchema#long>]
 ```
 
+An example mapping is provided in [this jupyter notebook](https://github.com/magbak/otit_swt/tree/main/doc/mapping.ipynb).
+
+The Python API is documented [here](https://github.com/magbak/otit_swt/tree/main/doc/python_mapper_api.md)
+
 ## Installing pre-built wheels
 From the latest [release](https://github.com/magbak/otit_swt/releases), copy the appropriate .whl-file for your system, then run:
 ```shell
-pip install https://github.com/magbak/otit_swt/releases/download/v0.1.5/otit_swt_mapper-0.1.5-cp310-cp310-manylinux_2_31_x86_64.whl
+pip install https://github.com/magbak/otit_swt/releases/download/v0.1.5/otit_swt_mapper-0.1.12-cp310-cp310-manylinux_2_31_x86_64.whl
 ```
 
 All code is licensed to [Prediktor AS](https://www.prediktor.com/) under the Apache 2.0 license unless otherwise noted, and has been financed by [The Research Council of Norway](https://www.forskningsradet.no/en/) (grant no. 316656) and [Prediktor AS](https://www.prediktor.com/) as part of a PhD Degree.  

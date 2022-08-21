@@ -76,9 +76,9 @@ impl Mapping {
                     variable_name.to_string(),
                     MappedColumn::PrimitiveColumn(column_data_type),
                 );
-            } else if let Some(path_column) = path_column_map.get(variable_name) {
+            } else if let Some(resolve_iri) = path_column_map.get(variable_name) {
                 self.resolve_iri_column(
-                    path_column,
+                    resolve_iri,
                     variable_name.as_str(),
                     &mut df,
                     &mut df_columns,

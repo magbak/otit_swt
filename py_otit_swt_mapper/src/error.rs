@@ -21,15 +21,15 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+use mapper::errors::MapperError;
+use polars_core::error::{ArrowError, PolarsError};
 use pyo3::{
     create_exception,
     exceptions::{PyException, PyRuntimeError},
     prelude::*,
 };
-use std::fmt::{Debug};
-use polars_core::error::{ArrowError, PolarsError};
+use std::fmt::Debug;
 use thiserror::Error;
-use mapper::errors::MapperError;
 
 #[derive(Error, Debug)]
 pub enum PyMapperError {
@@ -39,6 +39,8 @@ pub enum PyMapperError {
     PolarsError(#[from] PolarsError),
     #[error(transparent)]
     Arrow(#[from] ArrowError),
+    #[error(transparent)]
+    IOError(std::io::Error),
 }
 
 impl std::convert::From<PyMapperError> for PyErr {
@@ -46,16 +48,17 @@ impl std::convert::From<PyMapperError> for PyErr {
         let default = || PyRuntimeError::new_err(format!("{:?}", &err));
 
         match &err {
-            PyMapperError::MapperError(err) => {
-                match err {
-                    MapperError::IOError(i) => {IOErrorException::new_err(format!("{}", i))}
-                    MapperError::ParsingError(p) => {ParsingErrorException::new_err(format!("{}", p))}
-                    MapperError::ResolutionError(r) => {ResolutionErrorException::new_err(format!("{}", r))}
-                    MapperError::TypingError(t) => {TypingErrorException::new_err(format!("{}", t))}
-                    MapperError::MappingError(m) => {MappingErrorException::new_err(format!("{}", m))}
+            PyMapperError::MapperError(err) => match err {
+                MapperError::IOError(i) => IOErrorException::new_err(format!("{}", i)),
+                MapperError::ParsingError(p) => ParsingErrorException::new_err(format!("{}", p)),
+                MapperError::ResolutionError(r) => {
+                    ResolutionErrorException::new_err(format!("{}", r))
                 }
-            }
+                MapperError::TypingError(t) => TypingErrorException::new_err(format!("{}", t)),
+                MapperError::MappingError(m) => MappingErrorException::new_err(format!("{}", m)),
+            },
             PyMapperError::Arrow(err) => ArrowErrorException::new_err(format!("{:?}", err)),
+            PyMapperError::IOError(err) => IOErrorException::new_err(format!("{}", err)),
             _ => default(),
         }
     }

@@ -17,6 +17,8 @@ use pyo3::basic::CompareOp;
 use pyo3::prelude::PyModule;
 use pyo3::*;
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::fs::File;
 
 #[pyclass]
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -408,6 +410,13 @@ impl Mapping {
         self.inner
             .data_property_triples(to_python_literal_triple, &mut triples);
         Ok(triples)
+    }
+
+    pub fn write_ntriples(&self, path:&str) -> PyResult<()> {
+        let path_buf = PathBuf::from(path);
+        let mut actual_file = File::create(path_buf.as_path()).map_err(|x|PyMapperError::IOError(x))?;
+        self.inner.write_n_triples(&mut actual_file).unwrap();
+        Ok(())
     }
 }
 
