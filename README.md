@@ -82,6 +82,7 @@ The Python API is documented [here](https://github.com/magbak/otit_swt/tree/main
 From the latest [release](https://github.com/magbak/otit_swt/releases), copy the appropriate .whl-file for your system, then run:
 ```shell
 pip install https://github.com/magbak/otit_swt/releases/download/v0.1.5/otit_swt_mapper-0.1.12-cp310-cp310-manylinux_2_31_x86_64.whl
+pip install https://github.com/magbak/otit_swt/releases/download/v0.1.5/otit_swt_query-0.1.12-cp310-cp310-manylinux_2_31_x86_64.whl
 ```
 
 All code is licensed to [Prediktor AS](https://www.prediktor.com/) under the Apache 2.0 license unless otherwise noted, and has been financed by [The Research Council of Norway](https://www.forskningsradet.no/en/) (grant no. 316656) and [Prediktor AS](https://www.prediktor.com/) as part of a PhD Degree.  

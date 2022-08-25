@@ -1,12 +1,12 @@
-use crate::constants::DATETIME_AS_SECONDS;
+mod aggregate_expressions;
+mod expression_rewrite;
+mod partitioning_support;
+
 use crate::timeseries_query::TimeSeriesQuery;
 use log::debug;
-use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
-use polars::export::chrono::{DateTime, NaiveDateTime, Utc};
-use sea_query::{Alias, BinOper, ColumnRef, Function, PostgresQueryBuilder, Query, SimpleExpr};
-use sea_query::{Expr as SeaExpr, Iden, UnOper, Value};
-use spargebra::algebra::{AggregateExpression, Expression};
+use sea_query::{Alias, ColumnRef, PostgresQueryBuilder, Query, SimpleExpr};
+use sea_query::{Expr as SeaExpr, Iden, Value};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter, Write};
@@ -45,6 +45,9 @@ pub struct TimeSeriesTable {
     pub timestamp_column: String,
     pub identifier_column: String,
     pub value_datatype: NamedNode,
+    pub year_column: Option<String>,
+    pub month_column: Option<String>,
+    pub day_column: Option<String>
 }
 
 impl TimeSeriesTable {
@@ -102,11 +105,15 @@ impl TimeSeriesTable {
         }
 
         for c in &tsq.conditions {
-            inner_query.and_where(self.sparql_expression_to_sql_expression(
+            let mut se = self.sparql_expression_to_sql_expression(
                 &c.expression,
                 &variable_column_name_map,
                 None,
-            )?);
+            )?;
+            if self.year_column.is_some() && self.month_column.is_some() && self.day_column.is_some() {
+                se = self.add_partitioned_timestamp_conditions(se);
+            }
+            inner_query.and_where(se);
         }
         if let Some(grouping) = &tsq.grouping {
             let inner_query_str = "inner_query";
@@ -178,343 +185,12 @@ impl TimeSeriesTable {
         debug!("Query string: {}", query_string);
         Ok(query_string)
     }
-
-    fn sparql_expression_to_sql_expression(
-        &self,
-        e: &Expression,
-        variable_column_name_map: &HashMap<String, String>,
-        table_name: Option<&Name>,
-    ) -> Result<SimpleExpr, TimeSeriesQueryToSQLError> {
-        Ok(match e {
-            Expression::Or(left, right) => self
-                .sparql_expression_to_sql_expression(left, variable_column_name_map, table_name)?
-                .or(self.sparql_expression_to_sql_expression(
-                    right,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-            Expression::Literal(l) => {
-                let v = l.value();
-                let value = match l.datatype() {
-                    xsd::DOUBLE => Value::Double(Some(v.parse().unwrap())),
-                    xsd::FLOAT => Value::Float(Some(v.parse().unwrap())),
-                    xsd::INTEGER => Value::BigInt(Some(v.parse().unwrap())),
-                    xsd::LONG => Value::BigInt(Some(v.parse().unwrap())),
-                    xsd::INT => Value::Int(Some(v.parse().unwrap())),
-                    xsd::UNSIGNED_INT => Value::Unsigned(Some(v.parse().unwrap())),
-                    xsd::UNSIGNED_LONG => Value::BigUnsigned(Some(v.parse().unwrap())),
-                    xsd::STRING => Value::String(Some(Box::new(v.to_string()))),
-                    xsd::DATE_TIME => {
-                        if let Ok(dt) = v.parse::<NaiveDateTime>() {
-                            Value::ChronoDateTime(Some(Box::new(dt)))
-                        } else if let Ok(dt) = v.parse::<DateTime<Utc>>() {
-                            Value::ChronoDateTimeUtc(Some(Box::new(dt)))
-                        } else {
-                            todo!("Could not parse {}", v);
-                        }
-                    }
-                    _ => {
-                        return Err(TimeSeriesQueryToSQLError::UnknownDatatype(
-                            l.datatype().as_str().to_string(),
-                        ));
-                    }
-                };
-                SimpleExpr::Value(value)
-            }
-            Expression::Variable(v) => {
-                if let Some(found_v) = variable_column_name_map.get(v.as_str()) {
-                    if let Some(name) = table_name {
-                        SimpleExpr::Column(ColumnRef::TableColumn(
-                            Rc::new(name.clone()),
-                            Rc::new(Name::Column(v.as_str().to_string())),
-                        ))
-                    } else {
-                        SimpleExpr::Column(ColumnRef::Column(Rc::new(Name::Column(
-                            found_v.to_string(),
-                        ))))
-                    }
-                } else {
-                    return Err(TimeSeriesQueryToSQLError::UnknownVariable(
-                        v.as_str().to_string(),
-                    ));
-                }
-            }
-            Expression::And(left, right) => self
-                .sparql_expression_to_sql_expression(left, variable_column_name_map, table_name)?
-                .and(self.sparql_expression_to_sql_expression(
-                    right,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-            Expression::Equal(left, right) => self
-                .sparql_expression_to_sql_expression(left, variable_column_name_map, table_name)?
-                .equals(self.sparql_expression_to_sql_expression(
-                    right,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-            Expression::Greater(left, right) => SimpleExpr::Binary(
-                Box::new(self.sparql_expression_to_sql_expression(
-                    left,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-                BinOper::GreaterThan,
-                Box::new(self.sparql_expression_to_sql_expression(
-                    right,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-            ),
-            Expression::GreaterOrEqual(left, right) => SimpleExpr::Binary(
-                Box::new(self.sparql_expression_to_sql_expression(
-                    left,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-                BinOper::GreaterThanOrEqual,
-                Box::new(self.sparql_expression_to_sql_expression(
-                    right,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-            ),
-            Expression::Less(left, right) => SimpleExpr::Binary(
-                Box::new(self.sparql_expression_to_sql_expression(
-                    left,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-                BinOper::SmallerThan,
-                Box::new(self.sparql_expression_to_sql_expression(
-                    right,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-            ),
-            Expression::LessOrEqual(left, right) => {
-                SimpleExpr::Binary(
-                    Box::new(self.sparql_expression_to_sql_expression(
-                        left,
-                        variable_column_name_map,
-                        table_name,
-                    )?),
-                    BinOper::SmallerThanOrEqual,
-                    Box::new(self.sparql_expression_to_sql_expression(
-                        right,
-                        variable_column_name_map,
-                        table_name,
-                    )?),
-                ) //Note flipped directions
-            }
-            Expression::In(left, right) => {
-                let simple_right = right.iter().map(|x| {
-                    self.sparql_expression_to_sql_expression(
-                        x,
-                        variable_column_name_map,
-                        table_name,
-                    )
-                });
-                let mut simple_right_values = vec![];
-                for v in simple_right {
-                    if let Ok(SimpleExpr::Value(v)) = v {
-                        simple_right_values.push(v);
-                    } else if let Err(e) = v {
-                        return Err(e);
-                    } else {
-                        return Err(TimeSeriesQueryToSQLError::FoundNonValueInInExpression);
-                    }
-                }
-                SeaExpr::expr(self.sparql_expression_to_sql_expression(
-                    left,
-                    variable_column_name_map,
-                    table_name,
-                )?)
-                .is_in(simple_right_values)
-            }
-            Expression::Add(left, right) => self
-                .sparql_expression_to_sql_expression(left, variable_column_name_map, table_name)?
-                .add(self.sparql_expression_to_sql_expression(
-                    right,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-            Expression::Subtract(left, right) => self
-                .sparql_expression_to_sql_expression(left, variable_column_name_map, table_name)?
-                .sub(self.sparql_expression_to_sql_expression(
-                    right,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-            Expression::Multiply(left, right) => SimpleExpr::Binary(
-                Box::new(self.sparql_expression_to_sql_expression(
-                    left,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-                BinOper::Mul,
-                Box::new(self.sparql_expression_to_sql_expression(
-                    right,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-            ),
-            Expression::Divide(left, right) => SimpleExpr::Binary(
-                Box::new(self.sparql_expression_to_sql_expression(
-                    left,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-                BinOper::Div,
-                Box::new(self.sparql_expression_to_sql_expression(
-                    right,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-            ),
-            Expression::UnaryPlus(inner) => self.sparql_expression_to_sql_expression(
-                inner,
-                variable_column_name_map,
-                table_name,
-            )?,
-            Expression::UnaryMinus(inner) => SimpleExpr::Value(Value::Double(Some(0.0))).sub(
-                self.sparql_expression_to_sql_expression(
-                    inner,
-                    variable_column_name_map,
-                    table_name,
-                )?,
-            ),
-            Expression::Not(inner) => SimpleExpr::Unary(
-                UnOper::Not,
-                Box::new(self.sparql_expression_to_sql_expression(
-                    inner,
-                    variable_column_name_map,
-                    table_name,
-                )?),
-            ),
-            Expression::FunctionCall(f, expressions) => match f {
-                spargebra::algebra::Function::Floor => {
-                    let e = expressions.first().unwrap();
-                    let mapped_e = self.sparql_expression_to_sql_expression(
-                        e,
-                        variable_column_name_map,
-                        table_name,
-                    )?;
-                    SimpleExpr::FunctionCall(
-                        Function::Custom(Rc::new(Name::Function("FLOOR".to_string()))),
-                        vec![mapped_e],
-                    )
-                }
-                spargebra::algebra::Function::Custom(c) => {
-                    let e = expressions.first().unwrap();
-                    let mapped_e = self.sparql_expression_to_sql_expression(
-                        e,
-                        variable_column_name_map,
-                        table_name,
-                    )?;
-                    if c.as_str() == DATETIME_AS_SECONDS {
-                        SimpleExpr::FunctionCall(
-                            Function::Custom(Rc::new(Name::Function("UNIX_TIMESTAMP".to_string()))),
-                            vec![
-                                mapped_e,
-                                SimpleExpr::Value(Value::String(Some(Box::new(
-                                    "YYYY-MM-DD HH:MI:SS.FFF".to_string(),
-                                )))),
-                            ],
-                        )
-                    } else {
-                        todo!("Fix custom {}", c)
-                    }
-                }
-                _ => {
-                    todo!("{}", f)
-                }
-            },
-            _ => {
-                unimplemented!("")
-            }
-        })
-    }
-    //TODO: Support distinct in aggregates.. how???
-    fn sparql_aggregate_expression_to_sql_expression(
-        &self,
-        agg: &AggregateExpression,
-        variable_column_name_map: &HashMap<String, String>,
-        table_name: Option<&Name>,
-    ) -> Result<SimpleExpr, TimeSeriesQueryToSQLError> {
-        Ok(match agg {
-            AggregateExpression::Count { expr, distinct: _ } => {
-                if let Some(some_expr) = expr {
-                    SimpleExpr::FunctionCall(
-                        Function::Count,
-                        vec![self.sparql_expression_to_sql_expression(
-                            some_expr,
-                            &variable_column_name_map,
-                            table_name,
-                        )?],
-                    )
-                } else {
-                    todo!("")
-                }
-            }
-            AggregateExpression::Sum { expr, distinct: _ } => SimpleExpr::FunctionCall(
-                Function::Sum,
-                vec![self.sparql_expression_to_sql_expression(
-                    expr,
-                    &variable_column_name_map,
-                    table_name,
-                )?],
-            ),
-            AggregateExpression::Avg { expr, distinct: _ } => SimpleExpr::FunctionCall(
-                Function::Avg,
-                vec![self.sparql_expression_to_sql_expression(
-                    expr,
-                    &variable_column_name_map,
-                    table_name,
-                )?],
-            ),
-            AggregateExpression::Min { expr, distinct: _ } => SimpleExpr::FunctionCall(
-                Function::Min,
-                vec![self.sparql_expression_to_sql_expression(
-                    expr,
-                    &variable_column_name_map,
-                    table_name,
-                )?],
-            ),
-            AggregateExpression::Max { expr, distinct: _ } => SimpleExpr::FunctionCall(
-                Function::Max,
-                vec![self.sparql_expression_to_sql_expression(
-                    expr,
-                    &variable_column_name_map,
-                    table_name,
-                )?],
-            ),
-            AggregateExpression::GroupConcat {
-                expr: _,
-                distinct: _,
-                separator: _,
-            } => {
-                todo!("")
-            }
-            AggregateExpression::Sample {
-                expr: _,
-                distinct: _,
-            } => {
-                todo!("")
-            }
-            AggregateExpression::Custom {
-                expr: _,
-                distinct: _,
-                name: _,
-            } => {
-                todo!("")
-            }
-        })
-    }
 }
 
+
+
 #[derive(Clone)]
-enum Name {
+pub(crate) enum Name {
     Schema(String),
     Table(String),
     Column(String),

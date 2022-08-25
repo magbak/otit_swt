@@ -146,7 +146,7 @@ fn complete_time_series_queries(
                     } else if let Some(dt) = &tsq.datatype {
                         if dt.as_str() != nn.as_str() {
                             return Err(OrchestrationError::InconsistentDatatype(
-                                tsq.datatype.as_ref().unwrap().as_str().to_string(),
+                                nn.as_str().to_string(),
                                 dt.as_str().to_string(),
                                 tsq.timeseries_variable
                                     .as_ref()
