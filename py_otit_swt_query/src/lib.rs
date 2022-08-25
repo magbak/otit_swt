@@ -215,6 +215,9 @@ pub struct TimeSeriesTable {
     pub timestamp_column: String,
     pub identifier_column: String,
     pub value_datatype: String,
+    pub year_column: Option<String>,
+    pub month_column: Option<String>,
+    pub day_column: Option<String>,
 }
 
 #[pymethods]
@@ -227,6 +230,9 @@ impl TimeSeriesTable {
         identifier_column: String,
         value_datatype: String,
         schema: Option<String>,
+        year_column: Option<String>,
+        month_column: Option<String>,
+        day_column: Option<String>,
     ) -> TimeSeriesTable {
         TimeSeriesTable {
             schema,
@@ -235,6 +241,9 @@ impl TimeSeriesTable {
             timestamp_column,
             identifier_column,
             value_datatype,
+            year_column,
+            month_column,
+            day_column
         }
     }
 }
@@ -248,6 +257,9 @@ impl TimeSeriesTable {
             timestamp_column: self.timestamp_column.clone(),
             identifier_column: self.identifier_column.clone(),
             value_datatype: NamedNode::new(&self.value_datatype)?,
+            year_column: self.year_column,
+            month_column: self.month_column,
+            day_column: self.day_column
         })
     }
 }
