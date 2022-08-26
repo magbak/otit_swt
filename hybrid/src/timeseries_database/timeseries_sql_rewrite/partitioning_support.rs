@@ -90,7 +90,7 @@ impl TimeSeriesTable {
         if let SimpleExpr::Column(left_column) = left {
             if let Some(colname) = find_colname(left_column) {
                 if &self.timestamp_column == &colname {
-                    if let SimpleExpr::Constant(right_value) = right {
+                    if let SimpleExpr::Value(right_value) = right {
                         if let Value::ChronoDateTime(Some(right_dt)) = right_value {
                             let right_year = right_dt.year();
                             let right_month = right_dt.month();
@@ -249,7 +249,7 @@ impl TimeSeriesTable {
         if let SimpleExpr::Column(left_column) = left {
             if let Some(colname) = find_colname(left_column) {
                 if &self.timestamp_column == &colname {
-                    if let SimpleExpr::Constant(right_value) = right {
+                    if let SimpleExpr::Value(right_value) = right {
                         if let Value::ChronoDateTime(Some(right_dt)) = right_value {
                             let right_year = right_dt.year();
                             let right_month = right_dt.month();

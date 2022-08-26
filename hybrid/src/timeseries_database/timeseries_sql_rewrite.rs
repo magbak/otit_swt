@@ -4,7 +4,7 @@ mod partitioning_support;
 
 use crate::timeseries_query::TimeSeriesQuery;
 use log::debug;
-use oxrdf::NamedNode;
+use oxrdf::{NamedNode};
 use sea_query::{Alias, ColumnRef, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query::{Expr as SeaExpr, Iden, Value};
 use std::collections::HashMap;
@@ -47,7 +47,7 @@ pub struct TimeSeriesTable {
     pub value_datatype: NamedNode,
     pub year_column: Option<String>,
     pub month_column: Option<String>,
-    pub day_column: Option<String>
+    pub day_column: Option<String>,
 }
 
 impl TimeSeriesTable {
@@ -110,7 +110,10 @@ impl TimeSeriesTable {
                 &variable_column_name_map,
                 None,
             )?;
-            if self.year_column.is_some() && self.month_column.is_some() && self.day_column.is_some() {
+            if self.year_column.is_some()
+                && self.month_column.is_some()
+                && self.day_column.is_some()
+            {
                 se = self.add_partitioned_timestamp_conditions(se);
             }
             inner_query.and_where(se);
@@ -187,8 +190,6 @@ impl TimeSeriesTable {
     }
 }
 
-
-
 #[derive(Clone)]
 pub(crate) enum Name {
     Schema(String),
@@ -218,5 +219,68 @@ impl Iden for Name {
             }
         )
         .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::pushdown_setting::all_pushdowns;
+    use crate::query_context::{Context, ExpressionInContext, VariableInContext};
+    use crate::timeseries_database::timeseries_sql_rewrite::TimeSeriesTable;
+    use crate::timeseries_query::TimeSeriesQuery;
+    use oxrdf::vocab::xsd;
+    use oxrdf::{Literal, NamedNode, Variable};
+    use spargebra::algebra::Expression;
+
+    #[test]
+    pub fn test_translate() {
+        let tsq = TimeSeriesQuery {
+            pushdown_settings: all_pushdowns(),
+            dropped_value_expression: false,
+            identifier_variable: Some(Variable::new_unchecked("id")),
+            timeseries_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("ts"),
+                Context::new(),
+            )),
+            data_point_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("dp"),
+                Context::new(),
+            )),
+            value_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("v"),
+                Context::new(),
+            )),
+            datatype_variable: Some(Variable::new_unchecked("dt")),
+            datatype: Some(xsd::INT.into_owned()),
+            timestamp_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("t"),
+                Context::new(),
+            )),
+            ids: Some(vec!["A".to_string(), "B".to_string()]),
+            grouping: None,
+            conditions: vec![ExpressionInContext {
+                expression: Expression::LessOrEqual(
+                    Box::new(Expression::Variable(Variable::new_unchecked("t"))),
+                    Box::new(Expression::Literal(Literal::new_typed_literal("2022-06-01T08:46:53", xsd::DATE_TIME))),
+                ),
+                context: Context::new(),
+            }],
+        };
+
+        let table = TimeSeriesTable {
+            schema: Some("s3".into()),
+            time_series_table: "otit-benchmark.timeseries_double".into(),
+            value_column: "value".into(),
+            timestamp_column: "timestamp".into(),
+            identifier_column: "dir3".into(),
+            value_datatype: NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#double"),
+            year_column: Some("dir0".to_string()),
+            month_column: Some("dir1".to_string()),
+            day_column: Some("dir2".to_string()),
+        };
+
+        let sql_query = table.create_query(&tsq).unwrap();
+        //println!("{}", sql_query)
+        assert_eq!(&sql_query, r#"SELECT "dir3" AS "id", "timestamp" AS "t", "value" AS "v" FROM "s3"."otit-benchmark.timeseries_double" WHERE "dir3" IN ('A', 'B') AND (("dir0" < 2022) OR (("dir0" = 2022) AND ("dir1" < 6)) OR ("dir0" = 2022) AND ("dir1" = 6) AND ("dir2" < 1) OR ("timestamp" <= '2022-06-01 08:46:53'))"#);
     }
 }
