@@ -257,9 +257,9 @@ impl TimeSeriesTable {
             timestamp_column: self.timestamp_column.clone(),
             identifier_column: self.identifier_column.clone(),
             value_datatype: NamedNode::new(&self.value_datatype)?,
-            year_column: self.year_column,
-            month_column: self.month_column,
-            day_column: self.day_column
+            year_column: self.year_column.clone(),
+            month_column: self.month_column.clone(),
+            day_column: self.day_column.clone()
         })
     }
 }
