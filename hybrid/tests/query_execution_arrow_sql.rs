@@ -162,6 +162,7 @@ async fn arrow_sql_endpoint(dockerfile_tar_gz_path: PathBuf) {
         .create_container(Some(options), config)
         .await
         .expect("Problem creating container");
+    sleep(Duration::from_secs(1));
     docker
         .start_container(container_name, None::<StartContainerOptions<String>>)
         .await
