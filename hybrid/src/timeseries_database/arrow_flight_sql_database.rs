@@ -15,7 +15,7 @@
 use crate::timeseries_database::TimeSeriesQueryable;
 use crate::timeseries_query::TimeSeriesQuery;
 use arrow2::io::flight as flight2;
-use arrow_format::flight::data::{FlightDescriptor, HandshakeRequest};
+use arrow_format::flight::data::{FlightDescriptor, FlightInfo, HandshakeRequest};
 use async_trait::async_trait;
 
 use polars::frame::DataFrame;
@@ -36,7 +36,8 @@ use thiserror::Error;
 use tokio_stream::StreamExt;
 use tonic::metadata::MetadataValue;
 use tonic::transport::Channel;
-use tonic::{IntoRequest, Request, Status};
+use tonic::{IntoRequest, Request, Response, Status};
+use tonic::client::GrpcService;
 
 #[derive(Error, Debug)]
 pub enum ArrowFlightSQLError {
@@ -83,6 +84,7 @@ pub struct ArrowFlightSQLDatabase {
     password: String,
     conn: Option<Channel>,
     token: Option<String>,
+    cookies: Option<Vec<String>>,
     time_series_tables: Vec<TimeSeriesTable>,
 }
 
@@ -99,6 +101,7 @@ impl ArrowFlightSQLDatabase {
             password: password.into(),
             conn: None,
             token: None,
+            cookies: None,
             time_series_tables,
         })
     }
@@ -117,7 +120,7 @@ impl ArrowFlightSQLDatabase {
             self.conn = Some(conn);
             debug!("Established connection");
         } else {
-            debug!("Using existing connection")
+            debug!("Using existing connection");
         }
         let mut request = FlightDescriptor {
             r#type: 2, //CMD
@@ -131,6 +134,9 @@ impl ArrowFlightSQLDatabase {
 
         let mut client = FlightServiceClient::new(self.conn.as_ref().unwrap().clone());
         let response = client.get_flight_info(request).await?;
+        if self.cookies.is_none() {
+            self.find_set_cookies(&response);
+        }
         debug!("Got flight info response");
         let mut schema_opt = None;
         let mut ipc_schema_opt = None;
@@ -138,6 +144,7 @@ impl ArrowFlightSQLDatabase {
             if let Some(ticket) = endpoint.ticket.clone() {
                 let mut ticket = ticket.into_request();
                 add_auth_header(&mut ticket, self.token.as_ref().unwrap());
+                add_cookies(&mut ticket, self.cookies.as_ref().unwrap());
                 let stream = client
                     .do_get(ticket)
                     .await
@@ -191,6 +198,13 @@ impl ArrowFlightSQLDatabase {
             }
         }
         Ok(accumulate_dataframes_vertical(dfs).expect("Problem stacking dataframes"))
+    }
+    fn find_set_cookies(&mut self, response: &Response<FlightInfo>) {
+        let cookies = response
+        .metadata()
+        .get_all("set-cookie").iter().map(|x|x.to_str().unwrap().to_string()).collect();
+
+        self.cookies = Some(cookies);
     }
 }
 
@@ -285,3 +299,11 @@ fn add_auth_header<T>(request: &mut Request<T>, bearer_token: &str) {
     let token_value: MetadataValue<_> = bearer_token.parse().unwrap();
     request.metadata_mut().insert("authorization", token_value);
 }
+
+fn add_cookies<T>(request: &mut Request<T>, cookies: &Vec<String>) {
+    for cookie in cookies {
+        let cookie_value: MetadataValue<_> = cookie.parse().unwrap();
+        request.metadata_mut().append("cookie", cookie_value);
+    }
+}
+
