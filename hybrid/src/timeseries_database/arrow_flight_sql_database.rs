@@ -37,7 +37,6 @@ use tokio_stream::StreamExt;
 use tonic::metadata::MetadataValue;
 use tonic::transport::Channel;
 use tonic::{IntoRequest, Request, Response, Status};
-use tonic::client::GrpcService;
 
 #[derive(Error, Debug)]
 pub enum ArrowFlightSQLError {
@@ -95,7 +94,7 @@ impl ArrowFlightSQLDatabase {
         password: &str,
         time_series_tables: Vec<TimeSeriesTable>,
     ) -> Result<ArrowFlightSQLDatabase, ArrowFlightSQLError> {
-        Ok(ArrowFlightSQLDatabase {
+        let mut db = ArrowFlightSQLDatabase {
             endpoint: endpoint.into(),
             username: username.into(),
             password: password.into(),
@@ -103,7 +102,17 @@ impl ArrowFlightSQLDatabase {
             token: None,
             cookies: None,
             time_series_tables,
-        })
+        };
+        db.init().await?;
+        Ok(db)
+    }
+
+    async fn init(&mut self) -> Result<(),ArrowFlightSQLError> {
+        let (token, conn) =
+            authenticated_connection(&self.username, &self.password, &self.endpoint).await?;
+        self.token = Some(token);
+        self.conn = Some(conn);
+        Ok(())
     }
 
     pub async fn execute_sql_query(
@@ -112,16 +121,6 @@ impl ArrowFlightSQLDatabase {
     ) -> Result<DataFrame, ArrowFlightSQLError> {
         let mut dfs = vec![];
 
-        if self.conn.is_none() {
-            debug!("Connection is not established, establishing");
-            let (token, conn) =
-                authenticated_connection(&self.username, &self.password, &self.endpoint).await?;
-            self.token = Some(token);
-            self.conn = Some(conn);
-            debug!("Established connection");
-        } else {
-            debug!("Using existing connection");
-        }
         let mut request = FlightDescriptor {
             r#type: 2, //CMD
             cmd: query.into_bytes(),
@@ -200,10 +199,11 @@ impl ArrowFlightSQLDatabase {
         Ok(accumulate_dataframes_vertical(dfs).expect("Problem stacking dataframes"))
     }
     fn find_set_cookies(&mut self, response: &Response<FlightInfo>) {
-        let cookies = response
+        let mut cookies:Vec<String> = response
         .metadata()
         .get_all("set-cookie").iter().map(|x|x.to_str().unwrap().to_string()).collect();
 
+        cookies = cookies.into_iter().map(|x|x.split(";").next().unwrap().to_string()).collect();
         self.cookies = Some(cookies);
     }
 }
@@ -301,9 +301,8 @@ fn add_auth_header<T>(request: &mut Request<T>, bearer_token: &str) {
 }
 
 fn add_cookies<T>(request: &mut Request<T>, cookies: &Vec<String>) {
-    for cookie in cookies {
-        let cookie_value: MetadataValue<_> = cookie.parse().unwrap();
-        request.metadata_mut().append("cookie", cookie_value);
-    }
+    let cookies_string = cookies.join("; ");
+    let cookie_value: MetadataValue<_> = cookies_string.parse().unwrap();
+    request.metadata_mut().append("cookie", cookie_value);
 }
 
