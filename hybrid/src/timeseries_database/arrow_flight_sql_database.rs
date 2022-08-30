@@ -130,6 +130,9 @@ impl ArrowFlightSQLDatabase {
         }
         .into_request();
         add_auth_header(&mut request, self.token.as_ref().unwrap());
+        if self.cookies.is_some() {
+            add_cookies(&mut request, self.cookies.as_ref().unwrap());
+        }
 
         let mut client = FlightServiceClient::new(self.conn.as_ref().unwrap().clone());
         let response = client.get_flight_info(request).await?;
