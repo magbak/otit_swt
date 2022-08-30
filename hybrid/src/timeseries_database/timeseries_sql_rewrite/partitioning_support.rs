@@ -358,19 +358,6 @@ impl TimeSeriesTable {
         )
     }
 
-    fn year_equal_and_month_equal_and_day_equal(
-        &self,
-        year: i32,
-        month: u32,
-        day: u32,
-    ) -> SimpleExpr {
-        SimpleExpr::Binary(
-            Box::new(self.year_equal_and_month_equal(year, month)),
-            BinOper::And,
-            Box::new(self.col_day_oper_const_day(day, BinOper::Equal)),
-        )
-    }
-
     fn col_year_oper_const_year(&self, year: i32, oper: BinOper) -> SimpleExpr {
         SimpleExpr::Binary(
             self.year_column_box_simple_expression(),

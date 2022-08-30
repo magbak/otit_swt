@@ -81,7 +81,6 @@ pub struct ArrowFlightSQLDatabase {
     endpoint: String,
     username: String,
     password: String,
-    conn: Option<Channel>,
     token: Option<String>,
     cookies: Option<Vec<String>>,
     time_series_tables: Vec<TimeSeriesTable>,
@@ -98,7 +97,6 @@ impl ArrowFlightSQLDatabase {
             endpoint: endpoint.into(),
             username: username.into(),
             password: password.into(),
-            conn: None,
             token: None,
             cookies: None,
             time_series_tables,
@@ -107,20 +105,31 @@ impl ArrowFlightSQLDatabase {
         Ok(db)
     }
 
-    async fn init(&mut self) -> Result<(),ArrowFlightSQLError> {
-        let (token, conn) =
-            authenticated_connection(&self.username, &self.password, &self.endpoint).await?;
+    async fn init(&mut self) -> Result<(), ArrowFlightSQLError> {
+        let token = self.get_token().await?;
         self.token = Some(token);
-        self.conn = Some(conn);
         Ok(())
+    }
+
+    async fn get_token(&self) -> Result<String, ArrowFlightSQLError> {
+        let channel = self.get_channel().await?;
+        let token = authenticate(channel, &self.username, &self.password).await?;
+        Ok(token)
+    }
+
+    async fn get_channel(&self) -> Result<Channel, ArrowFlightSQLError> {
+        let channel = tonic::transport::Endpoint::new(self.endpoint.clone())?
+            .connect()
+            .await?;
+        Ok(channel)
     }
 
     pub async fn execute_sql_query(
         &mut self,
         query: String,
     ) -> Result<DataFrame, ArrowFlightSQLError> {
+        let channel = self.get_channel().await?;
         let mut dfs = vec![];
-
         let mut request = FlightDescriptor {
             r#type: 2, //CMD
             cmd: query.into_bytes(),
@@ -130,15 +139,12 @@ impl ArrowFlightSQLDatabase {
         }
         .into_request();
         add_auth_header(&mut request, self.token.as_ref().unwrap());
-        if self.cookies.is_some() {
-            add_cookies(&mut request, self.cookies.as_ref().unwrap());
-        }
 
-        let mut client = FlightServiceClient::new(self.conn.as_ref().unwrap().clone());
+        let mut client = FlightServiceClient::new(channel);
         let response = client.get_flight_info(request).await?;
-        if self.cookies.is_none() {
-            self.find_set_cookies(&response);
-        }
+        //We expect some new cookies here since we did not add cookies to the get flight info.
+        //See: https://docs.dremio.com/software/developing-client-apps/arrow-flight/
+        self.find_set_cookies(&response);
         debug!("Got flight info response");
         let mut schema_opt = None;
         let mut ipc_schema_opt = None;
@@ -202,11 +208,17 @@ impl ArrowFlightSQLDatabase {
         Ok(accumulate_dataframes_vertical(dfs).expect("Problem stacking dataframes"))
     }
     fn find_set_cookies(&mut self, response: &Response<FlightInfo>) {
-        let mut cookies:Vec<String> = response
-        .metadata()
-        .get_all("set-cookie").iter().map(|x|x.to_str().unwrap().to_string()).collect();
+        let mut cookies: Vec<String> = response
+            .metadata()
+            .get_all("Set-Cookie")
+            .iter()
+            .map(|x| x.to_str().unwrap().to_string())
+            .collect();
 
-        cookies = cookies.into_iter().map(|x|x.split(";").next().unwrap().to_string()).collect();
+        cookies = cookies
+            .into_iter()
+            .map(|x| x.split(";").next().unwrap().to_string())
+            .collect();
         self.cookies = Some(cookies);
     }
 }
@@ -254,18 +266,6 @@ impl TimeSeriesQueryable for ArrowFlightSQLDatabase {
 // specific language governing permissions and limitations
 // under the License.
 
-async fn authenticated_connection(
-    username: &str,
-    password: &str,
-    endpoint: &str,
-) -> Result<(String, Channel), ArrowFlightSQLError> {
-    let conn = tonic::transport::Endpoint::new(endpoint.to_string())?
-        .connect()
-        .await?;
-    let token = authenticate(conn.clone(), username, password).await?;
-    Ok((token, conn))
-}
-
 async fn authenticate(
     conn: Channel,
     username: &str,
@@ -306,6 +306,6 @@ fn add_auth_header<T>(request: &mut Request<T>, bearer_token: &str) {
 fn add_cookies<T>(request: &mut Request<T>, cookies: &Vec<String>) {
     let cookies_string = cookies.join("; ");
     let cookie_value: MetadataValue<_> = cookies_string.parse().unwrap();
-    request.metadata_mut().append("cookie", cookie_value);
+    debug!("Using cookies: {}", cookies_string);
+    request.metadata_mut().append("Cookie", cookie_value);
 }
-
