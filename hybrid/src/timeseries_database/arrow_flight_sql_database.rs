@@ -307,5 +307,5 @@ fn add_cookies<T>(request: &mut Request<T>, cookies: &Vec<String>) {
     let cookies_string = cookies.join("; ");
     let cookie_value: MetadataValue<_> = cookies_string.parse().unwrap();
     debug!("Using cookies: {}", cookies_string);
-    request.metadata_mut().append("Cookie", cookie_value);
+    request.metadata_mut().insert("Cookie", cookie_value);
 }
