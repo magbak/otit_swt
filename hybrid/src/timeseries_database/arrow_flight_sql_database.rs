@@ -32,6 +32,7 @@ use polars_core::error::ArrowError;
 use polars_core::prelude::PolarsError;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::time::Instant;
 use thiserror::Error;
 use tokio_stream::StreamExt;
 use tonic::metadata::MetadataValue;
@@ -128,7 +129,10 @@ impl ArrowFlightSQLDatabase {
         &mut self,
         query: String,
     ) -> Result<DataFrame, ArrowFlightSQLError> {
+        let instant = Instant::now();
         let channel = self.get_channel().await?;
+        let elapsed = instant.elapsed();
+        debug!("Connecting took {} seconds", elapsed.as_secs_f32());
         let mut dfs = vec![];
         let mut request = FlightDescriptor {
             r#type: 2, //CMD
