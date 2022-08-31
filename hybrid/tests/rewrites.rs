@@ -593,3 +593,52 @@ fn test_exists_query() {
     assert_eq!(expected_query, static_rewrite);
     //println!("{}", static_rewrite);
 }
+
+#[test]
+fn test_filter_lost_bug() {
+   let sparql = r#"
+    PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+    PREFIX otit:<https://github.com/magbak/otit_swt#>
+    PREFIX wp:<https://github.com/magbak/otit_swt/windpower_example#>
+    PREFIX rdfs:<http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX rdf:<http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX rds:<https://github.com/magbak/otit_swt/rds_power#>
+    SELECT ?site_label ?wtur_label ?ts ?val ?t WHERE {
+    ?site a rds:Site .
+    ?site rdfs:label ?site_label .
+    ?site rds:hasFunctionalAspect ?wtur_asp .
+    ?wtur_asp rdfs:label ?wtur_label .
+    ?wtur rds:hasFunctionalAspectNode ?wtur_asp .
+    ?wtur rds:hasFunctionalAspect ?gensys_asp .
+    ?gensys rds:hasFunctionalAspectNode ?gensys_asp .
+    ?gensys otit:hasTimeseries ?ts .
+    ?ts rdfs:label "Production" .
+    ?ts otit:hasDataPoint ?dp .
+    ?dp otit:hasValue ?val .
+    ?dp otit:hasTimestamp ?t .
+    FILTER(?wtur_label = "A1" && ?t > "2022-06-17T08:46:53"^^xsd:dateTime) .
+}"#;
+    let parsed = parse_sparql_select_query(sparql).unwrap();
+    let mut preprocessor = Preprocessor::new();
+    let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
+    let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
+
+    let expected_str = r#"
+    SELECT ?site_label ?wtur_label ?ts ?ts_datatype_0 ?ts_external_id_0 WHERE {
+    ?site <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://github.com/magbak/otit_swt/rds_power#Site> .
+    ?site <http://www.w3.org/2000/01/rdf-schema#label> ?site_label .
+    ?site <https://github.com/magbak/otit_swt/rds_power#hasFunctionalAspect> ?wtur_asp .
+    ?wtur_asp <http://www.w3.org/2000/01/rdf-schema#label> ?wtur_label .
+    ?wtur <https://github.com/magbak/otit_swt/rds_power#hasFunctionalAspectNode> ?wtur_asp .
+    ?wtur <https://github.com/magbak/otit_swt/rds_power#hasFunctionalAspect> ?gensys_asp .
+    ?gensys <https://github.com/magbak/otit_swt/rds_power#hasFunctionalAspectNode> ?gensys_asp .
+    ?ts <https://github.com/magbak/otit_swt#hasExternalId> ?ts_external_id_0 .
+    ?ts <https://github.com/magbak/otit_swt#hasDatatype> ?ts_datatype_0 .
+    ?gensys <https://github.com/magbak/otit_swt#hasTimeseries> ?ts .
+    ?ts <http://www.w3.org/2000/01/rdf-schema#label> "Production" .
+    FILTER((?wtur_label = "A1"))
+    }"#;
+    let expected_query = Query::parse(expected_str, None).unwrap();
+    assert_eq!(expected_query, static_rewrite);
+}

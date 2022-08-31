@@ -32,10 +32,10 @@ impl StaticQueryRewriter {
         let mut exr = ExReturn::new();
         exr.with_pushups(&mut left_rewrite)
             .with_pushups(&mut right_rewrite);
-        if left_rewrite.expression.is_some() {
-            if right_rewrite.expression.is_some() {
-                if left_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
-                    || right_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
+        if left_rewrite.expression.is_some()
+            && right_rewrite.expression.is_some()
+                && left_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
+                    && right_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
                 {
                     let left_expression_rewrite = left_rewrite.expression.take().unwrap();
                     let right_expression_rewrite = right_rewrite.expression.take().unwrap();
@@ -47,8 +47,7 @@ impl StaticQueryRewriter {
                     .with_change_type(ChangeType::NoChange);
                     return exr;
                 }
-            }
-        } else {
+        else {
             match required_change_direction {
                 ChangeType::Relaxed => {
                     if left_rewrite.expression.is_some() {
