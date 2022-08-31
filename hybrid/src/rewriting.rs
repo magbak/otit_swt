@@ -9,7 +9,6 @@ use crate::change_types::ChangeType;
 use crate::constants::{HAS_DATA_POINT, HAS_TIMESTAMP, HAS_VALUE};
 use crate::constraints::{Constraint, VariableConstraints};
 use crate::pushdown_setting::PushdownSetting;
-use crate::query_context::PathEntry::ExtendExpression;
 use crate::query_context::{Context, PathEntry, VariableInContext};
 use crate::rewriting::expressions::ExReturn;
 use crate::rewriting::graph_patterns::GPReturn;
@@ -128,7 +127,7 @@ impl StaticQueryRewriter {
             expr,
             &ChangeType::NoChange,
             &HashSet::new(),
-            &context.extension_with(ExtendExpression),
+            &context.extension_with(PathEntry::ExtendExpression),
         );
         if expr_rewrite.graph_pattern_pushups.len() > 0 {
             todo!("Solution will require graph pattern pushups for graph patterns!!");

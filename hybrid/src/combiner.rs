@@ -311,17 +311,17 @@ impl Combiner {
                 variable,
                 expression,
             } => {
+                let inner_context = context.extension_with(PathEntry::ExtendInner);
                 let mut inner_lf = self.lazy_graph_pattern(
                     columns,
                     input_lf,
                     inner,
                     time_series,
-                    &context.extension_with(PathEntry::ExtendInner),
+                    &inner_context,
                 );
-                let inner_context = context.extension_with(PathEntry::ExtendExpression);
                 inner_lf =
                     lazy_expression(expression, inner_lf, columns, time_series, &inner_context)
-                        .rename([&inner_context.as_str()], &[variable.as_str()]);
+                        .rename([inner_context.as_str()], &[variable.as_str()]);
                 columns.insert(variable.as_str().to_string());
                 inner_lf
             }
