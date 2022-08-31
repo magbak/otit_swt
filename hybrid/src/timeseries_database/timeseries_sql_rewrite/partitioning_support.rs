@@ -273,12 +273,19 @@ impl TimeSeriesTable {
                                     self.col_day_oper_const_day(right_day, BinOper::SmallerThan),
                                 ),
                             );
+                            let year_equal_and_month_equal_and_day_equal_and_original = SimpleExpr::Binary(
+                                Box::new(self.year_equal_and_month_equal_and_day_equal(right_year, right_month, right_day)),
+                                BinOper::And,
+                                Box::new(
+                                    original.clone(),
+                                ),
+                            );
                             return Some(iterated_binoper(
                                 vec![
                                     year_smaller_than_year_expr,
                                     year_equal_and_month_smaller_expr,
                                     year_equal_and_month_equal_and_day_smaller,
-                                    original.clone(),
+                                    year_equal_and_month_equal_and_day_equal_and_original,
                                 ],
                                 BinOper::Or,
                             ));
@@ -314,12 +321,19 @@ impl TimeSeriesTable {
                                         self.col_day_oper_const_day(left_day, BinOper::SmallerThan),
                                     ),
                                 );
+                                let year_equal_and_month_equal_and_day_equal_and_original = SimpleExpr::Binary(
+                                Box::new(self.year_equal_and_month_equal_and_day_equal(left_year, left_month, left_day)),
+                                BinOper::And,
+                                Box::new(
+                                    original.clone(),
+                                ),
+                            );
                                 return Some(iterated_binoper(
                                     vec![
                                         year_smaller_than_year_expr,
                                         year_equal_and_month_smaller_expr,
                                         year_equal_and_month_equal_and_day_smaller,
-                                        original.clone(),
+                                        year_equal_and_month_equal_and_day_equal_and_original,
                                     ],
                                     BinOper::Or,
                                 ));
@@ -348,6 +362,19 @@ impl TimeSeriesTable {
         Box::new(SimpleExpr::Column(ColumnRef::Column(Rc::new(
             Name::Column(self.day_column.as_ref().unwrap().clone()),
         ))))
+    }
+
+    fn year_equal_and_month_equal_and_day_equal(
+        &self,
+        year: i32,
+        month: u32,
+        day: u32,
+    ) -> SimpleExpr {
+        SimpleExpr::Binary(
+            Box::new(self.year_equal_and_month_equal(year, month)),
+            BinOper::And,
+            Box::new(self.col_day_oper_const_day(day, BinOper::Equal)),
+        )
     }
 
     fn year_equal_and_month_equal(&self, year: i32, month: u32) -> SimpleExpr {

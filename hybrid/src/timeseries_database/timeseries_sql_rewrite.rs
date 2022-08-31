@@ -281,6 +281,6 @@ mod tests {
 
         let sql_query = table.create_query(&tsq).unwrap();
         //println!("{}", sql_query)
-        assert_eq!(&sql_query, r#"SELECT "dir3" AS "id", "timestamp" AS "t", "value" AS "v" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('A', 'B') AND (("dir0" < 2022) OR (("dir0" = 2022) AND ("dir1" < 6)) OR ("dir0" = 2022) AND ("dir1" = 6) AND ("dir2" < 1) OR ("timestamp" <= '2022-06-01 08:46:53'))"#);
+        assert_eq!(&sql_query, r#"SELECT "dir3" AS "id", "timestamp" AS "t", "value" AS "v" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('A', 'B') AND (("dir0" < 2022) OR (("dir0" = 2022) AND ("dir1" < 6)) OR ("dir0" = 2022) AND ("dir1" = 6) AND ("dir2" < 1) OR ("dir0" = 2022) AND ("dir1" = 6) AND ("dir2" = 1) AND ("timestamp" <= '2022-06-01 08:46:53'))"#);
     }
 }
