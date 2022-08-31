@@ -28,6 +28,7 @@ impl TimeSeriesTable {
             Expression::Literal(l) => {
                 let v = l.value();
                 let value = match l.datatype() {
+                    xsd::BOOLEAN => Value::Bool(Some(v.parse().unwrap())),
                     xsd::DOUBLE => Value::Double(Some(v.parse().unwrap())),
                     xsd::FLOAT => Value::Float(Some(v.parse().unwrap())),
                     xsd::INTEGER => Value::BigInt(Some(v.parse().unwrap())),
