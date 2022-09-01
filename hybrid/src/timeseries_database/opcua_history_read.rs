@@ -217,6 +217,10 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
 
         Ok(concat(dfs, true).unwrap().collect().unwrap())
     }
+
+    fn allow_compound_timeseries_queries(&self) -> bool {
+        false
+    }
 }
 
 fn create_raw_details(start_time: DateTime, end_time: DateTime) -> ReadRawModifiedDetails {

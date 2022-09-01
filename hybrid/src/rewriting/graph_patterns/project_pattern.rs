@@ -12,25 +12,26 @@ impl StaticQueryRewriter {
         variables: &Vec<Variable>,
         required_change_direction: &ChangeType,
         context: &Context,
-    ) -> Option<GPReturn> {
-        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(
+    ) -> GPReturn {
+        let mut inner_rewrite = self.rewrite_graph_pattern(
             inner,
             required_change_direction,
             &context.extension_with(PathEntry::ProjectInner),
-        ) {
+        );
+        if inner_rewrite.graph_pattern.is_some() {
             let mut variables_rewrite = variables
                 .iter()
                 .map(|v| self.rewrite_variable(v, context))
                 .filter(|x| x.is_some())
                 .map(|x| x.unwrap())
                 .collect::<Vec<Variable>>();
-            let mut datatype_keys_sorted = gpr_inner
+            let mut datatype_keys_sorted = inner_rewrite
                 .datatypes_in_scope
                 .keys()
                 .collect::<Vec<&Variable>>();
             datatype_keys_sorted.sort_by_key(|v| v.to_string());
             for k in datatype_keys_sorted {
-                let vs = gpr_inner.datatypes_in_scope.get(k).unwrap();
+                let vs = inner_rewrite.datatypes_in_scope.get(k).unwrap();
                 let mut vars = vs.iter().collect::<Vec<&Variable>>();
                 //Sort to make rewrites deterministic
                 vars.sort_by_key(|v| v.to_string());
@@ -38,13 +39,13 @@ impl StaticQueryRewriter {
                     variables_rewrite.push(v.clone());
                 }
             }
-            let mut id_keys_sorted = gpr_inner
+            let mut id_keys_sorted = inner_rewrite
                 .external_ids_in_scope
                 .keys()
                 .collect::<Vec<&Variable>>();
             id_keys_sorted.sort_by_key(|v| v.to_string());
             for k in id_keys_sorted {
-                let vs = gpr_inner.external_ids_in_scope.get(k).unwrap();
+                let vs = inner_rewrite.external_ids_in_scope.get(k).unwrap();
                 let mut vars = vs.iter().collect::<Vec<&Variable>>();
                 //Sort to make rewrites deterministic
                 vars.sort_by_key(|v| v.to_string());
@@ -64,14 +65,14 @@ impl StaticQueryRewriter {
             }
             //Todo: redusere scope??
             if variables_rewrite.len() > 0 {
-                let inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
-                gpr_inner.with_graph_pattern(GraphPattern::Project {
+                let inner_graph_pattern = inner_rewrite.graph_pattern.take().unwrap();
+                inner_rewrite.with_graph_pattern(GraphPattern::Project {
                     inner: Box::new(inner_graph_pattern),
                     variables: variables_rewrite,
                 });
-                return Some(gpr_inner);
+                return inner_rewrite;
             }
         }
-        None
+        GPReturn::only_timeseries_queries(inner_rewrite.drained_time_series_queries())
     }
 }

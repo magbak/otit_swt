@@ -15,14 +15,14 @@ impl StaticQueryRewriter {
         aggregates: &Vec<(Variable, AggregateExpression)>,
         required_change_direction: &ChangeType,
         context: &Context,
-    ) -> Option<GPReturn> {
-        let graph_pattern_rewrite_opt = self.rewrite_graph_pattern(
+    ) -> GPReturn {
+        let mut graph_pattern_rewrite = self.rewrite_graph_pattern(
             graph_pattern,
             required_change_direction,
             &context.extension_with(PathEntry::GroupInner),
         );
-        if let Some(mut gpr_inner) = graph_pattern_rewrite_opt {
-            if gpr_inner.change_type == ChangeType::NoChange {
+        if graph_pattern_rewrite.graph_pattern.is_some() {
+            if graph_pattern_rewrite.change_type == ChangeType::NoChange {
                 let variables_rewritten: Vec<Option<Variable>> = variables
                     .iter()
                     .map(|v| self.rewrite_variable(v, context))
@@ -36,7 +36,7 @@ impl StaticQueryRewriter {
                             self.rewrite_variable(v, context),
                             self.rewrite_aggregate_expression(
                                 a,
-                                &gpr_inner.variables_in_scope,
+                                &graph_pattern_rewrite.variables_in_scope,
                                 &context.extension_with(PathEntry::GroupAggregation(i as u16)),
                             ),
                         )
@@ -48,16 +48,17 @@ impl StaticQueryRewriter {
                         .all(|(v, a)| v.is_some() && a.aggregate_expression.is_some())
                 {
                     for v in &variables_rewritten {
-                        gpr_inner
+                        graph_pattern_rewrite
                             .variables_in_scope
                             .insert(v.as_ref().unwrap().clone());
                     }
-                    let mut inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
+                    let mut inner_graph_pattern =
+                        graph_pattern_rewrite.graph_pattern.take().unwrap();
                     for (_, aes) in aes_rewritten.iter_mut() {
                         inner_graph_pattern =
                             apply_pushups(inner_graph_pattern, &mut aes.graph_pattern_pushups);
                     }
-                    gpr_inner.with_graph_pattern(GraphPattern::Group {
+                    graph_pattern_rewrite.with_graph_pattern(GraphPattern::Group {
                         inner: Box::new(inner_graph_pattern),
                         variables: variables_rewritten
                             .into_iter()
@@ -65,13 +66,15 @@ impl StaticQueryRewriter {
                             .collect(),
                         aggregates: vec![],
                     });
-                    return Some(gpr_inner);
+                    return graph_pattern_rewrite;
                 }
             } else {
                 //TODO: Possible problem with pushups here.
-                return Some(gpr_inner);
+                return graph_pattern_rewrite;
             }
         }
-        None
+        return GPReturn::only_timeseries_queries(
+            graph_pattern_rewrite.drained_time_series_queries(),
+        );
     }
 }

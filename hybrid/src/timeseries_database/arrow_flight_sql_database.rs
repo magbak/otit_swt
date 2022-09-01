@@ -250,6 +250,10 @@ impl TimeSeriesQueryable for ArrowFlightSQLDatabase {
 
         Ok(self.execute_sql_query(query_string.unwrap()).await?)
     }
+
+    fn allow_compound_timeseries_queries(&self) -> bool {
+        true
+    }
 }
 
 //Adapted from: https://github.com/apache/arrow-rs/blob/master/integration-testing/src/flight_client_scenarios/auth_basic_proto.rs

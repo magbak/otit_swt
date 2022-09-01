@@ -13,7 +13,7 @@ impl StaticQueryRewriter {
         subject: &TermPattern,
         path: &PropertyPathExpression,
         object: &TermPattern,
-    ) -> Option<GPReturn> {
+    ) -> GPReturn {
         let mut variables_in_scope = HashSet::new();
         if let TermPattern::Variable(s) = subject {
             variables_in_scope.insert(s.clone());
@@ -32,7 +32,8 @@ impl StaticQueryRewriter {
             variables_in_scope,
             Default::default(),
             Default::default(),
+            vec![],
         );
-        return Some(gpr);
+        return gpr;
     }
 }

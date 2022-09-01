@@ -113,4 +113,8 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
         let collected = out_lf.collect()?;
         Ok(collected)
     }
+
+    fn allow_compound_timeseries_queries(&self) -> bool {
+        true
+    }
 }

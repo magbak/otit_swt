@@ -148,17 +148,7 @@ impl Combiner {
                     .collect()
                     .expect("Left join collect left problem");
 
-                let ts_identifiers: Vec<String> = time_series
-                    .iter()
-                    .map(|(tsq, _)| {
-                        tsq.identifier_variable
-                            .as_ref()
-                            .unwrap()
-                            .as_str()
-                            .to_string()
-                    })
-                    .collect();
-
+                let ts_identifiers = get_timeseries_identifier_names(time_series);
                 let mut right_lf = self.lazy_graph_pattern(
                     columns,
                     left_df.clone().lazy(),
@@ -244,16 +234,7 @@ impl Combiner {
             }
             GraphPattern::Union { left, right } => {
                 let mut left_columns = columns.clone();
-                let original_timeseries_columns: Vec<String> = time_series
-                    .iter()
-                    .map(|(tsq, _)| {
-                        tsq.identifier_variable
-                            .as_ref()
-                            .unwrap()
-                            .as_str()
-                            .to_string()
-                    })
-                    .collect();
+                let original_timeseries_columns = get_timeseries_identifier_names(time_series);
                 let mut left_lf = self.lazy_graph_pattern(
                     &mut left_columns,
                     input_lf.clone(),
@@ -312,13 +293,8 @@ impl Combiner {
                 expression,
             } => {
                 let inner_context = context.extension_with(PathEntry::ExtendInner);
-                let mut inner_lf = self.lazy_graph_pattern(
-                    columns,
-                    input_lf,
-                    inner,
-                    time_series,
-                    &inner_context,
-                );
+                let mut inner_lf =
+                    self.lazy_graph_pattern(columns, input_lf, inner, time_series, &inner_context);
                 inner_lf =
                     lazy_expression(expression, inner_lf, columns, time_series, &inner_context)
                         .rename([inner_context.as_str()], &[variable.as_str()]);
@@ -424,8 +400,8 @@ impl Combiner {
                     &context.extension_with(PathEntry::ProjectInner),
                 );
                 let mut cols: Vec<Expr> = variables.iter().map(|c| col(c.as_str())).collect();
-                for (tsq, _) in time_series {
-                    cols.push(col(tsq.identifier_variable.as_ref().unwrap().as_str()));
+                for ts_identifier_variable_name in get_timeseries_identifier_names(time_series) {
+                    cols.push(col(&ts_identifier_variable_name));
                 }
                 inner_lf.select(cols.as_slice())
             }
@@ -453,8 +429,8 @@ impl Combiner {
                 let mut found_index = None;
                 for i in 0..time_series.len() {
                     let (tsq, _) = time_series.get(i).as_ref().unwrap();
-                    if let Some(grouping) = &tsq.grouping {
-                        if graph_pattern_hash == grouping.graph_pattern_hash {
+                    if let TimeSeriesQuery::Grouped(_, _, _, grouping_hash) = &tsq {
+                        if &graph_pattern_hash == grouping_hash {
                             found_index = Some(i);
                         }
                     }
@@ -499,12 +475,11 @@ impl Combiner {
         );
         let by: Vec<Expr> = variables.iter().map(|v| col(v.as_str())).collect();
 
+        let time_series_identifier_names = get_timeseries_identifier_names(time_series);
         let mut column_variables = vec![];
-        'outer: for v in columns.iter() {
-            for (tsq, _) in time_series.iter() {
-                if tsq.identifier_variable.as_ref().unwrap().as_str() == v {
-                    continue 'outer;
-                }
+        for v in columns.iter() {
+            if time_series_identifier_names.contains(v) {
+                continue;
             }
             column_variables.push(v.clone());
         }
@@ -550,4 +525,17 @@ impl Combiner {
         }
         aggregated_lf
     }
+}
+
+fn get_timeseries_identifier_names(
+    time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
+) -> Vec<String> {
+    time_series.iter().fold(vec![], |mut coll, (tsq, _)| {
+        coll.extend(
+            tsq.get_identifier_variables()
+                .iter()
+                .map(|x| x.as_str().to_string()),
+        );
+        coll
+    })
 }

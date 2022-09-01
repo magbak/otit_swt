@@ -12,17 +12,16 @@ impl StaticQueryRewriter {
         inner: &GraphPattern,
         required_change_direction: &ChangeType,
         context: &Context,
-    ) -> Option<GPReturn> {
-        if let Some(mut inner_gpr) =
-            self.rewrite_graph_pattern(inner, required_change_direction, context)
-        {
+    ) -> GPReturn {
+        let mut inner_gpr = self.rewrite_graph_pattern(inner, required_change_direction, context);
+        if inner_gpr.graph_pattern.is_some() {
             let inner_rewrite = inner_gpr.graph_pattern.take().unwrap();
             inner_gpr.with_graph_pattern(GraphPattern::Graph {
                 name: name.clone(),
                 inner: Box::new(inner_rewrite),
             });
-            return Some(inner_gpr);
+            return inner_gpr;
         }
-        None
+        GPReturn::only_timeseries_queries(inner_gpr.drained_time_series_queries())
     }
 }

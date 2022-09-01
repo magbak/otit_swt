@@ -6,16 +6,15 @@ mod project_static;
 mod pushups;
 
 use crate::change_types::ChangeType;
-use crate::constants::{HAS_DATA_POINT, HAS_TIMESTAMP, HAS_VALUE};
 use crate::constraints::{Constraint, VariableConstraints};
 use crate::pushdown_setting::PushdownSetting;
 use crate::query_context::{Context, PathEntry, VariableInContext};
 use crate::rewriting::expressions::ExReturn;
 use crate::rewriting::graph_patterns::GPReturn;
 use crate::rewriting::pushups::apply_pushups;
-use crate::timeseries_query::TimeSeriesQuery;
+use crate::timeseries_query::{BasicTimeSeriesQuery, TimeSeriesQuery};
 use spargebra::algebra::{Expression, GraphPattern};
-use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern, Variable};
+use spargebra::term::Variable;
 use spargebra::Query;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
@@ -28,14 +27,17 @@ pub struct StaticQueryRewriter {
     variable_constraints: VariableConstraints,
     pub time_series_queries: Vec<TimeSeriesQuery>,
     pushdown_settings: HashSet<PushdownSetting>,
+    allow_compound_timeseries_queries: bool,
 }
 
 impl StaticQueryRewriter {
     pub fn new(
         pushdown_settings: HashSet<PushdownSetting>,
         variable_constraints: &VariableConstraints,
+        allow_compound_timeseries_queries: bool,
     ) -> StaticQueryRewriter {
         StaticQueryRewriter {
+            allow_compound_timeseries_queries,
             pushdown_settings,
             variable_counter: 0,
             additional_projections: Default::default(),
@@ -52,19 +54,19 @@ impl StaticQueryRewriter {
         } = &query
         {
             let required_change_direction = ChangeType::Relaxed;
-            let pattern_rewrite_opt =
+            let mut pattern_rewrite =
                 self.rewrite_graph_pattern(pattern, &required_change_direction, &Context::new());
-            if let Some(mut gpr_inner) = pattern_rewrite_opt {
-                if &gpr_inner.change_type == &ChangeType::NoChange
-                    || &gpr_inner.change_type == &ChangeType::Relaxed
+            if pattern_rewrite.graph_pattern.is_some() {
+                if &pattern_rewrite.change_type == &ChangeType::NoChange
+                    || &pattern_rewrite.change_type == &ChangeType::Relaxed
                 {
                     return Some((
                         Query::Select {
                             dataset: dataset.clone(),
-                            pattern: gpr_inner.graph_pattern.take().unwrap(),
+                            pattern: pattern_rewrite.graph_pattern.take().unwrap(),
                             base_iri: base_iri.clone(),
                         },
-                        self.time_series_queries.clone(),
+                        pattern_rewrite.drained_time_series_queries(),
                     ));
                 } else {
                     None
@@ -92,7 +94,7 @@ impl StaticQueryRewriter {
         expr: &Expression,
         required_change_direction: &ChangeType,
         context: &Context,
-    ) -> Option<GPReturn> {
+    ) -> GPReturn {
         let inner_rewrite_opt = self.rewrite_graph_pattern(
             inner,
             required_change_direction,
@@ -151,88 +153,13 @@ impl StaticQueryRewriter {
         }
     }
 
-    fn pushdown_expression(&mut self, expr: &Expression, context: &Context) {
-        for t in &mut self.time_series_queries {
-            t.try_rewrite_condition_expression(expr, context);
-        }
-    }
-
-    fn process_dynamic_triples(&mut self, dynamic_triples: Vec<&TriplePattern>, context: &Context) {
-        for t in &dynamic_triples {
-            if let NamedNodePattern::NamedNode(named_predicate_node) = &t.predicate {
-                if named_predicate_node == HAS_DATA_POINT {
-                    for q in &mut self.time_series_queries {
-                        if let (
-                            Some(q_timeseries_variable),
-                            TermPattern::Variable(subject_variable),
-                        ) = (&q.timeseries_variable, &t.subject)
-                        {
-                            if q_timeseries_variable.partial(subject_variable, context) {
-                                if let TermPattern::Variable(ts_var) = &t.object {
-                                    q.data_point_variable = Some(VariableInContext::new(
-                                        ts_var.clone(),
-                                        context.clone(),
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        for t in &dynamic_triples {
-            if let NamedNodePattern::NamedNode(named_predicate_node) = &t.predicate {
-                if named_predicate_node == HAS_VALUE {
-                    for q in &mut self.time_series_queries {
-                        if q.value_variable.is_none() {
-                            if let (
-                                Some(q_data_point_variable),
-                                TermPattern::Variable(subject_variable),
-                            ) = (&q.data_point_variable, &t.subject)
-                            {
-                                if q_data_point_variable.partial(subject_variable, context) {
-                                    if let TermPattern::Variable(value_var) = &t.object {
-                                        q.value_variable = Some(VariableInContext::new(
-                                            value_var.clone(),
-                                            context.clone(),
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else if named_predicate_node == HAS_TIMESTAMP {
-                    for q in &mut self.time_series_queries {
-                        if q.timestamp_variable.is_none() {
-                            if let (
-                                Some(q_data_point_variable),
-                                TermPattern::Variable(subject_variable),
-                            ) = (&q.data_point_variable, &t.subject)
-                            {
-                                if q_data_point_variable.partial(subject_variable, context) {
-                                    if let TermPattern::Variable(timestamp_var) = &t.object {
-                                        q.timestamp_variable = Some(VariableInContext::new(
-                                            timestamp_var.clone(),
-                                            context.clone(),
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn create_time_series_query(
+    fn create_basic_time_series_query(
         &mut self,
         time_series_variable: &Variable,
         time_series_id_variable: &Variable,
         datatype_variable: &Variable,
         context: &Context,
-    ) {
+    ) -> BasicTimeSeriesQuery {
         let mut ts_query = TimeSeriesQuery::new_empty(self.pushdown_settings.clone());
         ts_query.identifier_variable = Some(time_series_id_variable.clone());
         ts_query.datatype_variable = Some(datatype_variable.clone());
@@ -240,7 +167,7 @@ impl StaticQueryRewriter {
             time_series_variable.clone(),
             context.clone(),
         ));
-        self.time_series_queries.push(ts_query);
+        ts_query
     }
 }
 

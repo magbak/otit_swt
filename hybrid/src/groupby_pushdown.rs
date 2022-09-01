@@ -201,8 +201,9 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 })
                 .collect();
             'outer: for tsq in time_series_queries {
-                if !tsq.dropped_value_expression {
+                if !tsq.dropped_value_expression() {
                     for (v, c) in &vs_and_cs {
+                        println!("v {:?}, c {:?}", v, c);
                         let in_tsq = match c {
                             Constraint::ExternalTimeseries => {
                                 tsq.timeseries_variable.is_some()
@@ -509,4 +510,122 @@ fn variables_isomorphic_to_time_series_id(
         .sum()
         .expect("Sum problem");
     n_unique_identifiers == n_unique_n_tuples
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::engine::complete_time_series_queries;
+    use crate::groupby_pushdown::find_all_groupby_pushdowns;
+    use crate::preprocessing::Preprocessor;
+    use crate::pushdown_setting::all_pushdowns;
+    use crate::rewriting::StaticQueryRewriter;
+    use crate::sparql_result_to_polars::create_static_query_result_df;
+    use crate::splitter::parse_sparql_select_query;
+    use oxrdf::vocab::xsd;
+    use oxrdf::{Literal, Term, Variable};
+    use polars_core::frame::DataFrame;
+    use polars_core::prelude::Series;
+    use sparesults::QuerySolution;
+    use std::rc::Rc;
+
+    #[test]
+    fn test_missing_grouping() {
+        let sparql = r#"#Four turbines, timestamp constraint
+PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+PREFIX otit:<https://github.com/magbak/otit_swt#>
+PREFIX wp:<https://github.com/magbak/otit_swt/windpower_example#>
+PREFIX rdfs:<http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf:<http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rds:<https://github.com/magbak/otit_swt/rds_power#>
+SELECT ?wtur_label ?year ?month ?day ?hour ?minute_10 (AVG(?val_prod) as ?val_prod_avg) (AVG(?val_dir) as ?val_dir_avg) (AVG(?val_speed) as ?val_speed_avg) WHERE {
+    ?site a rds:Site .
+    ?site rdfs:label "Wind Mountain" .
+    ?site rds:hasFunctionalAspect ?wtur_asp .
+    ?wtur_asp rdfs:label ?wtur_label .
+    ?wtur rds:hasFunctionalAspectNode ?wtur_asp .
+    ?wtur a rds:A .
+    ?wtur otit:hasTimeseries ?ts_oper .
+    ?ts_oper otit:hasDataPoint ?dp_oper .
+    ?dp_oper otit:hasValue ?val_oper .
+    ?dp_oper otit:hasTimestamp ?t .
+    ?ts_oper rdfs:label "Operating" .
+    ?wtur rds:hasFunctionalAspect ?gensys_asp .
+    ?gensys rds:hasFunctionalAspectNode ?gensys_asp .
+    ?gensys a rds:RA .
+    ?gensys rds:hasFunctionalAspect ?generator_asp .
+    ?generator rds:hasFunctionalAspectNode ?generator_asp .
+    ?generator a rds:GAA .
+    ?wtur rds:hasFunctionalAspect ?weather_asp .
+    ?weather rds:hasFunctionalAspectNode ?weather_asp .
+    ?weather a rds:LE .
+    ?weather otit:hasTimeseries ?ts_speed .
+    ?ts_speed otit:hasDataPoint ?dp_speed .
+    ?dp_speed otit:hasValue ?val_speed .
+    ?dp_speed otit:hasTimestamp ?t .
+    ?ts_speed rdfs:label "Windspeed" .
+    ?weather otit:hasTimeseries ?ts_dir .
+    ?ts_dir otit:hasDataPoint ?dp_dir .
+    ?dp_dir otit:hasValue ?val_dir .
+    ?dp_dir otit:hasTimestamp ?t .
+    ?ts_dir rdfs:label "WindDirection" .
+    ?generator otit:hasTimeseries ?ts_prod .
+    ?ts_prod rdfs:label "Production" .
+    ?ts_prod otit:hasDataPoint ?dp_prod .
+    ?dp_prod otit:hasValue ?val_prod .
+    ?dp_prod otit:hasTimestamp ?t .
+    BIND(xsd:integer(FLOOR(minutes(?t) / 10.0)) as ?minute_10)
+    BIND(hours(?t) AS ?hour)
+    BIND(day(?t) AS ?day)
+    BIND(month(?t) AS ?month)
+    BIND(year(?t) AS ?year)
+    FILTER(?t >= "2022-08-30T08:46:53"^^xsd:dateTime && ?t <= "2022-08-30T21:46:53"^^xsd:dateTime) .
+}
+GROUP BY ?wtur_label ?year ?month ?day ?hour ?minute_10
+"#;
+
+        let parsed = parse_sparql_select_query(sparql).unwrap();
+        let mut preprocessor = Preprocessor::new();
+        let (preprocessed_query, variable_constraints) = preprocessor.preprocess(&parsed);
+        let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &variable_constraints);
+        let (static_rewrite, mut tsqs) = rewriter.rewrite_query(preprocessed_query).unwrap();
+        println!("Static rewrite {}", static_rewrite.to_string());
+
+        let solutions = vec![QuerySolution::from((
+            Rc::new(vec![
+                Variable::new_unchecked("wtur_label"),
+                Variable::new_unchecked("ts_datatype_0"),
+                Variable::new_unchecked("ts_external_id_0"),
+                Variable::new_unchecked("ts_datatype_1"),
+                Variable::new_unchecked("ts_external_id_1"),
+                Variable::new_unchecked("ts_datatype_2"),
+                Variable::new_unchecked("ts_external_id_2"),
+                Variable::new_unchecked("ts_datatype_3"),
+                Variable::new_unchecked("ts_external_id_3"),
+            ]),
+            vec![
+                Some(Term::Literal(Literal::new_simple_literal("wt"))),
+                Some(Term::Literal(Literal::new_simple_literal(
+                    xsd::DOUBLE.as_str(),
+                ))),
+                Some(Term::Literal(Literal::new_simple_literal("id0"))),
+                Some(Term::Literal(Literal::new_simple_literal(
+                    xsd::DOUBLE.as_str(),
+                ))),
+                Some(Term::Literal(Literal::new_simple_literal("id1"))),
+                Some(Term::Literal(Literal::new_simple_literal(
+                    xsd::DOUBLE.as_str(),
+                ))),
+                Some(Term::Literal(Literal::new_simple_literal("id2"))),
+                Some(Term::Literal(Literal::new_simple_literal(
+                    xsd::DOUBLE.as_str(),
+                ))),
+                Some(Term::Literal(Literal::new_simple_literal("id3"))),
+            ],
+        ))];
+        complete_time_series_queries(&solutions, &mut tsqs).unwrap();
+        let static_result_df = create_static_query_result_df(&static_rewrite, solutions);
+        find_all_groupby_pushdowns(&parsed, &static_result_df, &mut tsqs, &variable_constraints);
+        //let static_result_df = DataFrame::new();
+        println!("TSQS: {:?}", tsqs);
+    }
 }

@@ -10,33 +10,35 @@ impl StaticQueryRewriter {
         wrapped: &GraphPattern,
         context: &Context,
     ) -> ExReturn {
-        let wrapped_rewrite = self.rewrite_graph_pattern(
+        let mut wrapped_rewrite = self.rewrite_graph_pattern(
             wrapped,
             &ChangeType::NoChange,
             &context.extension_with(PathEntry::Exists),
         );
         let mut exr = ExReturn::new();
-        if let Some(mut gpret) = wrapped_rewrite {
-            if gpret.change_type == ChangeType::NoChange {
+        if wrapped_rewrite.graph_pattern.is_some() {
+            if wrapped_rewrite.change_type == ChangeType::NoChange {
                 exr.with_expression(Expression::Exists(Box::new(
-                    gpret.graph_pattern.take().unwrap(),
+                    wrapped_rewrite.graph_pattern.take().unwrap(),
                 )))
                 .with_change_type(ChangeType::NoChange);
                 return exr;
             } else {
-                for (v, vs) in &gpret.external_ids_in_scope {
+                for (v, vs) in &wrapped_rewrite.external_ids_in_scope {
                     self.additional_projections.insert(v.clone());
                     for vprime in vs {
                         self.additional_projections.insert(vprime.clone());
                     }
                 }
-                for (v, vs) in &gpret.datatypes_in_scope {
+                for (v, vs) in &wrapped_rewrite.datatypes_in_scope {
                     self.additional_projections.insert(v.clone());
                     for vprime in vs {
                         self.additional_projections.insert(vprime.clone());
                     }
                 }
-                if let GraphPattern::Project { inner, .. } = gpret.graph_pattern.take().unwrap() {
+                if let GraphPattern::Project { inner, .. } =
+                    wrapped_rewrite.graph_pattern.take().unwrap()
+                {
                     exr.with_graph_pattern_pushup(*inner);
                 } else {
                     todo!("Not supported")

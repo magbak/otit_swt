@@ -1,9 +1,12 @@
+pub(crate) mod expression_rewrites;
+pub(crate) mod synchronization;
+
 use crate::change_types::ChangeType;
-use crate::pushdown_setting::PushdownSetting;
 use crate::query_context::{
     AggregateExpressionInContext, Context, ExpressionInContext, PathEntry, VariableInContext,
 };
 use crate::rewriting::hash_graph_pattern;
+use crate::timeseries_query::expression_rewrites::TimeSeriesExpressionRewriteContext;
 use oxrdf::NamedNode;
 use polars::frame::DataFrame;
 use spargebra::algebra::{AggregateExpression, Expression, GraphPattern};
@@ -11,12 +14,6 @@ use spargebra::term::Variable;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum TimeSeriesExpressionRewriteContext {
-    Condition,
-    Aggregate,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Grouping {
@@ -27,9 +24,32 @@ pub struct Grouping {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TimeSeriesQuery {
-    pub pushdown_settings: HashSet<PushdownSetting>,
-    pub dropped_value_expression: bool, //Used to hinder pushdown when a value filter is dropped
+pub enum TimeSeriesQuery {
+    Basic(BasicTimeSeriesQuery),
+    Filtered(Box<TimeSeriesQuery>, Option<Expression>, bool), //Flag lets us know if filtering is complete.
+    InnerSynchronized(Vec<Box<TimeSeriesQuery>>, Vec<Synchronizer>),
+    LeftSynchronized(
+        Box<TimeSeriesQuery>,
+        Box<TimeSeriesQuery>,
+        Vec<Synchronizer>,
+        Expression,
+        bool,
+    ), //Left, Right, Filter, complete
+    Grouped(
+        Box<TimeSeriesQuery>,
+        Vec<Variable>,
+        Vec<(Variable, AggregateExpressionInContext)>,
+        u64,
+    ),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Synchronizer {
+    Identity,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BasicTimeSeriesQuery {
     pub identifier_variable: Option<Variable>,
     pub timeseries_variable: Option<VariableInContext>,
     pub data_point_variable: Option<VariableInContext>,
@@ -38,8 +58,6 @@ pub struct TimeSeriesQuery {
     pub datatype: Option<NamedNode>,
     pub timestamp_variable: Option<VariableInContext>,
     pub ids: Option<Vec<String>>,
-    pub grouping: Option<Grouping>,
-    pub conditions: Vec<ExpressionInContext>,
 }
 
 #[derive(Debug)]
@@ -62,6 +80,110 @@ impl Display for TimeSeriesValidationError {
 impl Error for TimeSeriesValidationError {}
 
 impl TimeSeriesQuery {
+    pub(crate) fn has_equivalent_value_variable(
+        &self,
+        variable: &Variable,
+        context: &Context,
+    ) -> bool {
+        for value_variable in self.get_value_variables() {
+            if value_variable.equivalent(variable, context) {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub(crate) fn get_value_variables(&self) -> Vec<&VariableInContext> {
+        match self {
+            TimeSeriesQuery::Basic(b) => {
+                if let Some(val_var) = &b.value_variable {
+                    vec![val_var]
+                } else {
+                    vec![]
+                }
+            }
+            TimeSeriesQuery::Filtered(inner, _, _) => {}
+            TimeSeriesQuery::InnerSynchronized(inners, _) => {
+                let mut vs = vec![];
+                for inner in inners {
+                    vs.extend(inner.get_value_variables())
+                }
+                vs
+            }
+            TimeSeriesQuery::LeftSynchronized(left, right, _, _, _) => {
+                let mut vs = left.get_value_variables();
+                vs.extend(right.get_value_variables());
+                vs
+            }
+            TimeSeriesQuery::Grouped(inner, _, _, _) => inner.get_value_variables(),
+        }
+    }
+
+    pub(crate) fn get_identifier_variables(&self) -> Vec<&Variable> {
+        match self {
+            TimeSeriesQuery::Basic(b) => {
+                if let Some(id_var) = &b.identifier_variable {
+                    vec![id_var]
+                } else {
+                    vec![]
+                }
+            }
+            TimeSeriesQuery::Filtered(inner, _, _) => {}
+            TimeSeriesQuery::InnerSynchronized(inners, _) => {
+                let mut vs = vec![];
+                for inner in inners {
+                    vs.extend(inner.get_identifier_variables())
+                }
+                vs
+            }
+            TimeSeriesQuery::LeftSynchronized(left, right, _, _, _) => {
+                let mut vs = left.get_identifier_variables();
+                vs.extend(right.get_identifier_variables());
+                vs
+            }
+            TimeSeriesQuery::Grouped(inner, _, _, _) => inner.get_identifier_variables(),
+        }
+    }
+
+    pub(crate) fn has_equivalent_timestamp_variable(
+        &self,
+        variable: &Variable,
+        context: &Context,
+    ) -> bool {
+        for ts in self.get_timestamp_variables() {
+            if ts.equivalent(variable, context) {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub(crate) fn get_timestamp_variables(&self) -> Vec<&VariableInContext> {
+        match self {
+            TimeSeriesQuery::Basic(b) => {
+                if let Some(v) = &b.timestamp_variable {
+                    vec![v]
+                } else {
+                    vec![]
+                }
+            }
+            TimeSeriesQuery::Filtered(t, _, _) => t.get_timestamp_variables(),
+            TimeSeriesQuery::InnerSynchronized(ts, _) => {
+                let mut vs = vec![];
+                for t in ts {
+                    vs.extend(t.get_timestamp_variables())
+                }
+                vs
+            }
+            TimeSeriesQuery::LeftSynchronized(l, r, _, _, _) => {
+                let mut vs = l.get_timestamp_variables();
+                vs.extend(r.get_timestamp_variables());
+                vs
+            }
+            TimeSeriesQuery::Grouped(inner, _, _, _) => inner.get_timestamp_variables(),
+        }
+    }
+
     pub(crate) fn validate(&self, df: &DataFrame) -> Result<(), TimeSeriesValidationError> {
         let mut expected_columns = HashSet::new();
         expected_columns.insert(self.identifier_variable.as_ref().unwrap().as_str());
@@ -247,739 +369,11 @@ impl TimeSeriesQuery {
             });
         }
     }
-
-    pub(crate) fn try_rewrite_condition_expression(
-        &mut self,
-        expr: &Expression,
-        context: &Context,
-    ) {
-        if let Some((expression_rewrite, _)) = self.try_recursive_rewrite_expression(
-            &TimeSeriesExpressionRewriteContext::Condition,
-            expr,
-            &ChangeType::Relaxed,
-            context,
-        ) {
-            self.conditions.push(ExpressionInContext::new(
-                expression_rewrite,
-                context.clone(),
-            ));
-        }
-    }
-
-    fn try_recursive_rewrite_expression(
-        &mut self,
-        rewrite_context: &TimeSeriesExpressionRewriteContext,
-        expression: &Expression,
-        required_change_direction: &ChangeType,
-        context: &Context,
-    ) -> Option<(Expression, ChangeType)> {
-        match expression {
-            Expression::Literal(lit) => {
-                return Some((Expression::Literal(lit.clone()), ChangeType::NoChange));
-            }
-            Expression::Variable(v) => {
-                if self.timestamp_variable.is_some()
-                    && self
-                        .timestamp_variable
-                        .as_ref()
-                        .unwrap()
-                        .equivalent(v, context)
-                {
-                    return Some((Expression::Variable(v.clone()), ChangeType::NoChange));
-                } else if self.value_variable.is_some()
-                    && self.value_variable.as_ref().unwrap().equivalent(v, context)
-                {
-                    if rewrite_context == &TimeSeriesExpressionRewriteContext::Aggregate
-                        || self
-                            .pushdown_settings
-                            .contains(&PushdownSetting::ValueConditions)
-                    {
-                        return Some((Expression::Variable(v.clone()), ChangeType::NoChange));
-                    } else {
-                        self.dropped_value_expression = true;
-                        return None;
-                    }
-                } else {
-                    return None;
-                }
-            }
-            Expression::Or(left, right) => {
-                let left_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    left,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::OrLeft),
-                );
-                let right_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    right,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::OrRight),
-                );
-                match required_change_direction {
-                    ChangeType::Relaxed => {
-                        if let (
-                            Some((left_rewrite, left_change)),
-                            Some((right_rewrite, right_change)),
-                        ) = (&left_rewrite_opt, &right_rewrite_opt)
-                        {
-                            if left_change == &ChangeType::NoChange
-                                && right_change == &ChangeType::NoChange
-                            {
-                                return Some((
-                                    Expression::Or(
-                                        Box::new(left_rewrite.clone()),
-                                        Box::new(right_rewrite.clone()),
-                                    ),
-                                    ChangeType::NoChange,
-                                ));
-                            } else if (left_change == &ChangeType::NoChange
-                                || left_change == &ChangeType::Relaxed)
-                                && (right_change == &ChangeType::NoChange
-                                    || right_change == &ChangeType::Relaxed)
-                            {
-                                return Some((
-                                    Expression::Or(
-                                        Box::new(left_rewrite.clone()),
-                                        Box::new(right_rewrite.clone()),
-                                    ),
-                                    ChangeType::Relaxed,
-                                ));
-                            }
-                        }
-                    }
-                    ChangeType::Constrained => {
-                        if let (
-                            Some((left_rewrite, left_change)),
-                            Some((right_rewrite, right_change)),
-                        ) = (&left_rewrite_opt, &right_rewrite_opt)
-                        {
-                            if left_change == &ChangeType::NoChange
-                                && right_change == &ChangeType::NoChange
-                            {
-                                return Some((
-                                    Expression::Or(
-                                        Box::new(left_rewrite.clone()),
-                                        Box::new(right_rewrite.clone()),
-                                    ),
-                                    ChangeType::NoChange,
-                                ));
-                            } else if (left_change == &ChangeType::NoChange
-                                || left_change == &ChangeType::Constrained)
-                                && (right_change == &ChangeType::NoChange
-                                    || right_change == &ChangeType::Constrained)
-                            {
-                                return Some((
-                                    Expression::Or(
-                                        Box::new(left_rewrite.clone()),
-                                        Box::new(right_rewrite.clone()),
-                                    ),
-                                    ChangeType::Constrained,
-                                ));
-                            }
-                        } else if let (None, Some((right_rewrite, right_change))) =
-                            (&left_rewrite_opt, &right_rewrite_opt)
-                        {
-                            if right_change == &ChangeType::NoChange
-                                || right_change == &ChangeType::Constrained
-                            {
-                                return Some((right_rewrite.clone(), ChangeType::Constrained));
-                            }
-                        } else if let (Some((left_rewrite, left_change)), None) =
-                            (&left_rewrite_opt, &right_rewrite_opt)
-                        {
-                            if left_change == &ChangeType::NoChange
-                                || left_change == &ChangeType::Constrained
-                            {
-                                return Some((left_rewrite.clone(), ChangeType::Constrained));
-                            }
-                        }
-                    }
-                    ChangeType::NoChange => {
-                        if let (
-                            Some((left_rewrite, ChangeType::NoChange)),
-                            Some((right_rewrite, ChangeType::NoChange)),
-                        ) = (left_rewrite_opt, right_rewrite_opt)
-                        {
-                            return Some((
-                                Expression::Or(Box::new(left_rewrite), Box::new(right_rewrite)),
-                                ChangeType::NoChange,
-                            ));
-                        }
-                    }
-                }
-                None
-            }
-            Expression::And(left, right) => {
-                let left_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    left,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::AndLeft),
-                );
-                let right_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    right,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::AndRight),
-                );
-                match required_change_direction {
-                    ChangeType::Constrained => {
-                        if let (
-                            Some((left_rewrite, left_change)),
-                            Some((right_rewrite, right_change)),
-                        ) = (&left_rewrite_opt, &right_rewrite_opt)
-                        {
-                            if left_change == &ChangeType::NoChange
-                                && right_change == &ChangeType::NoChange
-                            {
-                                return Some((
-                                    Expression::And(
-                                        Box::new(left_rewrite.clone()),
-                                        Box::new(right_rewrite.clone()),
-                                    ),
-                                    ChangeType::NoChange,
-                                ));
-                            } else if (left_change == &ChangeType::NoChange
-                                || left_change == &ChangeType::Constrained)
-                                && (right_change == &ChangeType::NoChange
-                                    || right_change == &ChangeType::Constrained)
-                            {
-                                return Some((
-                                    Expression::And(
-                                        Box::new(left_rewrite.clone()),
-                                        Box::new(right_rewrite.clone()),
-                                    ),
-                                    ChangeType::Constrained,
-                                ));
-                            }
-                        }
-                    }
-                    ChangeType::Relaxed => {
-                        if let (
-                            Some((left_rewrite, left_change)),
-                            Some((right_rewrite, right_change)),
-                        ) = (&left_rewrite_opt, &right_rewrite_opt)
-                        {
-                            if left_change == &ChangeType::NoChange
-                                && right_change == &ChangeType::NoChange
-                            {
-                                return Some((
-                                    Expression::And(
-                                        Box::new(left_rewrite.clone()),
-                                        Box::new(right_rewrite.clone()),
-                                    ),
-                                    ChangeType::NoChange,
-                                ));
-                            } else if (left_change == &ChangeType::NoChange
-                                || left_change == &ChangeType::Relaxed)
-                                && (right_change == &ChangeType::NoChange
-                                    || right_change == &ChangeType::Relaxed)
-                            {
-                                return Some((
-                                    Expression::And(
-                                        Box::new(left_rewrite.clone()),
-                                        Box::new(right_rewrite.clone()),
-                                    ),
-                                    ChangeType::Relaxed,
-                                ));
-                            }
-                        } else if let (None, Some((right_rewrite, right_change))) =
-                            (&left_rewrite_opt, &right_rewrite_opt)
-                        {
-                            if right_change == &ChangeType::NoChange
-                                || right_change == &ChangeType::Relaxed
-                            {
-                                return Some((right_rewrite.clone(), ChangeType::Relaxed));
-                            }
-                        } else if let (Some((left_rewrite, left_change)), None) =
-                            (&left_rewrite_opt, &right_rewrite_opt)
-                        {
-                            if left_change == &ChangeType::NoChange
-                                || left_change == &ChangeType::Relaxed
-                            {
-                                return Some((left_rewrite.clone(), ChangeType::Relaxed));
-                            }
-                        }
-                    }
-                    ChangeType::NoChange => {
-                        if let (
-                            Some((left_rewrite, ChangeType::NoChange)),
-                            Some((right_rewrite, ChangeType::NoChange)),
-                        ) = (left_rewrite_opt, right_rewrite_opt)
-                        {
-                            return Some((
-                                Expression::And(Box::new(left_rewrite), Box::new(right_rewrite)),
-                                ChangeType::NoChange,
-                            ));
-                        }
-                    }
-                }
-                None
-            }
-            Expression::Equal(left, right) => {
-                let left_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    left,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::EqualLeft),
-                );
-                let right_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    right,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::EqualRight),
-                );
-                if let (
-                    Some((left_rewrite, ChangeType::NoChange)),
-                    Some((right_rewrite, ChangeType::NoChange)),
-                ) = (left_rewrite_opt, right_rewrite_opt)
-                {
-                    return Some((
-                        Expression::Equal(Box::new(left_rewrite), Box::new(right_rewrite)),
-                        ChangeType::NoChange,
-                    ));
-                }
-                None
-            }
-            Expression::Greater(left, right) => {
-                let left_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    left,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::GreaterLeft),
-                );
-                let right_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    right,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::GreaterRight),
-                );
-                if let (
-                    Some((left_rewrite, ChangeType::NoChange)),
-                    Some((right_rewrite, ChangeType::NoChange)),
-                ) = (left_rewrite_opt, right_rewrite_opt)
-                {
-                    return Some((
-                        Expression::Greater(Box::new(left_rewrite), Box::new(right_rewrite)),
-                        ChangeType::NoChange,
-                    ));
-                }
-                None
-            }
-            Expression::GreaterOrEqual(left, right) => {
-                let left_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    left,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::GreaterOrEqualLeft),
-                );
-                let right_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    right,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::GreaterOrEqualRight),
-                );
-                if let (
-                    Some((left_rewrite, ChangeType::NoChange)),
-                    Some((right_rewrite, ChangeType::NoChange)),
-                ) = (left_rewrite_opt, right_rewrite_opt)
-                {
-                    return Some((
-                        Expression::GreaterOrEqual(Box::new(left_rewrite), Box::new(right_rewrite)),
-                        ChangeType::NoChange,
-                    ));
-                }
-                None
-            }
-            Expression::Less(left, right) => {
-                let left_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    left,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::LessLeft),
-                );
-                let right_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    right,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::LessRight),
-                );
-                if let (
-                    Some((left_rewrite, ChangeType::NoChange)),
-                    Some((right_rewrite, ChangeType::NoChange)),
-                ) = (left_rewrite_opt, right_rewrite_opt)
-                {
-                    return Some((
-                        Expression::Less(Box::new(left_rewrite), Box::new(right_rewrite)),
-                        ChangeType::NoChange,
-                    ));
-                }
-                None
-            }
-            Expression::LessOrEqual(left, right) => {
-                let left_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    left,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::LessOrEqualLeft),
-                );
-                let right_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    right,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::LessOrEqualRight),
-                );
-                if let (
-                    Some((left_rewrite, ChangeType::NoChange)),
-                    Some((right_rewrite, ChangeType::NoChange)),
-                ) = (left_rewrite_opt, right_rewrite_opt)
-                {
-                    return Some((
-                        Expression::LessOrEqual(Box::new(left_rewrite), Box::new(right_rewrite)),
-                        ChangeType::NoChange,
-                    ));
-                }
-                None
-            }
-            Expression::In(left, right) => {
-                let left_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    left,
-                    &ChangeType::NoChange,
-                    &context.extension_with(PathEntry::InLeft),
-                );
-                if let Some((left_rewrite, ChangeType::NoChange)) = left_rewrite_opt {
-                    let right_rewrites_opt = right
-                        .iter()
-                        .enumerate()
-                        .map(|(i, e)| {
-                            self.try_recursive_rewrite_expression(
-                                rewrite_context,
-                                e,
-                                required_change_direction,
-                                &context.extension_with(PathEntry::InRight(i as u16)),
-                            )
-                        })
-                        .collect::<Vec<Option<(Expression, ChangeType)>>>();
-                    if right_rewrites_opt.iter().all(|x| x.is_some()) {
-                        let right_rewrites = right_rewrites_opt
-                            .into_iter()
-                            .map(|x| x.unwrap())
-                            .collect::<Vec<(Expression, ChangeType)>>();
-                        if right_rewrites
-                            .iter()
-                            .all(|(_, c)| c == &ChangeType::NoChange)
-                        {
-                            return Some((
-                                Expression::In(
-                                    Box::new(left_rewrite),
-                                    right_rewrites.into_iter().map(|(e, _)| e).collect(),
-                                ),
-                                ChangeType::NoChange,
-                            ));
-                        }
-                    } else if required_change_direction == &ChangeType::Constrained
-                        && right_rewrites_opt.iter().any(|x| x.is_some())
-                    {
-                        let right_rewrites = right_rewrites_opt
-                            .into_iter()
-                            .filter(|x| x.is_some())
-                            .map(|x| x.unwrap())
-                            .collect::<Vec<(Expression, ChangeType)>>();
-                        if right_rewrites
-                            .iter()
-                            .all(|(_, c)| c == &ChangeType::NoChange)
-                        {
-                            return Some((
-                                Expression::In(
-                                    Box::new(left_rewrite),
-                                    right_rewrites.into_iter().map(|(e, _)| e).collect(),
-                                ),
-                                ChangeType::Constrained,
-                            ));
-                        }
-                    }
-                }
-                None
-            }
-            Expression::Add(left, right) => {
-                let left_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    left,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::AddLeft),
-                );
-                let right_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    right,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::AddRight),
-                );
-                if let (
-                    Some((left_rewrite, ChangeType::NoChange)),
-                    Some((right_rewrite, ChangeType::NoChange)),
-                ) = (left_rewrite_opt, right_rewrite_opt)
-                {
-                    return Some((
-                        Expression::Add(Box::new(left_rewrite), Box::new(right_rewrite)),
-                        ChangeType::NoChange,
-                    ));
-                }
-                None
-            }
-            Expression::Subtract(left, right) => {
-                let left_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    left,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::SubtractLeft),
-                );
-                let right_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    right,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::SubtractRight),
-                );
-                if let (
-                    Some((left_rewrite, ChangeType::NoChange)),
-                    Some((right_rewrite, ChangeType::NoChange)),
-                ) = (left_rewrite_opt, right_rewrite_opt)
-                {
-                    return Some((
-                        Expression::Subtract(Box::new(left_rewrite), Box::new(right_rewrite)),
-                        ChangeType::NoChange,
-                    ));
-                }
-                None
-            }
-            Expression::Multiply(left, right) => {
-                let left_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    left,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::MultiplyLeft),
-                );
-                let right_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    right,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::MultiplyRight),
-                );
-                if let (
-                    Some((left_rewrite, ChangeType::NoChange)),
-                    Some((right_rewrite, ChangeType::NoChange)),
-                ) = (left_rewrite_opt, right_rewrite_opt)
-                {
-                    return Some((
-                        Expression::Multiply(Box::new(left_rewrite), Box::new(right_rewrite)),
-                        ChangeType::NoChange,
-                    ));
-                }
-                None
-            }
-            Expression::Divide(left, right) => {
-                let left_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    left,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::DivideLeft),
-                );
-                let right_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    right,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::DivideRight),
-                );
-                if let (
-                    Some((left_rewrite, ChangeType::NoChange)),
-                    Some((right_rewrite, ChangeType::NoChange)),
-                ) = (left_rewrite_opt, right_rewrite_opt)
-                {
-                    return Some((
-                        Expression::Divide(Box::new(left_rewrite), Box::new(right_rewrite)),
-                        ChangeType::NoChange,
-                    ));
-                }
-                None
-            }
-            Expression::UnaryPlus(inner) => {
-                let inner_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    inner,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::UnaryPlus),
-                );
-                if let Some((inner_rewrite, ChangeType::NoChange)) = inner_rewrite_opt {
-                    return Some((
-                        Expression::UnaryPlus(Box::new(inner_rewrite)),
-                        ChangeType::NoChange,
-                    ));
-                }
-                None
-            }
-            Expression::UnaryMinus(inner) => {
-                let inner_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    inner,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::UnaryMinus),
-                );
-                if let Some((inner_rewrite, ChangeType::NoChange)) = inner_rewrite_opt {
-                    return Some((
-                        Expression::UnaryMinus(Box::new(inner_rewrite)),
-                        ChangeType::NoChange,
-                    ));
-                }
-                None
-            }
-            Expression::Not(inner) => {
-                let use_direction = match required_change_direction {
-                    ChangeType::Relaxed => ChangeType::Constrained,
-                    ChangeType::Constrained => ChangeType::Relaxed,
-                    ChangeType::NoChange => ChangeType::NoChange,
-                };
-                let inner_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    inner,
-                    &use_direction,
-                    &context.extension_with(PathEntry::Not),
-                );
-                if let Some((inner_rewrite, inner_change)) = inner_rewrite_opt {
-                    match inner_change {
-                        ChangeType::Relaxed => {
-                            return Some((
-                                Expression::Not(Box::new(inner_rewrite)),
-                                ChangeType::Constrained,
-                            ));
-                        }
-                        ChangeType::Constrained => {
-                            return Some((
-                                Expression::Not(Box::new(inner_rewrite)),
-                                ChangeType::Relaxed,
-                            ));
-                        }
-                        ChangeType::NoChange => {
-                            return Some((
-                                Expression::Not(Box::new(inner_rewrite)),
-                                ChangeType::NoChange,
-                            ));
-                        }
-                    }
-                }
-                None
-            }
-            Expression::If(left, middle, right) => {
-                let left_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    left,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::IfLeft),
-                );
-                let middle_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    middle,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::IfMiddle),
-                );
-                let right_rewrite_opt = self.try_recursive_rewrite_expression(
-                    rewrite_context,
-                    right,
-                    required_change_direction,
-                    &context.extension_with(PathEntry::IfRight),
-                );
-                if let (
-                    Some((left_rewrite, ChangeType::NoChange)),
-                    Some((middle_rewrite, ChangeType::NoChange)),
-                    Some((right_rewrite, ChangeType::NoChange)),
-                ) = (left_rewrite_opt, middle_rewrite_opt, right_rewrite_opt)
-                {
-                    return Some((
-                        Expression::If(
-                            Box::new(left_rewrite),
-                            Box::new(middle_rewrite),
-                            Box::new(right_rewrite),
-                        ),
-                        ChangeType::NoChange,
-                    ));
-                }
-                None
-            }
-            Expression::Coalesce(inner) => {
-                let inner_rewrites_opt = inner
-                    .iter()
-                    .enumerate()
-                    .map(|(i, e)| {
-                        self.try_recursive_rewrite_expression(
-                            rewrite_context,
-                            e,
-                            required_change_direction,
-                            &context.extension_with(PathEntry::Coalesce(i as u16)),
-                        )
-                    })
-                    .collect::<Vec<Option<(Expression, ChangeType)>>>();
-                if inner_rewrites_opt.iter().all(|x| x.is_some()) {
-                    let inner_rewrites = inner_rewrites_opt
-                        .into_iter()
-                        .map(|x| x.unwrap())
-                        .collect::<Vec<(Expression, ChangeType)>>();
-                    if inner_rewrites
-                        .iter()
-                        .all(|(_, c)| c == &ChangeType::NoChange)
-                    {
-                        return Some((
-                            Expression::Coalesce(
-                                inner_rewrites.into_iter().map(|(e, _)| e).collect(),
-                            ),
-                            ChangeType::NoChange,
-                        ));
-                    }
-                }
-                None
-            }
-            Expression::FunctionCall(left, right) => {
-                let right_rewrites_opt = right
-                    .iter()
-                    .enumerate()
-                    .map(|(i, e)| {
-                        self.try_recursive_rewrite_expression(
-                            rewrite_context,
-                            e,
-                            required_change_direction,
-                            &context.extension_with(PathEntry::FunctionCall(i as u16)),
-                        )
-                    })
-                    .collect::<Vec<Option<(Expression, ChangeType)>>>();
-                if right_rewrites_opt.iter().all(|x| x.is_some()) {
-                    let right_rewrites = right_rewrites_opt
-                        .into_iter()
-                        .map(|x| x.unwrap())
-                        .collect::<Vec<(Expression, ChangeType)>>();
-                    if right_rewrites
-                        .iter()
-                        .all(|(_, c)| c == &ChangeType::NoChange)
-                    {
-                        return Some((
-                            Expression::FunctionCall(
-                                left.clone(),
-                                right_rewrites.into_iter().map(|(e, _)| e).collect(),
-                            ),
-                            ChangeType::NoChange,
-                        ));
-                    }
-                }
-                None
-            }
-            _ => None,
-        }
-    }
 }
 
-impl TimeSeriesQuery {
-    pub fn new_empty(pushdown_settings: HashSet<PushdownSetting>) -> TimeSeriesQuery {
-        TimeSeriesQuery {
-            pushdown_settings,
-            dropped_value_expression: false,
+impl BasicTimeSeriesQuery {
+    pub fn new_empty() -> BasicTimeSeriesQuery {
+        BasicTimeSeriesQuery {
             identifier_variable: None,
             timeseries_variable: None,
             data_point_variable: None,
@@ -988,8 +382,6 @@ impl TimeSeriesQuery {
             datatype: None,
             timestamp_variable: None,
             ids: None,
-            grouping: None,
-            conditions: vec![],
         }
     }
 }

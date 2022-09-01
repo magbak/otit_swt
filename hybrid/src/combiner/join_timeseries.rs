@@ -17,7 +17,10 @@ pub fn join_tsq(
             columns.insert(c.to_string());
         }
     }
-    assert!(columns.contains(tsq.identifier_variable.as_ref().unwrap().as_str()));
+    let id_vars = tsq.get_identifier_variables();
+    for id_var in &id_vars {
+        assert!(columns.contains(id_var.as_str()));
+    }
     let mut output_lf = input_lf.join(
         df.lazy(),
         join_on.as_slice(),
@@ -25,7 +28,10 @@ pub fn join_tsq(
         JoinType::Inner,
     );
 
-    output_lf = output_lf.drop_columns([tsq.identifier_variable.as_ref().unwrap().as_str()]);
-    columns.remove(tsq.identifier_variable.as_ref().unwrap().as_str());
+    let id_vars_names: Vec<&str> = id_vars.iter().map(|x| x.as_str()).collect();
+    output_lf = output_lf.drop_columns(id_vars_names);
+    for var_name in id_vars_names {
+        columns.remove(var_name);
+    }
     output_lf
 }

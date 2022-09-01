@@ -273,13 +273,16 @@ impl TimeSeriesTable {
                                     self.col_day_oper_const_day(right_day, BinOper::SmallerThan),
                                 ),
                             );
-                            let year_equal_and_month_equal_and_day_equal_and_original = SimpleExpr::Binary(
-                                Box::new(self.year_equal_and_month_equal_and_day_equal(right_year, right_month, right_day)),
-                                BinOper::And,
-                                Box::new(
-                                    original.clone(),
-                                ),
-                            );
+                            let year_equal_and_month_equal_and_day_equal_and_original =
+                                SimpleExpr::Binary(
+                                    Box::new(self.year_equal_and_month_equal_and_day_equal(
+                                        right_year,
+                                        right_month,
+                                        right_day,
+                                    )),
+                                    BinOper::And,
+                                    Box::new(original.clone()),
+                                );
                             return Some(iterated_binoper(
                                 vec![
                                     year_smaller_than_year_expr,
@@ -321,13 +324,14 @@ impl TimeSeriesTable {
                                         self.col_day_oper_const_day(left_day, BinOper::SmallerThan),
                                     ),
                                 );
-                                let year_equal_and_month_equal_and_day_equal_and_original = SimpleExpr::Binary(
-                                Box::new(self.year_equal_and_month_equal_and_day_equal(left_year, left_month, left_day)),
-                                BinOper::And,
-                                Box::new(
-                                    original.clone(),
-                                ),
-                            );
+                                let year_equal_and_month_equal_and_day_equal_and_original =
+                                    SimpleExpr::Binary(
+                                        Box::new(self.year_equal_and_month_equal_and_day_equal(
+                                            left_year, left_month, left_day,
+                                        )),
+                                        BinOper::And,
+                                        Box::new(original.clone()),
+                                    );
                                 return Some(iterated_binoper(
                                     vec![
                                         year_smaller_than_year_expr,

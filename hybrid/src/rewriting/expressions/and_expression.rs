@@ -34,20 +34,19 @@ impl StaticQueryRewriter {
             .with_pushups(&mut right_rewrite);
         if left_rewrite.expression.is_some()
             && right_rewrite.expression.is_some()
-                && left_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
-                    && right_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
-                {
-                    let left_expression_rewrite = left_rewrite.expression.take().unwrap();
-                    let right_expression_rewrite = right_rewrite.expression.take().unwrap();
+            && left_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
+            && right_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
+        {
+            let left_expression_rewrite = left_rewrite.expression.take().unwrap();
+            let right_expression_rewrite = right_rewrite.expression.take().unwrap();
 
-                    exr.with_expression(Expression::And(
-                        Box::new(left_expression_rewrite),
-                        Box::new(right_expression_rewrite),
-                    ))
-                    .with_change_type(ChangeType::NoChange);
-                    return exr;
-                }
-        else {
+            exr.with_expression(Expression::And(
+                Box::new(left_expression_rewrite),
+                Box::new(right_expression_rewrite),
+            ))
+            .with_change_type(ChangeType::NoChange);
+            return exr;
+        } else {
             match required_change_direction {
                 ChangeType::Relaxed => {
                     if left_rewrite.expression.is_some() {

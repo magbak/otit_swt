@@ -4,7 +4,7 @@ mod partitioning_support;
 
 use crate::timeseries_query::TimeSeriesQuery;
 use log::debug;
-use oxrdf::{NamedNode};
+use oxrdf::NamedNode;
 use sea_query::{Alias, ColumnRef, PostgresQueryBuilder, Query, SimpleExpr};
 use sea_query::{Expr as SeaExpr, Iden, Value};
 use std::collections::HashMap;
@@ -227,16 +227,14 @@ mod tests {
     use crate::pushdown_setting::all_pushdowns;
     use crate::query_context::{Context, ExpressionInContext, VariableInContext};
     use crate::timeseries_database::timeseries_sql_rewrite::TimeSeriesTable;
-    use crate::timeseries_query::TimeSeriesQuery;
+    use crate::timeseries_query::{BasicTimeSeriesQuery, TimeSeriesQuery};
     use oxrdf::vocab::xsd;
     use oxrdf::{Literal, NamedNode, Variable};
     use spargebra::algebra::Expression;
 
     #[test]
     pub fn test_translate() {
-        let tsq = TimeSeriesQuery {
-            pushdown_settings: all_pushdowns(),
-            dropped_value_expression: false,
+        let basic_tsq = BasicTimeSeriesQuery {
             identifier_variable: Some(Variable::new_unchecked("id")),
             timeseries_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("ts"),
@@ -257,15 +255,18 @@ mod tests {
                 Context::new(),
             )),
             ids: Some(vec!["A".to_string(), "B".to_string()]),
-            grouping: None,
-            conditions: vec![ExpressionInContext {
-                expression: Expression::LessOrEqual(
-                    Box::new(Expression::Variable(Variable::new_unchecked("t"))),
-                    Box::new(Expression::Literal(Literal::new_typed_literal("2022-06-01T08:46:53", xsd::DATE_TIME))),
-                ),
-                context: Context::new(),
-            }],
         };
+        let tsq = TimeSeriesQuery::Filtered(
+            Box::new(TimeSeriesQuery::Basic(basic_tsq)),
+            Some(Expression::LessOrEqual(
+                Box::new(Expression::Variable(Variable::new_unchecked("t"))),
+                Box::new(Expression::Literal(Literal::new_typed_literal(
+                    "2022-06-01T08:46:53",
+                    xsd::DATE_TIME,
+                ))),
+            )),
+            false,
+        );
 
         let table = TimeSeriesTable {
             schema: Some("s3.otit-benchmark".into()),
@@ -281,6 +282,9 @@ mod tests {
 
         let sql_query = table.create_query(&tsq).unwrap();
         //println!("{}", sql_query)
-        assert_eq!(&sql_query, r#"SELECT "dir3" AS "id", "timestamp" AS "t", "value" AS "v" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('A', 'B') AND (("dir0" < 2022) OR (("dir0" = 2022) AND ("dir1" < 6)) OR ("dir0" = 2022) AND ("dir1" = 6) AND ("dir2" < 1) OR ("dir0" = 2022) AND ("dir1" = 6) AND ("dir2" = 1) AND ("timestamp" <= '2022-06-01 08:46:53'))"#);
+        assert_eq!(
+            &sql_query,
+            r#"SELECT "dir3" AS "id", "timestamp" AS "t", "value" AS "v" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('A', 'B') AND (("dir0" < 2022) OR (("dir0" = 2022) AND ("dir1" < 6)) OR ("dir0" = 2022) AND ("dir1" = 6) AND ("dir2" < 1) OR ("dir0" = 2022) AND ("dir1" = 6) AND ("dir2" = 1) AND ("timestamp" <= '2022-06-01 08:46:53'))"#
+        );
     }
 }

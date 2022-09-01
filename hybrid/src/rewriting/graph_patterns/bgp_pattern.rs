@@ -1,10 +1,11 @@
 use super::StaticQueryRewriter;
 use crate::change_types::ChangeType;
-use crate::constants::{HAS_DATATYPE, HAS_EXTERNAL_ID};
+use crate::constants::{HAS_DATATYPE, HAS_DATA_POINT, HAS_EXTERNAL_ID, HAS_TIMESTAMP, HAS_VALUE};
 use crate::constraints::{Constraint, VariableConstraints};
-use crate::query_context::{Context, PathEntry};
+use crate::query_context::{Context, PathEntry, VariableInContext};
 use crate::rewriting::graph_patterns::GPReturn;
-use log::debug;
+use crate::timeseries_query::synchronization::create_identity_synchronized_queries;
+use crate::timeseries_query::{BasicTimeSeriesQuery, TimeSeriesQuery};
 use oxrdf::{NamedNode, Variable};
 use spargebra::algebra::GraphPattern;
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
@@ -15,12 +16,13 @@ impl StaticQueryRewriter {
         &mut self,
         patterns: &Vec<TriplePattern>,
         context: &Context,
-    ) -> Option<GPReturn> {
+    ) -> GPReturn {
         let context = context.extension_with(PathEntry::BGP);
         let mut new_triples = vec![];
         let mut dynamic_triples = vec![];
         let mut datatypes_in_scope = HashMap::new();
         let mut external_ids_in_scope = HashMap::new();
+        let mut new_basic_tsqs = vec![];
         for t in patterns {
             //If the object is an external timeseries, we need to do get the external id
             if let TermPattern::Variable(object_var) = &t.object {
@@ -43,12 +45,13 @@ impl StaticQueryRewriter {
                             )
                             .unwrap();
                             self.variable_counter += 1;
-                            self.create_time_series_query(
+                            let btsq = self.create_basic_time_series_query(
                                 &object_var,
                                 &external_id_var,
                                 &datatype_var,
                                 &context,
                             );
+                            new_basic_tsqs.push(btsq);
                             let new_external_id_triple = TriplePattern {
                                 subject: t.object.clone(),
                                 predicate: NamedNodePattern::NamedNode(
@@ -111,11 +114,17 @@ impl StaticQueryRewriter {
         }
 
         //We wait until last to process the dynamic triples, making sure all relationships are known first.
-        self.process_dynamic_triples(dynamic_triples, &context);
+        process_dynamic_triples(&mut new_basic_tsqs, dynamic_triples, &context);
+        let mut new_tsqs = new_basic_tsqs
+            .into_iter()
+            .map(|x| TimeSeriesQuery::Basic(x))
+            .collect();
+        if self.allow_compound_timeseries_queries {
+            new_tsqs = create_identity_synchronized_queries(new_tsqs)
+        }
 
         if new_triples.is_empty() {
-            debug!("New triples in static BGP was empty, returning None");
-            None
+            panic!("Should never happen!")
         } else {
             let mut variables_in_scope = HashSet::new();
             for t in &new_triples {
@@ -135,8 +144,78 @@ impl StaticQueryRewriter {
                 variables_in_scope,
                 datatypes_in_scope,
                 external_ids_in_scope,
+                new_tsqs,
             );
-            Some(gpr)
+            gpr
+        }
+    }
+}
+
+fn process_dynamic_triples(
+    local_basic_tsqs: &mut Vec<BasicTimeSeriesQuery>,
+    dynamic_triples: Vec<&TriplePattern>,
+    context: &Context,
+) {
+    for t in &dynamic_triples {
+        if let NamedNodePattern::NamedNode(named_predicate_node) = &t.predicate {
+            if named_predicate_node == HAS_DATA_POINT {
+                for q in local_basic_tsqs {
+                    if let (Some(q_timeseries_variable), TermPattern::Variable(subject_variable)) =
+                        (&q.timeseries_variable, &t.subject)
+                    {
+                        if q_timeseries_variable.partial(subject_variable, context) {
+                            if let TermPattern::Variable(ts_var) = &t.object {
+                                q.data_point_variable =
+                                    Some(VariableInContext::new(ts_var.clone(), context.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for t in &dynamic_triples {
+        if let NamedNodePattern::NamedNode(named_predicate_node) = &t.predicate {
+            if named_predicate_node == HAS_VALUE {
+                for q in local_basic_tsqs {
+                    if q.value_variable.is_none() {
+                        if let (
+                            Some(q_data_point_variable),
+                            TermPattern::Variable(subject_variable),
+                        ) = (&q.data_point_variable, &t.subject)
+                        {
+                            if q_data_point_variable.partial(subject_variable, context) {
+                                if let TermPattern::Variable(value_var) = &t.object {
+                                    q.value_variable = Some(VariableInContext::new(
+                                        value_var.clone(),
+                                        context.clone(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if named_predicate_node == HAS_TIMESTAMP {
+                for q in local_basic_tsqs {
+                    if q.timestamp_variable.is_none() {
+                        if let (
+                            Some(q_data_point_variable),
+                            TermPattern::Variable(subject_variable),
+                        ) = (&q.data_point_variable, &t.subject)
+                        {
+                            if q_data_point_variable.partial(subject_variable, context) {
+                                if let TermPattern::Variable(timestamp_var) = &t.object {
+                                    q.timestamp_variable = Some(VariableInContext::new(
+                                        timestamp_var.clone(),
+                                        context.clone(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -11,8 +11,8 @@ impl StaticQueryRewriter {
         &mut self,
         variables: &Vec<Variable>,
         bindings: &Vec<Vec<Option<GroundTerm>>>,
-    ) -> Option<GPReturn> {
-        return Some(GPReturn::new(
+    ) -> GPReturn {
+        return GPReturn::new(
             GraphPattern::Values {
                 variables: variables.iter().map(|v| v.clone()).collect(),
                 bindings: bindings.iter().map(|b| b.clone()).collect(),
@@ -21,6 +21,7 @@ impl StaticQueryRewriter {
             variables.iter().map(|v| v.clone()).collect(),
             HashMap::new(),
             HashMap::new(),
-        ));
+            vec![],
+        );
     }
 }

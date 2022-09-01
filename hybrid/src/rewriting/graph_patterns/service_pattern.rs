@@ -12,20 +12,21 @@ impl StaticQueryRewriter {
         inner: &GraphPattern,
         silent: &bool,
         context: &Context,
-    ) -> Option<GPReturn> {
-        if let Some(mut gpr_inner) = self.rewrite_graph_pattern(
+    ) -> GPReturn {
+        let mut inner_rewrite = self.rewrite_graph_pattern(
             inner,
             &ChangeType::NoChange,
             &context.extension_with(PathEntry::ServiceInner),
-        ) {
-            let inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
-            gpr_inner.with_graph_pattern(GraphPattern::Service {
+        );
+        if inner_rewrite.graph_pattern.is_some() {
+            let inner_graph_pattern = inner_rewrite.graph_pattern.take().unwrap();
+            inner_rewrite.with_graph_pattern(GraphPattern::Service {
                 name: name.clone(),
                 inner: Box::new(inner_graph_pattern),
                 silent: silent.clone(),
             });
-            return Some(gpr_inner);
+            return inner_rewrite;
         }
-        None
+        panic!("Should never happen")
     }
 }

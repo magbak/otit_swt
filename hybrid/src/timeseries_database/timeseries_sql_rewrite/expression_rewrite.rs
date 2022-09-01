@@ -1,14 +1,14 @@
+use oxrdf::vocab::xsd;
+use polars::export::chrono::{DateTime, NaiveDateTime, Utc};
+use sea_query::Expr as SeaExpr;
+use sea_query::{BinOper, ColumnRef, Function, SimpleExpr, UnOper, Value};
+use spargebra::algebra::Expression;
 use std::collections::HashMap;
 use std::rc::Rc;
-use oxrdf::vocab::xsd;
-use sea_query::{BinOper, ColumnRef, Function, SimpleExpr, UnOper, Value};
-use sea_query::{Expr as SeaExpr};
-use spargebra::algebra::Expression;
-use polars::export::chrono::{DateTime, NaiveDateTime, Utc};
 
+use super::TimeSeriesTable;
 use crate::constants::DATETIME_AS_SECONDS;
 use crate::timeseries_database::timeseries_sql_rewrite::{Name, TimeSeriesQueryToSQLError};
-use super::TimeSeriesTable;
 
 impl TimeSeriesTable {
     pub(crate) fn sparql_expression_to_sql_expression(

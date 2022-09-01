@@ -1,12 +1,11 @@
-use std::collections::HashMap;
+use super::TimeSeriesTable;
+use crate::timeseries_database::timeseries_sql_rewrite::{Name, TimeSeriesQueryToSQLError};
 use sea_query::{Function, SimpleExpr};
 use spargebra::algebra::AggregateExpression;
-use crate::timeseries_database::timeseries_sql_rewrite::{Name, TimeSeriesQueryToSQLError};
-use super::TimeSeriesTable;
-
+use std::collections::HashMap;
 
 impl TimeSeriesTable {
-        //TODO: Support distinct in aggregates.. how???
+    //TODO: Support distinct in aggregates.. how???
     pub(crate) fn sparql_aggregate_expression_to_sql_expression(
         &self,
         agg: &AggregateExpression,

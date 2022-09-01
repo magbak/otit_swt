@@ -20,13 +20,7 @@ pub fn lazy_triple_pattern(
                 if !columns.contains(obj_var.as_str()) {
                     for i in 0..time_series.len() {
                         let (tsq, _) = time_series.get(i).unwrap();
-                        if tsq.value_variable.as_ref().is_some()
-                            && tsq
-                                .value_variable
-                                .as_ref()
-                                .unwrap()
-                                .equivalent(obj_var, context)
-                        {
+                        if tsq.has_equivalent_value_variable(obj_var, context) {
                             found_index = Some(i);
                             break;
                         }

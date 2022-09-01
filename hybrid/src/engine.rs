@@ -64,8 +64,12 @@ impl Engine {
         let mut preprocessor = Preprocessor::new();
         let (preprocessed_query, variable_constraints) = preprocessor.preprocess(&parsed_query);
         debug!("Constraints: {:?}", variable_constraints);
-        let mut rewriter =
-            StaticQueryRewriter::new(self.pushdown_settings.clone(), &variable_constraints);
+        let mut rewriter = StaticQueryRewriter::new(
+            self.pushdown_settings.clone(),
+            &variable_constraints,
+            self.time_series_database
+                .allow_compound_timeseries_queries(),
+        );
         let (static_rewrite, mut time_series_queries) =
             rewriter.rewrite_query(preprocessed_query).unwrap();
         debug!("Produced static rewrite: {}", static_rewrite);
@@ -121,7 +125,7 @@ impl Engine {
     }
 }
 
-fn complete_time_series_queries(
+pub(crate) fn complete_time_series_queries(
     static_query_solutions: &Vec<QuerySolution>,
     time_series_queries: &mut Vec<TimeSeriesQuery>,
 ) -> Result<(), OrchestrationError> {

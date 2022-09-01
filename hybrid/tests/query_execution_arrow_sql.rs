@@ -198,7 +198,7 @@ fn timeseries_table() -> TimeSeriesTable {
         value_datatype: xsd::UNSIGNED_INT.into_owned(),
         year_column: None,
         month_column: None,
-        day_column: None
+        day_column: None,
     }
 }
 

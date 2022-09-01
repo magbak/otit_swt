@@ -6,6 +6,8 @@ use hybrid::splitter::parse_sparql_select_query;
 use hybrid::timeseries_query::TimeSeriesQuery;
 use oxrdf::vocab::xsd;
 use oxrdf::Literal;
+use polars_core::frame::DataFrame;
+use polars_core::series::Series;
 use spargebra::algebra::Expression;
 use spargebra::algebra::Expression::{And, Greater, Less};
 use spargebra::term::Variable;
@@ -596,7 +598,7 @@ fn test_exists_query() {
 
 #[test]
 fn test_filter_lost_bug() {
-   let sparql = r#"
+    let sparql = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX otit:<https://github.com/magbak/otit_swt#>
     PREFIX wp:<https://github.com/magbak/otit_swt/windpower_example#>
