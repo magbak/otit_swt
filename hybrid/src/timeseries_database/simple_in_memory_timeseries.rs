@@ -5,7 +5,7 @@ use crate::timeseries_query::{BasicTimeSeriesQuery, GroupedTimeSeriesQuery, Time
 use async_trait::async_trait;
 use polars::frame::DataFrame;
 use polars::prelude::{col, concat, lit, Expr, IntoLazy};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::error::Error;
 use spargebra::algebra::Expression;
 use crate::query_context::{Context, PathEntry};
@@ -48,7 +48,6 @@ impl InMemoryTimeseriesDatabase {
 
     fn execute_basic(&self, btsq:&BasicTimeSeriesQuery) -> Result<DataFrame,  Box<dyn Error>> {
         let mut lfs = vec![];
-        let mut columns: HashSet<String> = HashSet::new();
         for id in btsq.ids.as_ref().unwrap() {
             if let Some(df) = self.frames.get(id) {
                 assert!(btsq.identifier_variable.is_some());
@@ -66,7 +65,6 @@ impl InMemoryTimeseriesDatabase {
                 } else {
                     df = df.drop("timestamp").expect("Drop timestamp problem");
                 }
-                columns = HashSet::from_iter(df.get_column_names_owned().into_iter());
                 let mut lf = df.lazy();
                 lf = lf.with_column(
                     lit(id.to_string()).alias(btsq.identifier_variable.as_ref().unwrap().as_str()),
@@ -78,7 +76,7 @@ impl InMemoryTimeseriesDatabase {
                 panic!("Missing frame");
             }
         }
-        let mut out_lf = concat(lfs, true)?;
+        let out_lf = concat(lfs, true)?;
         Ok(out_lf.collect().unwrap())
     }
 

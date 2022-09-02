@@ -29,7 +29,7 @@ pub fn join_tsq(
     );
 
     let id_vars_names: Vec<&str> = id_vars.iter().map(|x| x.as_str()).collect();
-    output_lf = output_lf.drop_columns(id_vars_names);
+    output_lf = output_lf.drop_columns(id_vars_names.as_slice());
     for var_name in id_vars_names {
         columns.remove(var_name);
     }

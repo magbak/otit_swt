@@ -120,7 +120,7 @@ pub fn create_query(
                 todo!("Not implemented yet")
             }
         }
-        TimeSeriesQuery::LeftSynchronized(left, right, synchronizers, filter, _) => {
+        TimeSeriesQuery::LeftSynchronized(_left, _right, _synchronizers, _filter, _) => {
             todo!()
         }
         TimeSeriesQuery::Grouped(grouped) => {
@@ -221,7 +221,7 @@ fn create_grouped_query(
     let mut inner_query = Query::select();
     let inner_query_str = "inner_query";
     let inner_query_name = Name::Table(inner_query_str.to_string());
-    inner_query.from_subquery(query, inner_query_name);
+    inner_query.from_subquery(query, inner_query_name.clone());
     for (_,v) in &variable_column_name_map {
         inner_query.expr(
             SimpleExpr::Column(ColumnRef::Column(Rc::new(Name::Column(v.clone()))))

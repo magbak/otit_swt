@@ -159,7 +159,7 @@ fn process_dynamic_triples(
     for t in &dynamic_triples {
         if let NamedNodePattern::NamedNode(named_predicate_node) = &t.predicate {
             if named_predicate_node == HAS_DATA_POINT {
-                for q in local_basic_tsqs {
+                for q in local_basic_tsqs.iter_mut() {
                     if let (Some(q_timeseries_variable), TermPattern::Variable(subject_variable)) =
                         (&q.timeseries_variable, &t.subject)
                     {
@@ -178,7 +178,7 @@ fn process_dynamic_triples(
     for t in &dynamic_triples {
         if let NamedNodePattern::NamedNode(named_predicate_node) = &t.predicate {
             if named_predicate_node == HAS_VALUE {
-                for q in local_basic_tsqs {
+                for q in local_basic_tsqs.iter_mut() {
                     if q.value_variable.is_none() {
                         if let (
                             Some(q_data_point_variable),
@@ -197,7 +197,7 @@ fn process_dynamic_triples(
                     }
                 }
             } else if named_predicate_node == HAS_TIMESTAMP {
-                for q in local_basic_tsqs {
+                for q in local_basic_tsqs.iter_mut() {
                     if q.timestamp_variable.is_none() {
                         if let (
                             Some(q_data_point_variable),

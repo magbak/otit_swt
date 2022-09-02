@@ -9,10 +9,10 @@ pub fn create_identity_synchronized_queries(
     while tsqs.len() > 1 {
         let mut queries_to_synchronize = vec![];
         let first_query = tsqs.remove(0);
-        let first_query_timestamp_variables_set: HashSet<&Variable> = HashSet::from_iter(first_query.get_timestamp_variables().into_iter().map(|x|&x.variable));
+        let first_query_timestamp_variables_set: HashSet<Variable> = HashSet::from_iter(first_query.get_timestamp_variables().into_iter().map(|x|x.variable.clone()));
         let mut keep_tsqs = vec![];
         for other in tsqs.into_iter() {
-            let other_query_timestamp_variables_set = HashSet::from_iter(other.get_timestamp_variables().into_iter().map(|x|&x.variable));
+            let other_query_timestamp_variables_set = HashSet::from_iter(other.get_timestamp_variables().into_iter().map(|x|x.variable.clone()));
             if !first_query_timestamp_variables_set.is_disjoint(&other_query_timestamp_variables_set) {
                 queries_to_synchronize.push(Box::new(other))
             } else {

@@ -11,7 +11,7 @@ pub(crate) enum TimeSeriesExpressionRewriteContext {
     Aggregate,
 }
 
-struct RecursiveRewriteReturn {
+pub(crate) struct RecursiveRewriteReturn {
     pub expression: Option<Expression>,
     pub change_type: Option<ChangeType>,
     pub lost_value: bool,
@@ -867,12 +867,13 @@ impl TimeSeriesQuery {
                         .iter()
                         .all(|x| x.change_type.as_ref().unwrap() == &ChangeType::NoChange)
                     {
+                        let use_lost_value = inner_rewrites.iter().fold(false, |b, x| b || x.lost_value);
                         return RecursiveRewriteReturn::new(
                             Some(Expression::Coalesce(
                                 inner_rewrites.into_iter().map(|mut x|x.expression.take().unwrap()).collect(),
                             )),
                             Some(ChangeType::NoChange),
-                            inner_rewrites.iter().fold(false, |b, x| b || x.lost_value),
+                            use_lost_value,
                         );
                     }
                 }

@@ -78,7 +78,7 @@ impl Error for TimeSeriesValidationError {}
 
 impl TimeSeriesQuery {
     pub(crate) fn validate(&self, df: &DataFrame) -> Result<(), TimeSeriesValidationError> {
-        let mut expected_columns = self.expected_columns();
+        let expected_columns = self.expected_columns();
         let df_columns: HashSet<&str> = df
             .get_column_names()
             .into_iter()
@@ -119,9 +119,8 @@ impl TimeSeriesQuery {
                 expected_columns
             }
             TimeSeriesQuery::Filtered(inner, _, _) => inner.expected_columns(),
-            TimeSeriesQuery::InnerSynchronized(inners, syncs) => {
-                let mut expected_columns = HashSet::new();
-                inners.iter().fold(expected_columns, |mut exp, tsq| {
+            TimeSeriesQuery::InnerSynchronized(inners, _synchronizers) => {
+                inners.iter().fold(HashSet::new(), |mut exp, tsq| {
                     exp.extend(tsq.expected_columns());
                     exp
                 })
@@ -133,10 +132,10 @@ impl TimeSeriesQuery {
             }
             TimeSeriesQuery::Grouped(g) => {
                 let mut expected_columns = HashSet::new();
-                for v in g.by {
+                for v in &g.by {
                     expected_columns.insert(v.as_str());
                 }
-                for (v, _) in g.aggregations {
+                for (v, _) in &g.aggregations {
                     expected_columns.insert(v.as_str());
                 }
                 expected_columns
@@ -220,7 +219,33 @@ impl TimeSeriesQuery {
         }
         false
     }
-    
+
+    pub(crate) fn get_ids(&self) -> Vec<&String> {
+        match self {
+            TimeSeriesQuery::Basic(b) => {
+                if let Some(ids) = &b.ids {
+                    ids.iter().collect()
+                } else {
+                    vec![]
+                }
+            }
+            TimeSeriesQuery::Filtered(inner, _, _) => inner.get_ids(),
+            TimeSeriesQuery::InnerSynchronized(inners, _) => {
+                let mut ss = vec![];
+                for inner in inners {
+                    ss.extend(inner.get_ids())
+                }
+                ss
+            }
+            TimeSeriesQuery::LeftSynchronized(left, right, _, _, _) => {
+                let mut ss = left.get_ids();
+                ss.extend(right.get_ids());
+                ss
+            }
+            TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_ids(),
+        }
+    }
+
     pub(crate) fn get_data_point_variables(&self) -> Vec<&VariableInContext> {
         match self {
             TimeSeriesQuery::Basic(b) => {
@@ -367,14 +392,14 @@ impl TimeSeriesQuery {
 
 impl TimeSeriesQuery {
     pub(crate) fn try_pushdown_aggregates(
-        self,
+        &self,
         aggregations: &Vec<(Variable, AggregateExpression)>,
         group_graph_pattern: &GraphPattern,
         timeseries_funcs: Vec<(Variable, ExpressionInContext)>,
         by: Vec<Variable>,
         context: &Context,
         pushdown_settings: &HashSet<PushdownSetting>,
-    ) -> (TimeSeriesQuery, bool) {
+    ) -> Option<TimeSeriesQuery> {
         let rewrite_context = TimeSeriesExpressionRewriteContext::Aggregate;
         let mut keep_aggregates = vec![];
         for (v, a) in aggregations {
@@ -519,7 +544,7 @@ impl TimeSeriesQuery {
         }
         if keep_aggregates.len() == aggregations.len() {
             let grouped = GroupedTimeSeriesQuery {
-                tsq: Box::new(self),
+                tsq: Box::new(self.clone()),
                 graph_pattern_hash: hash_graph_pattern(group_graph_pattern),
                 by,
                 aggregations: keep_aggregates
@@ -529,9 +554,9 @@ impl TimeSeriesQuery {
                 timeseries_funcs,
             };
             let new_tsq = TimeSeriesQuery::Grouped(grouped);
-            return (new_tsq, true);
+            return Some(new_tsq);
         } else {
-            return (self, false);
+            return None;
         }
     }
 }

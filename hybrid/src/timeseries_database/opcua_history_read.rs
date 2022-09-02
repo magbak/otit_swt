@@ -189,7 +189,7 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                 if let Some(grvar) = &timestamp_grouping_colname {
                     ts.rename(grvar);
                 } else {
-                    ts.rename(tsq.timestamp_variable.as_ref().unwrap().variable.as_str());
+                    ts.rename(tsq.get_timestamp_variables().get(0).unwrap().variable.as_str());
                 }
                 val.rename(colname);
                 if let Some(v) = series_map.get_mut(id) {
@@ -212,7 +212,7 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                     value_vec.push(val);
                 }
                 let mut identifier_series = Series::new_empty(
-                    tsq.identifier_variable.as_ref().unwrap().as_str(),
+                    tsq.get_identifier_variables().get(0).unwrap().as_str(),
                     &DataType::Utf8,
                 );
                 identifier_series = identifier_series
@@ -301,11 +301,11 @@ fn history_data_to_series_tuple(hd: HistoryData) -> (Series, Series) {
 }
 
 fn find_aggregate_types(tsq: &TimeSeriesQuery) -> Option<Vec<NodeId>> {
-    if let TimeSeriesQuery::Grouped(grouped) = &tsq.grouping {
+    if let TimeSeriesQuery::Grouped(grouped) = tsq {
         let mut nodes = vec![];
         for (_, a) in &grouped.aggregations {
             let agg = &a.aggregate_expression;
-            let value_var_str = tsq.value_variable.as_ref().unwrap().variable.as_str();
+            let value_var_str = tsq.get_value_variables().get(0).unwrap().variable.as_str();
             let expr_is_ok = |expr: &Expression| -> bool {
                 if let Expression::Variable(v) = expr {
                     v.as_str() == value_var_str
@@ -363,7 +363,7 @@ fn find_aggregate_types(tsq: &TimeSeriesQuery) -> Option<Vec<NodeId>> {
             nodes.push(aggfunc);
         }
         let mut outnodes = vec![];
-        for _ in tsq.ids.as_ref().unwrap() {
+        for _ in tsq.get_ids() {
             outnodes.extend_from_slice(nodes.as_slice())
         }
         Some(outnodes)
@@ -380,10 +380,20 @@ enum FindTime {
 fn find_time(tsq: &TimeSeriesQuery, find_time: &FindTime) -> DateTime {
 
     let mut found_time = None;
-    for c in &tsq.conditions {
-        let e = &c.expression;
+    let filter = if let TimeSeriesQuery::Grouped(gr) = tsq {
+        if let TimeSeriesQuery::Filtered(_, filter, _) = gr.tsq.as_ref() {
+            filter.as_ref()
+        } else {
+            None
+        }
+    } else if let TimeSeriesQuery::Filtered(_, filter, _) = tsq {
+        filter.as_ref()
+    } else {
+        None
+    };
+    if let Some(e) = filter {
         let found_time_opt = find_time_condition(
-            &tsq.timestamp_variable.as_ref().unwrap().variable,
+            &tsq.get_timestamp_variables().get(0).unwrap().variable,
             e,
             find_time,
         );
