@@ -523,8 +523,6 @@ mod tests {
     use crate::splitter::parse_sparql_select_query;
     use oxrdf::vocab::xsd;
     use oxrdf::{Literal, Term, Variable};
-    use polars_core::frame::DataFrame;
-    use polars_core::prelude::Series;
     use sparesults::QuerySolution;
     use std::rc::Rc;
 
@@ -586,7 +584,7 @@ GROUP BY ?wtur_label ?year ?month ?day ?hour ?minute_10
         let parsed = parse_sparql_select_query(sparql).unwrap();
         let mut preprocessor = Preprocessor::new();
         let (preprocessed_query, variable_constraints) = preprocessor.preprocess(&parsed);
-        let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &variable_constraints);
+        let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &variable_constraints, true);
         let (static_rewrite, mut tsqs) = rewriter.rewrite_query(preprocessed_query).unwrap();
         println!("Static rewrite {}", static_rewrite.to_string());
 

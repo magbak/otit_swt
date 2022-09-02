@@ -8,12 +8,10 @@ mod pushups;
 use crate::change_types::ChangeType;
 use crate::constraints::{Constraint, VariableConstraints};
 use crate::pushdown_setting::PushdownSetting;
-use crate::query_context::{Context, PathEntry, VariableInContext};
+use crate::query_context::{Context, VariableInContext};
 use crate::rewriting::expressions::ExReturn;
-use crate::rewriting::graph_patterns::GPReturn;
-use crate::rewriting::pushups::apply_pushups;
 use crate::timeseries_query::{BasicTimeSeriesQuery, TimeSeriesQuery};
-use spargebra::algebra::{Expression, GraphPattern};
+use spargebra::algebra::{GraphPattern};
 use spargebra::term::Variable;
 use spargebra::Query;
 use std::collections::hash_map::DefaultHasher;
@@ -87,55 +85,7 @@ impl StaticQueryRewriter {
         }
     }
 
-    fn rewrite_extend(
-        &mut self,
-        inner: &GraphPattern,
-        var: &Variable,
-        expr: &Expression,
-        required_change_direction: &ChangeType,
-        context: &Context,
-    ) -> GPReturn {
-        let inner_rewrite_opt = self.rewrite_graph_pattern(
-            inner,
-            required_change_direction,
-            &context.extension_with(PathEntry::ExtendInner),
-        );
-        if let Some(mut gpr_inner) = inner_rewrite_opt {
-            let mut expr_rewrite = self.rewrite_expression(
-                expr,
-                &ChangeType::NoChange,
-                &gpr_inner.variables_in_scope,
-                &context.extension_with(PathEntry::ExtendExpression),
-            );
-            if expr_rewrite.expression.is_some() {
-                gpr_inner.variables_in_scope.insert(var.clone());
-                let inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
-                gpr_inner.with_graph_pattern(GraphPattern::Extend {
-                    inner: Box::new(inner_graph_pattern), //No need for push up since there should be no change
-                    variable: var.clone(),
-                    expression: expr_rewrite.expression.take().unwrap(),
-                });
-                return Some(gpr_inner);
-            } else {
-                let inner_graph_pattern = gpr_inner.graph_pattern.take().unwrap();
-                gpr_inner.with_graph_pattern(apply_pushups(
-                    inner_graph_pattern,
-                    &mut expr_rewrite.graph_pattern_pushups,
-                ));
-                return Some(gpr_inner);
-            }
-        }
-        let expr_rewrite = self.rewrite_expression(
-            expr,
-            &ChangeType::NoChange,
-            &HashSet::new(),
-            &context.extension_with(PathEntry::ExtendExpression),
-        );
-        if expr_rewrite.graph_pattern_pushups.len() > 0 {
-            todo!("Solution will require graph pattern pushups for graph patterns!!");
-        }
-        return None;
-    }
+
 
     fn rewrite_variable(&self, v: &Variable, context: &Context) -> Option<Variable> {
         if let Some(ctr) = self.variable_constraints.get_constraint(v, context) {
@@ -160,7 +110,7 @@ impl StaticQueryRewriter {
         datatype_variable: &Variable,
         context: &Context,
     ) -> BasicTimeSeriesQuery {
-        let mut ts_query = TimeSeriesQuery::new_empty(self.pushdown_settings.clone());
+        let mut ts_query = BasicTimeSeriesQuery::new_empty();
         ts_query.identifier_variable = Some(time_series_id_variable.clone());
         ts_query.datatype_variable = Some(datatype_variable.clone());
         ts_query.timeseries_variable = Some(VariableInContext::new(

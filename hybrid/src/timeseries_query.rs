@@ -43,7 +43,7 @@ pub enum TimeSeriesQuery {
     ),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Synchronizer {
     Identity,
 }
@@ -80,6 +80,48 @@ impl Display for TimeSeriesValidationError {
 impl Error for TimeSeriesValidationError {}
 
 impl TimeSeriesQuery {
+    pub(crate) fn dropped_value_expression(&self) -> bool {
+        match self {
+            TimeSeriesQuery::Basic(_) => {false}
+            TimeSeriesQuery::Filtered(inner, _, dropped) => {
+                 *dropped || inner.dropped_value_expression()
+            }
+            TimeSeriesQuery::InnerSynchronized(inners, _) => {
+                inners.iter().fold(false, |x,y| x || y.dropped_value_expression())
+            }
+            TimeSeriesQuery::LeftSynchronized(left, right, _, _, dropped) => {
+                *dropped || left.dropped_value_expression() || right.dropped_value_expression()
+            }
+            TimeSeriesQuery::Grouped(inner, _, _, _) => {
+                inner.dropped_value_expression()
+            }
+        }
+    }
+
+    pub(crate) fn get_mut_basic_queries(&mut self) -> Vec<&mut BasicTimeSeriesQuery> {
+        match self {
+            TimeSeriesQuery::Basic(b) => {vec![b]}
+            TimeSeriesQuery::Filtered(inner, _, _) => {
+                inner.get_mut_basic_queries()
+            }
+            TimeSeriesQuery::InnerSynchronized(inners, _) => {
+                let mut basics = vec![];
+                for inner in inners {
+                    basics.extend(inner.get_mut_basic_queries())
+                }
+                basics
+            }
+            TimeSeriesQuery::LeftSynchronized(left, right, _, _, _) => {
+                let mut basics = left.get_mut_basic_queries();
+                basics.extend(right.get_mut_basic_queries());
+                basics
+            }
+            TimeSeriesQuery::Grouped(inner, _, _, _) => {
+                inner.get_mut_basic_queries()
+            }
+        }
+    }
+
     pub(crate) fn has_equivalent_value_variable(
         &self,
         variable: &Variable,
@@ -102,7 +144,9 @@ impl TimeSeriesQuery {
                     vec![]
                 }
             }
-            TimeSeriesQuery::Filtered(inner, _, _) => {}
+            TimeSeriesQuery::Filtered(inner, _, _) => {
+                inner.get_value_variables()
+            }
             TimeSeriesQuery::InnerSynchronized(inners, _) => {
                 let mut vs = vec![];
                 for inner in inners {
@@ -128,7 +172,9 @@ impl TimeSeriesQuery {
                     vec![]
                 }
             }
-            TimeSeriesQuery::Filtered(inner, _, _) => {}
+            TimeSeriesQuery::Filtered(inner, _, _) => {
+                inner.get_identifier_variables()
+            }
             TimeSeriesQuery::InnerSynchronized(inners, _) => {
                 let mut vs = vec![];
                 for inner in inners {

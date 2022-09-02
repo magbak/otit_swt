@@ -14,6 +14,7 @@ mod service_pattern;
 mod sliced_pattern;
 mod union_pattern;
 mod values_pattern;
+mod extend_pattern;
 
 use super::StaticQueryRewriter;
 use crate::change_types::ChangeType;

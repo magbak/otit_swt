@@ -1,8 +1,7 @@
 use super::TimeSeriesQuery;
 use crate::change_types::ChangeType;
 use crate::pushdown_setting::PushdownSetting;
-use crate::query_context::{Context, ExpressionInContext, PathEntry};
-use oxrdf::Variable;
+use crate::query_context::{Context, PathEntry};
 use spargebra::algebra::Expression;
 use std::collections::HashSet;
 
@@ -73,12 +72,7 @@ impl TimeSeriesQuery {
                 );
             }
             Expression::Variable(v) => {
-                if self.timestamp_variable.is_some()
-                    && self
-                        .timestamp_variable
-                        .as_ref()
-                        .unwrap()
-                        .equivalent(v, context)
+                if self.has_equivalent_timestamp_variable(v, context)
                 {
                     return RecursiveRewriteReturn::new(
                         Some(Expression::Variable(v.clone())),

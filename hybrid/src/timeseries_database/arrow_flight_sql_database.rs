@@ -44,8 +44,6 @@ pub enum ArrowFlightSQLError {
     TonicStatus(#[from] Status),
     TransportError(#[from] tonic::transport::Error),
     TranslationError(#[from] TimeSeriesQueryToSQLError),
-    DatatypeNotSupported(String),
-    MissingTimeseriesQueryDatatype,
     ArrowError(#[from] ArrowError),
     PolarsError(#[from] PolarsError),
 }
@@ -61,12 +59,6 @@ impl Display for ArrowFlightSQLError {
             }
             ArrowFlightSQLError::TranslationError(s) => {
                 write!(f, "Error during query translation: {}", s)
-            }
-            ArrowFlightSQLError::DatatypeNotSupported(dt) => {
-                write!(f, "Datatype not supported: {}", dt)
-            }
-            ArrowFlightSQLError::MissingTimeseriesQueryDatatype => {
-                write!(f, "Timeseries value datatype missing")
             }
             ArrowFlightSQLError::ArrowError(err) => {
                 write!(f, "Problem deserializing arrow: {}", err)

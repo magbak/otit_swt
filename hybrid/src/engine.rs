@@ -130,10 +130,10 @@ pub(crate) fn complete_time_series_queries(
     time_series_queries: &mut Vec<TimeSeriesQuery>,
 ) -> Result<(), OrchestrationError> {
     for tsq in time_series_queries {
-        let mut ids = HashSet::new();
-        if let Some(id_var) = &tsq.identifier_variable {
+        for basic_query in tsq.get_mut_basic_queries() {
+            let mut ids = HashSet::new();
             for sqs in static_query_solutions {
-                if let Some(Term::Literal(lit)) = sqs.get(id_var) {
+                if let Some(Term::Literal(lit)) = sqs.get(basic_query.identifier_variable.as_ref().unwrap()) {
                     if lit.datatype() == xsd::STRING {
                         ids.insert(lit.value().to_string());
                     } else {
@@ -141,31 +141,32 @@ pub(crate) fn complete_time_series_queries(
                     }
                 }
             }
-        }
-        if let Some(datatype_var) = &tsq.datatype_variable {
-            for sqs in static_query_solutions {
-                if let Some(Term::NamedNode(nn)) = sqs.get(datatype_var) {
-                    if tsq.datatype.is_none() {
-                        tsq.datatype = Some(nn.clone());
-                    } else if let Some(dt) = &tsq.datatype {
-                        if dt.as_str() != nn.as_str() {
-                            return Err(OrchestrationError::InconsistentDatatype(
-                                nn.as_str().to_string(),
-                                dt.as_str().to_string(),
-                                tsq.timeseries_variable
-                                    .as_ref()
-                                    .unwrap()
-                                    .variable
-                                    .to_string(),
-                            ));
+
+            if let Some(datatype_var) = &basic_query.datatype_variable {
+                for sqs in static_query_solutions {
+                    if let Some(Term::NamedNode(nn)) = sqs.get(datatype_var) {
+                        if basic_query.datatype.is_none() {
+                            basic_query.datatype = Some(nn.clone());
+                        } else if let Some(dt) = &basic_query.datatype {
+                            if dt.as_str() != nn.as_str() {
+                                return Err(OrchestrationError::InconsistentDatatype(
+                                    nn.as_str().to_string(),
+                                    dt.as_str().to_string(),
+                                    basic_query.timeseries_variable
+                                        .as_ref()
+                                        .unwrap()
+                                        .variable
+                                        .to_string(),
+                                ));
+                            }
                         }
                     }
                 }
             }
+            let mut ids_vec: Vec<String> = ids.into_iter().collect();
+            ids_vec.sort();
+            basic_query.ids = Some(ids_vec);
         }
-        let mut ids_vec: Vec<String> = ids.into_iter().collect();
-        ids_vec.sort();
-        tsq.ids = Some(ids_vec);
     }
     Ok(())
 }
