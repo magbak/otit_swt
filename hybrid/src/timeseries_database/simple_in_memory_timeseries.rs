@@ -15,7 +15,6 @@ pub struct InMemoryTimeseriesDatabase {
 #[async_trait]
 impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
     async fn execute(&mut self, tsq: &TimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
-        assert!(tsq.ids.is_some() && !tsq.ids.as_ref().unwrap().is_empty());
         let mut lfs = vec![];
         let mut columns: HashSet<String> = HashSet::new();
         for id in tsq.ids.as_ref().unwrap() {

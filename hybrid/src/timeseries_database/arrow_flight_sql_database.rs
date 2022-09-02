@@ -221,8 +221,12 @@ impl ArrowFlightSQLDatabase {
 #[async_trait]
 impl TimeSeriesQueryable for ArrowFlightSQLDatabase {
     async fn execute(&mut self, tsq: &TimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
-        let (query,_) = create_query(tsq, &self.time_series_tables)?;
-        Ok(self.execute_sql_query(query.to_string(PostgresQueryBuilder)).await?)
+        let query_string;
+        {
+            let (query, _) = create_query(tsq, &self.time_series_tables)?;
+            query_string = query.to_string(PostgresQueryBuilder);
+        }
+        Ok(self.execute_sql_query(query_string).await?)
     }
 
     fn allow_compound_timeseries_queries(&self) -> bool {

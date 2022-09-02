@@ -123,9 +123,9 @@ pub fn create_query(
         TimeSeriesQuery::LeftSynchronized(left, right, synchronizers, filter, _) => {
             todo!()
         }
-        TimeSeriesQuery::Grouped(inner, by, agg, timeseries_funcs, _) => {
-            let (inner_select, variable_column_name_map) = create_query(inner, tables)?;
-            create_grouped_query(inner_select, variable_column_name_map, by, agg, timeseries_funcs)
+        TimeSeriesQuery::Grouped(grouped) => {
+            let (inner_select, variable_column_name_map) = create_query(&grouped.tsq, tables)?;
+            create_grouped_query(inner_select, variable_column_name_map, &grouped.by, &grouped.aggregations, &grouped.timeseries_funcs)
         }
     }
 }

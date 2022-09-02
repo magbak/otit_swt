@@ -2,6 +2,7 @@ pub(crate) mod expression_rewrites;
 pub(crate) mod synchronization;
 
 use crate::change_types::ChangeType;
+use crate::pushdown_setting::PushdownSetting;
 use crate::query_context::{
     AggregateExpressionInContext, Context, ExpressionInContext, PathEntry, VariableInContext,
 };
@@ -14,15 +15,6 @@ use spargebra::term::Variable;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use crate::pushdown_setting::PushdownSetting;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Grouping {
-    pub graph_pattern_hash: u64,
-    pub by: Vec<Variable>,
-    pub aggregations: Vec<(Variable, AggregateExpressionInContext)>,
-    pub timeseries_funcs: Vec<(Variable, ExpressionInContext)>,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TimeSeriesQuery {
@@ -36,18 +28,21 @@ pub enum TimeSeriesQuery {
         Expression,
         bool,
     ), //Left, Right, Filter, complete
-    Grouped(
-        Box<TimeSeriesQuery>,
-        Vec<Variable>,
-        Vec<(Variable, AggregateExpressionInContext)>,
-        Vec<(Variable, ExpressionInContext)>,
-        u64,
-    ),
+    Grouped(GroupedTimeSeriesQuery),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Synchronizer {
     Identity(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupedTimeSeriesQuery {
+    pub tsq: Box<TimeSeriesQuery>,
+    pub graph_pattern_hash: u64,
+    pub by: Vec<Variable>,
+    pub aggregations: Vec<(Variable, AggregateExpressionInContext)>,
+    pub timeseries_funcs: Vec<(Variable, ExpressionInContext)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -82,30 +77,95 @@ impl Display for TimeSeriesValidationError {
 impl Error for TimeSeriesValidationError {}
 
 impl TimeSeriesQuery {
+    pub(crate) fn validate(&self, df: &DataFrame) -> Result<(), TimeSeriesValidationError> {
+        let mut expected_columns = self.expected_columns();
+        let df_columns: HashSet<&str> = df
+            .get_column_names()
+            .into_iter()
+            .collect();
+        if expected_columns != df_columns {
+            let err = TimeSeriesValidationError {
+                missing_columns: expected_columns
+                    .difference(&df_columns)
+                    .map(|x| x.to_string())
+                    .collect(),
+                extra_columns: df_columns
+                    .difference(&expected_columns)
+                    .map(|x| x.to_string())
+                    .collect(),
+            };
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn expected_columns<'a>(&'a self) -> HashSet<&'a str> {
+        match self {
+            TimeSeriesQuery::Basic(b) => {
+                let mut expected_columns = HashSet::new();
+                expected_columns.insert(
+                    b.identifier_variable
+                        .as_ref()
+                        .unwrap()
+                        .as_str()
+                );
+                if let Some(vv) = &b.value_variable {
+                    expected_columns.insert(vv.variable.as_str());
+                }
+                if let Some(tsv) = &b.timestamp_variable {
+                    expected_columns.insert(tsv.variable.as_str());
+                }
+                expected_columns
+            }
+            TimeSeriesQuery::Filtered(inner, _, _) => inner.expected_columns(),
+            TimeSeriesQuery::InnerSynchronized(inners, syncs) => {
+                let mut expected_columns = HashSet::new();
+                inners.iter().fold(expected_columns, |mut exp, tsq| {
+                    exp.extend(tsq.expected_columns());
+                    exp
+                })
+            }
+            TimeSeriesQuery::LeftSynchronized(left, right, _, _, _) => {
+                let mut expected_columns = left.expected_columns();
+                expected_columns.extend(right.expected_columns());
+                expected_columns
+            }
+            TimeSeriesQuery::Grouped(g) => {
+                let mut expected_columns = HashSet::new();
+                for v in g.by {
+                    expected_columns.insert(v.as_str());
+                }
+                for (v, _) in g.aggregations {
+                    expected_columns.insert(v.as_str());
+                }
+                expected_columns
+            }
+        }
+    }
+
     pub(crate) fn dropped_value_expression(&self) -> bool {
         match self {
-            TimeSeriesQuery::Basic(_) => {false}
+            TimeSeriesQuery::Basic(_) => false,
             TimeSeriesQuery::Filtered(inner, _, dropped) => {
-                 *dropped || inner.dropped_value_expression()
+                *dropped || inner.dropped_value_expression()
             }
-            TimeSeriesQuery::InnerSynchronized(inners, _) => {
-                inners.iter().fold(false, |x,y| x || y.dropped_value_expression())
-            }
+            TimeSeriesQuery::InnerSynchronized(inners, _) => inners
+                .iter()
+                .fold(false, |x, y| x || y.dropped_value_expression()),
             TimeSeriesQuery::LeftSynchronized(left, right, _, _, dropped) => {
                 *dropped || left.dropped_value_expression() || right.dropped_value_expression()
             }
-            TimeSeriesQuery::Grouped(inner, _, _, _,_) => {
-                inner.dropped_value_expression()
-            }
+            TimeSeriesQuery::Grouped(grouped) => grouped.tsq.dropped_value_expression(),
         }
     }
 
     pub(crate) fn get_mut_basic_queries(&mut self) -> Vec<&mut BasicTimeSeriesQuery> {
         match self {
-            TimeSeriesQuery::Basic(b) => {vec![b]}
-            TimeSeriesQuery::Filtered(inner, _, _) => {
-                inner.get_mut_basic_queries()
+            TimeSeriesQuery::Basic(b) => {
+                vec![b]
             }
+            TimeSeriesQuery::Filtered(inner, _, _) => inner.get_mut_basic_queries(),
             TimeSeriesQuery::InnerSynchronized(inners, _) => {
                 let mut basics = vec![];
                 for inner in inners {
@@ -118,9 +178,7 @@ impl TimeSeriesQuery {
                 basics.extend(right.get_mut_basic_queries());
                 basics
             }
-            TimeSeriesQuery::Grouped(inner, _, _, _,_) => {
-                inner.get_mut_basic_queries()
-            }
+            TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_mut_basic_queries(),
         }
     }
 
@@ -146,9 +204,7 @@ impl TimeSeriesQuery {
                     vec![]
                 }
             }
-            TimeSeriesQuery::Filtered(inner, _, _) => {
-                inner.get_value_variables()
-            }
+            TimeSeriesQuery::Filtered(inner, _, _) => inner.get_value_variables(),
             TimeSeriesQuery::InnerSynchronized(inners, _) => {
                 let mut vs = vec![];
                 for inner in inners {
@@ -161,7 +217,7 @@ impl TimeSeriesQuery {
                 vs.extend(right.get_value_variables());
                 vs
             }
-            TimeSeriesQuery::Grouped(inner, _, _, _,_) => inner.get_value_variables(),
+            TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_value_variables(),
         }
     }
 
@@ -174,9 +230,7 @@ impl TimeSeriesQuery {
                     vec![]
                 }
             }
-            TimeSeriesQuery::Filtered(inner, _, _) => {
-                inner.get_identifier_variables()
-            }
+            TimeSeriesQuery::Filtered(inner, _, _) => inner.get_identifier_variables(),
             TimeSeriesQuery::InnerSynchronized(inners, _) => {
                 let mut vs = vec![];
                 for inner in inners {
@@ -189,7 +243,7 @@ impl TimeSeriesQuery {
                 vs.extend(right.get_identifier_variables());
                 vs
             }
-            TimeSeriesQuery::Grouped(inner, _, _, _,_) => inner.get_identifier_variables(),
+            TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_identifier_variables(),
         }
     }
 
@@ -228,21 +282,21 @@ impl TimeSeriesQuery {
                 vs.extend(r.get_timestamp_variables());
                 vs
             }
-            TimeSeriesQuery::Grouped(inner, _, _, _,_) => inner.get_timestamp_variables(),
+            TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_timestamp_variables(),
         }
     }
 }
 
 impl TimeSeriesQuery {
     pub(crate) fn try_pushdown_aggregates(
-        &mut self,
+        self,
         aggregations: &Vec<(Variable, AggregateExpression)>,
         group_graph_pattern: &GraphPattern,
         timeseries_funcs: Vec<(Variable, ExpressionInContext)>,
         by: Vec<Variable>,
         context: &Context,
         pushdown_settings: &HashSet<PushdownSetting>,
-    ) {
+    ) -> (TimeSeriesQuery, bool) {
         let rewrite_context = TimeSeriesExpressionRewriteContext::Aggregate;
         let mut keep_aggregates = vec![];
         for (v, a) in aggregations {
@@ -250,12 +304,12 @@ impl TimeSeriesQuery {
             match a {
                 AggregateExpression::Count { expr, distinct } => {
                     if let Some(inner_expr) = expr {
-                        let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                        let mut expr_rewrite = self.try_recursive_rewrite_expression(
                             &rewrite_context,
                             inner_expr,
                             &ChangeType::NoChange,
                             &context.extension_with(PathEntry::AggregationOperation),
-                            pushdown_settings
+                            pushdown_settings,
                         );
                         if expr_rewrite.expression.is_some() {
                             keep_aggregate = Some(AggregateExpression::Count {
@@ -266,14 +320,14 @@ impl TimeSeriesQuery {
                     }
                 }
                 AggregateExpression::Sum { expr, distinct } => {
-                    let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                    let mut expr_rewrite = self.try_recursive_rewrite_expression(
                         &rewrite_context,
                         expr,
                         &ChangeType::NoChange,
                         &context.extension_with(PathEntry::AggregationOperation),
-                        pushdown_settings
+                        pushdown_settings,
                     );
-                        if expr_rewrite.expression.is_some()  {
+                    if expr_rewrite.expression.is_some() {
                         keep_aggregate = Some(AggregateExpression::Sum {
                             expr: Box::new(expr_rewrite.expression.take().unwrap()),
                             distinct: distinct.clone(),
@@ -281,14 +335,14 @@ impl TimeSeriesQuery {
                     }
                 }
                 AggregateExpression::Avg { expr, distinct } => {
-                    let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                    let mut expr_rewrite = self.try_recursive_rewrite_expression(
                         &rewrite_context,
                         expr,
                         &ChangeType::NoChange,
                         &context.extension_with(PathEntry::AggregationOperation),
-                        pushdown_settings
+                        pushdown_settings,
                     );
-                        if expr_rewrite.expression.is_some() {
+                    if expr_rewrite.expression.is_some() {
                         keep_aggregate = Some(AggregateExpression::Avg {
                             expr: Box::new(expr_rewrite.expression.take().unwrap()),
                             distinct: distinct.clone(),
@@ -296,14 +350,14 @@ impl TimeSeriesQuery {
                     }
                 }
                 AggregateExpression::Min { expr, distinct } => {
-                    let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                    let mut expr_rewrite = self.try_recursive_rewrite_expression(
                         &rewrite_context,
                         expr,
                         &ChangeType::NoChange,
                         &context.extension_with(PathEntry::AggregationOperation),
-                        pushdown_settings
+                        pushdown_settings,
                     );
-                        if expr_rewrite.expression.is_some()  {
+                    if expr_rewrite.expression.is_some() {
                         keep_aggregate = Some(AggregateExpression::Min {
                             expr: Box::new(expr_rewrite.expression.take().unwrap()),
                             distinct: distinct.clone(),
@@ -311,14 +365,14 @@ impl TimeSeriesQuery {
                     }
                 }
                 AggregateExpression::Max { expr, distinct } => {
-                    let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                    let mut expr_rewrite = self.try_recursive_rewrite_expression(
                         &rewrite_context,
                         expr,
                         &ChangeType::NoChange,
                         &context.extension_with(PathEntry::AggregationOperation),
-                        pushdown_settings
+                        pushdown_settings,
                     );
-                        if expr_rewrite.expression.is_some()  {
+                    if expr_rewrite.expression.is_some() {
                         keep_aggregate = Some(AggregateExpression::Max {
                             expr: Box::new(expr_rewrite.expression.take().unwrap()),
                             distinct: distinct.clone(),
@@ -330,14 +384,14 @@ impl TimeSeriesQuery {
                     distinct,
                     separator,
                 } => {
-                    let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                    let mut expr_rewrite = self.try_recursive_rewrite_expression(
                         &rewrite_context,
                         expr,
                         &ChangeType::NoChange,
                         &context.extension_with(PathEntry::AggregationOperation),
-                        pushdown_settings
+                        pushdown_settings,
                     );
-                        if expr_rewrite.expression.is_some()  {
+                    if expr_rewrite.expression.is_some() {
                         keep_aggregate = Some(AggregateExpression::GroupConcat {
                             expr: Box::new(expr_rewrite.expression.take().unwrap()),
                             distinct: distinct.clone(),
@@ -346,14 +400,14 @@ impl TimeSeriesQuery {
                     }
                 }
                 AggregateExpression::Sample { expr, distinct } => {
-                    let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                    let mut expr_rewrite = self.try_recursive_rewrite_expression(
                         &rewrite_context,
                         expr,
                         &ChangeType::NoChange,
                         &context.extension_with(PathEntry::AggregationOperation),
-                        pushdown_settings
+                        pushdown_settings,
                     );
-                        if expr_rewrite.expression.is_some()  {
+                    if expr_rewrite.expression.is_some() {
                         keep_aggregate = Some(AggregateExpression::Sample {
                             expr: Box::new(expr_rewrite.expression.take().unwrap()),
                             distinct: distinct.clone(),
@@ -365,14 +419,14 @@ impl TimeSeriesQuery {
                     expr,
                     distinct,
                 } => {
-                    let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                    let mut expr_rewrite = self.try_recursive_rewrite_expression(
                         &rewrite_context,
                         expr,
                         &ChangeType::NoChange,
                         &context.extension_with(PathEntry::AggregationOperation),
-                        pushdown_settings
+                        pushdown_settings,
                     );
-                        if expr_rewrite.expression.is_some()  {
+                    if expr_rewrite.expression.is_some() {
                         keep_aggregate = Some(AggregateExpression::Custom {
                             name: name.clone(),
                             expr: Box::new(expr_rewrite.expression.take().unwrap()),
@@ -386,7 +440,8 @@ impl TimeSeriesQuery {
             }
         }
         if keep_aggregates.len() == aggregations.len() {
-            self.grouping = Some(Grouping {
+            let grouped = GroupedTimeSeriesQuery {
+                tsq: Box::new(self),
                 graph_pattern_hash: hash_graph_pattern(group_graph_pattern),
                 by,
                 aggregations: keep_aggregates
@@ -394,7 +449,11 @@ impl TimeSeriesQuery {
                     .map(|(v, a)| (v, AggregateExpressionInContext::new(a, context.clone())))
                     .collect(),
                 timeseries_funcs,
-            });
+            };
+            let new_tsq = TimeSeriesQuery::Grouped(grouped);
+            return (new_tsq, true);
+        } else {
+            return (self, false);
         }
     }
 }
@@ -410,43 +469,6 @@ impl BasicTimeSeriesQuery {
             datatype: None,
             timestamp_variable: None,
             ids: None,
-        }
-    }
-
-    pub(crate) fn validate(&self, df: &DataFrame) -> Result<(), TimeSeriesValidationError> {
-        let mut expected_columns = HashSet::new();
-        expected_columns.insert(self.identifier_variable.as_ref().unwrap().as_str());
-        if let Some(grouping) = &self.grouping {
-            for v in &grouping.by {
-                expected_columns.insert(v.as_str());
-            }
-            for (v, _) in &grouping.aggregations {
-                expected_columns.insert(v.as_str());
-            }
-        } else {
-            if let Some(vv) = &self.value_variable {
-                expected_columns.insert(vv.variable.as_str());
-            }
-            if let Some(tsv) = &self.timestamp_variable {
-                expected_columns.insert(tsv.variable.as_str());
-            }
-        }
-
-        let df_columns: HashSet<&str> = df.get_column_names().into_iter().collect();
-        if expected_columns != df_columns {
-            let err = TimeSeriesValidationError {
-                missing_columns: expected_columns
-                    .difference(&df_columns)
-                    .map(|x| x.to_string())
-                    .collect(),
-                extra_columns: df_columns
-                    .difference(&expected_columns)
-                    .map(|x| x.to_string())
-                    .collect(),
-            };
-            Err(err)
-        } else {
-            Ok(())
         }
     }
 }

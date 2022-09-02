@@ -429,8 +429,8 @@ impl Combiner {
                 let mut found_index = None;
                 for i in 0..time_series.len() {
                     let (tsq, _) = time_series.get(i).as_ref().unwrap();
-                    if let TimeSeriesQuery::Grouped(_, _, _, _,grouping_hash) = &tsq {
-                        if &graph_pattern_hash == grouping_hash {
+                    if let TimeSeriesQuery::Grouped(g) = &tsq {
+                        if &graph_pattern_hash == &g.graph_pattern_hash {
                             found_index = Some(i);
                         }
                     }

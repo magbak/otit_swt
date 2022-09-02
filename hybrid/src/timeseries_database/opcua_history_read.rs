@@ -38,6 +38,7 @@ pub struct OPCUAHistoryRead {
 #[derive(Debug)]
 pub enum OPCUAHistoryReadError {
     InvalidNodeIdError(String),
+    TimeSeriesQueryTypeNotSupported
 }
 
 impl Display for OPCUAHistoryReadError {
@@ -45,6 +46,9 @@ impl Display for OPCUAHistoryReadError {
         match self {
             OPCUAHistoryReadError::InvalidNodeIdError(s) => {
                 write!(f, "Invalid NodeId {}", s)
+            }
+            OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported => {
+                write!(f, "Only grouped and basic query types are supported")
             }
         }
     }
@@ -96,21 +100,25 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
         let mut raw_modified_details = None;
 
         let mut colnames_identifiers = vec![];
-        if let Some(grouping) = &tsq.grouping {
+        if let TimeSeriesQuery::Grouped(grouped) = tsq {
             let (colname, processed_details_some) =
                 create_read_processed_details(tsq, start_time, end_time);
             processed_details = Some(processed_details_some);
             timestamp_grouping_colname = colname;
-            for c in tsq.ids.as_ref().unwrap() {
-                for (v, _) in &grouping.aggregations {
-                    colnames_identifiers.push((v.as_str().to_string(), c.clone()));
+            if let TimeSeriesQuery::Basic(b) = &*grouped.tsq {
+                for c in b.ids.as_ref().unwrap() {
+                    for (v, _) in &grouped.aggregations {
+                        colnames_identifiers.push((v.as_str().to_string(), c.clone()));
+                    }
                 }
+            } else {
+                return Err(Box::new(OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported))
             }
-        } else {
+        } else if let TimeSeriesQuery::Basic(b) = tsq {
             raw_modified_details = Some(create_raw_details(start_time, end_time));
-            for c in tsq.ids.as_ref().unwrap() {
+            for c in b.ids.as_ref().unwrap() {
                 colnames_identifiers.push((
-                    tsq.value_variable
+                    b.value_variable
                         .as_ref()
                         .unwrap()
                         .variable
@@ -119,6 +127,8 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                     c.clone(),
                 ))
             }
+        } else {
+            return Err(Box::new(OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported));
         }
 
         let mut nodes_to_read_vec = vec![];
@@ -291,9 +301,9 @@ fn history_data_to_series_tuple(hd: HistoryData) -> (Series, Series) {
 }
 
 fn find_aggregate_types(tsq: &TimeSeriesQuery) -> Option<Vec<NodeId>> {
-    if let Some(grouping) = &tsq.grouping {
+    if let TimeSeriesQuery::Grouped(grouped) = &tsq.grouping {
         let mut nodes = vec![];
-        for (_, a) in &grouping.aggregations {
+        for (_, a) in &grouped.aggregations {
             let agg = &a.aggregate_expression;
             let value_var_str = tsq.value_variable.as_ref().unwrap().variable.as_str();
             let expr_is_ok = |expr: &Expression| -> bool {
@@ -368,6 +378,7 @@ enum FindTime {
 }
 
 fn find_time(tsq: &TimeSeriesQuery, find_time: &FindTime) -> DateTime {
+
     let mut found_time = None;
     for c in &tsq.conditions {
         let e = &c.expression;
@@ -587,11 +598,11 @@ fn datetime_from_expression(
 }
 
 fn find_grouping_interval(tsq: &TimeSeriesQuery) -> Option<(String, f64)> {
-    if let Some(grouping) = &tsq.grouping {
+    if let TimeSeriesQuery::Grouped(grouped) = tsq {
         let mut tsf = None;
         let mut grvar = None;
-        for v in &grouping.by {
-            for (t, e) in &grouping.timeseries_funcs {
+        for v in &grouped.by {
+            for (t, e) in &grouped.timeseries_funcs {
                 if t == v {
                     tsf = Some((t, &e.expression));
                     grvar = Some(v);

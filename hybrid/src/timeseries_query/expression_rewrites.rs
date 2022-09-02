@@ -79,7 +79,7 @@ impl TimeSeriesQuery {
                         Some(ChangeType::NoChange),
                         false,
                     );
-                } else if self.get_value_variables().contains(v) {
+                } else if self.get_value_variables().into_iter().find(|x|&x.variable == v).is_some() {
                     if rewrite_context == &TimeSeriesExpressionRewriteContext::Aggregate
                         || pushdown_settings.contains(&PushdownSetting::ValueConditions)
                     {
@@ -96,14 +96,14 @@ impl TimeSeriesQuery {
                 }
             }
             Expression::Or(left, right) => {
-                let left_rewrite = self.try_recursive_rewrite_expression(
+                let mut left_rewrite = self.try_recursive_rewrite_expression(
                     rewrite_context,
                     left,
                     required_change_direction,
                     &context.extension_with(PathEntry::OrLeft),
                     pushdown_settings,
                 );
-                let right_rewrite = self.try_recursive_rewrite_expression(
+                let mut right_rewrite = self.try_recursive_rewrite_expression(
                     rewrite_context,
                     right,
                     required_change_direction,
@@ -214,10 +214,8 @@ impl TimeSeriesQuery {
                         }
                     }
                     ChangeType::NoChange => {
-                        if let (
-                            Some((left_rewrite, ChangeType::NoChange)),
-                            Some((right_rewrite, ChangeType::NoChange)),
-                        ) = (left_rewrite, right_rewrite)
+                        if left_rewrite.expression.is_some() && left_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange &&
+                           right_rewrite.expression.is_some() && right_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
                         {
                             return RecursiveRewriteReturn::new(
                                 Some(Expression::Or(
@@ -233,14 +231,14 @@ impl TimeSeriesQuery {
                 RecursiveRewriteReturn::none()
             }
             Expression::And(left, right) => {
-                let left_rewrite = self.try_recursive_rewrite_expression(
+                let mut left_rewrite = self.try_recursive_rewrite_expression(
                     rewrite_context,
                     left,
                     required_change_direction,
                     &context.extension_with(PathEntry::AndLeft),
                     pushdown_settings,
                 );
-                let right_rewrite = self.try_recursive_rewrite_expression(
+                let mut right_rewrite = self.try_recursive_rewrite_expression(
                     rewrite_context,
                     right,
                     required_change_direction,
@@ -351,10 +349,8 @@ impl TimeSeriesQuery {
                         }
                     }
                     ChangeType::NoChange => {
-                        if let (
-                            Some((left_rewrite, ChangeType::NoChange)),
-                            Some((right_rewrite, ChangeType::NoChange)),
-                        ) = (left_rewrite, right_rewrite)
+                        if left_rewrite.expression.is_some() && left_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange && right_rewrite.expression.is_some() &&
+                        right_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
                         {
                             return RecursiveRewriteReturn::new(
                                 Some(Expression::And(
@@ -535,7 +531,7 @@ impl TimeSeriesQuery {
                 if left_rewrite.change_type.as_ref().is_some()
                     && left_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
                 {
-                    let right_rewrites = right
+                    let mut right_rewrites = right
                         .iter()
                         .enumerate()
                         .map(|(i, e)| {
@@ -556,7 +552,7 @@ impl TimeSeriesQuery {
                             return RecursiveRewriteReturn::new(
                                 Some(Expression::In(
                                     Box::new(left_rewrite.expression.take().unwrap()),
-                                    right_rewrites.into_iter().map(|(e, _)| e).collect(),
+                                    right_rewrites.iter_mut().map(|x|x.expression.take().unwrap()).collect(),
                                 )),
                                 Some(ChangeType::NoChange),
                                 right_rewrites
@@ -578,7 +574,7 @@ impl TimeSeriesQuery {
                             .collect::<Vec<RecursiveRewriteReturn>>();
                         if right_rewrites
                             .iter()
-                            .all(|(_, c)| c == &ChangeType::NoChange)
+                            .all(|x| x.change_type.as_ref().unwrap() == &ChangeType::NoChange)
                         {
                             return RecursiveRewriteReturn::new(
                                 Some(Expression::In(
@@ -873,7 +869,7 @@ impl TimeSeriesQuery {
                     {
                         return RecursiveRewriteReturn::new(
                             Some(Expression::Coalesce(
-                                inner_rewrites.into_iter().map(|(e, _)| e).collect(),
+                                inner_rewrites.into_iter().map(|mut x|x.expression.take().unwrap()).collect(),
                             )),
                             Some(ChangeType::NoChange),
                             inner_rewrites.iter().fold(false, |b, x| b || x.lost_value),
