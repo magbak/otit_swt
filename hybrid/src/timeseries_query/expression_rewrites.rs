@@ -12,9 +12,9 @@ pub(crate) enum TimeSeriesExpressionRewriteContext {
 }
 
 struct RecursiveRewriteReturn {
-    expression: Option<Expression>,
-    change_type: Option<ChangeType>,
-    lost_value: bool,
+    pub expression: Option<Expression>,
+    pub change_type: Option<ChangeType>,
+    pub lost_value: bool,
 }
 
 impl RecursiveRewriteReturn {

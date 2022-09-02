@@ -21,9 +21,7 @@ use async_trait::async_trait;
 use polars::frame::DataFrame;
 use polars_core::utils::accumulate_dataframes_vertical;
 
-use crate::timeseries_database::timeseries_sql_rewrite::{
-    TimeSeriesQueryToSQLError, TimeSeriesTable,
-};
+use crate::timeseries_database::timeseries_sql_rewrite::{create_query, TimeSeriesQueryToSQLError, TimeSeriesTable};
 use arrow_format::flight::service::flight_service_client::FlightServiceClient;
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::MessageHeaderRef;
@@ -33,6 +31,7 @@ use polars_core::prelude::PolarsError;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::time::Instant;
+use sea_query::PostgresQueryBuilder;
 use thiserror::Error;
 use tokio_stream::StreamExt;
 use tonic::metadata::MetadataValue;
@@ -222,25 +221,8 @@ impl ArrowFlightSQLDatabase {
 #[async_trait]
 impl TimeSeriesQueryable for ArrowFlightSQLDatabase {
     async fn execute(&mut self, tsq: &TimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
-        let mut query_string = None;
-        if let Some(tsq_datatype) = &tsq.datatype {
-            for table in &self.time_series_tables {
-                if table.value_datatype.as_str() == tsq_datatype.as_str() {
-                    query_string = Some(table.create_query(tsq)?);
-                }
-            }
-            if query_string.is_none() {
-                return Err(Box::new(ArrowFlightSQLError::DatatypeNotSupported(
-                    tsq_datatype.as_str().to_string(),
-                )));
-            }
-        } else {
-            return Err(Box::new(
-                ArrowFlightSQLError::MissingTimeseriesQueryDatatype,
-            ));
-        }
-
-        Ok(self.execute_sql_query(query_string.unwrap()).await?)
+        let (query,_) = create_query(tsq, &self.time_series_tables)?;
+        Ok(self.execute_sql_query(query.to_string(PostgresQueryBuilder)).await?)
     }
 
     fn allow_compound_timeseries_queries(&self) -> bool {

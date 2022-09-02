@@ -14,6 +14,7 @@ use spargebra::term::Variable;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use crate::pushdown_setting::PushdownSetting;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Grouping {
@@ -39,13 +40,14 @@ pub enum TimeSeriesQuery {
         Box<TimeSeriesQuery>,
         Vec<Variable>,
         Vec<(Variable, AggregateExpressionInContext)>,
+        Vec<(Variable, ExpressionInContext)>,
         u64,
     ),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Synchronizer {
-    Identity,
+    Identity(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -92,7 +94,7 @@ impl TimeSeriesQuery {
             TimeSeriesQuery::LeftSynchronized(left, right, _, _, dropped) => {
                 *dropped || left.dropped_value_expression() || right.dropped_value_expression()
             }
-            TimeSeriesQuery::Grouped(inner, _, _, _) => {
+            TimeSeriesQuery::Grouped(inner, _, _, _,_) => {
                 inner.dropped_value_expression()
             }
         }
@@ -116,7 +118,7 @@ impl TimeSeriesQuery {
                 basics.extend(right.get_mut_basic_queries());
                 basics
             }
-            TimeSeriesQuery::Grouped(inner, _, _, _) => {
+            TimeSeriesQuery::Grouped(inner, _, _, _,_) => {
                 inner.get_mut_basic_queries()
             }
         }
@@ -159,7 +161,7 @@ impl TimeSeriesQuery {
                 vs.extend(right.get_value_variables());
                 vs
             }
-            TimeSeriesQuery::Grouped(inner, _, _, _) => inner.get_value_variables(),
+            TimeSeriesQuery::Grouped(inner, _, _, _,_) => inner.get_value_variables(),
         }
     }
 
@@ -187,7 +189,7 @@ impl TimeSeriesQuery {
                 vs.extend(right.get_identifier_variables());
                 vs
             }
-            TimeSeriesQuery::Grouped(inner, _, _, _) => inner.get_identifier_variables(),
+            TimeSeriesQuery::Grouped(inner, _, _, _,_) => inner.get_identifier_variables(),
         }
     }
 
@@ -226,7 +228,188 @@ impl TimeSeriesQuery {
                 vs.extend(r.get_timestamp_variables());
                 vs
             }
-            TimeSeriesQuery::Grouped(inner, _, _, _) => inner.get_timestamp_variables(),
+            TimeSeriesQuery::Grouped(inner, _, _, _,_) => inner.get_timestamp_variables(),
+        }
+    }
+}
+
+impl TimeSeriesQuery {
+    pub(crate) fn try_pushdown_aggregates(
+        &mut self,
+        aggregations: &Vec<(Variable, AggregateExpression)>,
+        group_graph_pattern: &GraphPattern,
+        timeseries_funcs: Vec<(Variable, ExpressionInContext)>,
+        by: Vec<Variable>,
+        context: &Context,
+        pushdown_settings: &HashSet<PushdownSetting>,
+    ) {
+        let rewrite_context = TimeSeriesExpressionRewriteContext::Aggregate;
+        let mut keep_aggregates = vec![];
+        for (v, a) in aggregations {
+            let mut keep_aggregate = None;
+            match a {
+                AggregateExpression::Count { expr, distinct } => {
+                    if let Some(inner_expr) = expr {
+                        let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                            &rewrite_context,
+                            inner_expr,
+                            &ChangeType::NoChange,
+                            &context.extension_with(PathEntry::AggregationOperation),
+                            pushdown_settings
+                        );
+                        if expr_rewrite.expression.is_some() {
+                            keep_aggregate = Some(AggregateExpression::Count {
+                                expr: Some(Box::new(expr_rewrite.expression.take().unwrap())),
+                                distinct: distinct.clone(),
+                            });
+                        }
+                    }
+                }
+                AggregateExpression::Sum { expr, distinct } => {
+                    let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                        &rewrite_context,
+                        expr,
+                        &ChangeType::NoChange,
+                        &context.extension_with(PathEntry::AggregationOperation),
+                        pushdown_settings
+                    );
+                        if expr_rewrite.expression.is_some()  {
+                        keep_aggregate = Some(AggregateExpression::Sum {
+                            expr: Box::new(expr_rewrite.expression.take().unwrap()),
+                            distinct: distinct.clone(),
+                        });
+                    }
+                }
+                AggregateExpression::Avg { expr, distinct } => {
+                    let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                        &rewrite_context,
+                        expr,
+                        &ChangeType::NoChange,
+                        &context.extension_with(PathEntry::AggregationOperation),
+                        pushdown_settings
+                    );
+                        if expr_rewrite.expression.is_some() {
+                        keep_aggregate = Some(AggregateExpression::Avg {
+                            expr: Box::new(expr_rewrite.expression.take().unwrap()),
+                            distinct: distinct.clone(),
+                        });
+                    }
+                }
+                AggregateExpression::Min { expr, distinct } => {
+                    let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                        &rewrite_context,
+                        expr,
+                        &ChangeType::NoChange,
+                        &context.extension_with(PathEntry::AggregationOperation),
+                        pushdown_settings
+                    );
+                        if expr_rewrite.expression.is_some()  {
+                        keep_aggregate = Some(AggregateExpression::Min {
+                            expr: Box::new(expr_rewrite.expression.take().unwrap()),
+                            distinct: distinct.clone(),
+                        });
+                    }
+                }
+                AggregateExpression::Max { expr, distinct } => {
+                    let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                        &rewrite_context,
+                        expr,
+                        &ChangeType::NoChange,
+                        &context.extension_with(PathEntry::AggregationOperation),
+                        pushdown_settings
+                    );
+                        if expr_rewrite.expression.is_some()  {
+                        keep_aggregate = Some(AggregateExpression::Max {
+                            expr: Box::new(expr_rewrite.expression.take().unwrap()),
+                            distinct: distinct.clone(),
+                        });
+                    }
+                }
+                AggregateExpression::GroupConcat {
+                    expr,
+                    distinct,
+                    separator,
+                } => {
+                    let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                        &rewrite_context,
+                        expr,
+                        &ChangeType::NoChange,
+                        &context.extension_with(PathEntry::AggregationOperation),
+                        pushdown_settings
+                    );
+                        if expr_rewrite.expression.is_some()  {
+                        keep_aggregate = Some(AggregateExpression::GroupConcat {
+                            expr: Box::new(expr_rewrite.expression.take().unwrap()),
+                            distinct: distinct.clone(),
+                            separator: separator.clone(),
+                        });
+                    }
+                }
+                AggregateExpression::Sample { expr, distinct } => {
+                    let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                        &rewrite_context,
+                        expr,
+                        &ChangeType::NoChange,
+                        &context.extension_with(PathEntry::AggregationOperation),
+                        pushdown_settings
+                    );
+                        if expr_rewrite.expression.is_some()  {
+                        keep_aggregate = Some(AggregateExpression::Sample {
+                            expr: Box::new(expr_rewrite.expression.take().unwrap()),
+                            distinct: distinct.clone(),
+                        });
+                    }
+                }
+                AggregateExpression::Custom {
+                    name,
+                    expr,
+                    distinct,
+                } => {
+                    let mut expr_rewrite= self.try_recursive_rewrite_expression(
+                        &rewrite_context,
+                        expr,
+                        &ChangeType::NoChange,
+                        &context.extension_with(PathEntry::AggregationOperation),
+                        pushdown_settings
+                    );
+                        if expr_rewrite.expression.is_some()  {
+                        keep_aggregate = Some(AggregateExpression::Custom {
+                            name: name.clone(),
+                            expr: Box::new(expr_rewrite.expression.take().unwrap()),
+                            distinct: distinct.clone(),
+                        });
+                    }
+                }
+            }
+            if let Some(agg) = keep_aggregate {
+                keep_aggregates.push((v.clone(), agg));
+            }
+        }
+        if keep_aggregates.len() == aggregations.len() {
+            self.grouping = Some(Grouping {
+                graph_pattern_hash: hash_graph_pattern(group_graph_pattern),
+                by,
+                aggregations: keep_aggregates
+                    .into_iter()
+                    .map(|(v, a)| (v, AggregateExpressionInContext::new(a, context.clone())))
+                    .collect(),
+                timeseries_funcs,
+            });
+        }
+    }
+}
+
+impl BasicTimeSeriesQuery {
+    pub fn new_empty() -> BasicTimeSeriesQuery {
+        BasicTimeSeriesQuery {
+            identifier_variable: None,
+            timeseries_variable: None,
+            data_point_variable: None,
+            value_variable: None,
+            datatype_variable: None,
+            datatype: None,
+            timestamp_variable: None,
+            ids: None,
         }
     }
 
@@ -264,170 +447,6 @@ impl TimeSeriesQuery {
             Err(err)
         } else {
             Ok(())
-        }
-    }
-}
-
-impl TimeSeriesQuery {
-    pub(crate) fn try_pushdown_aggregates(
-        &mut self,
-        aggregations: &Vec<(Variable, AggregateExpression)>,
-        group_graph_pattern: &GraphPattern,
-        timeseries_funcs: Vec<(Variable, ExpressionInContext)>,
-        by: Vec<Variable>,
-        context: &Context,
-    ) {
-        let rewrite_context = TimeSeriesExpressionRewriteContext::Aggregate;
-        let mut keep_aggregates = vec![];
-        for (v, a) in aggregations {
-            let mut keep_aggregate = None;
-            match a {
-                AggregateExpression::Count { expr, distinct } => {
-                    if let Some(inner_expr) = expr {
-                        if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
-                            &rewrite_context,
-                            inner_expr,
-                            &ChangeType::NoChange,
-                            &context.extension_with(PathEntry::AggregationOperation),
-                        ) {
-                            keep_aggregate = Some(AggregateExpression::Count {
-                                expr: Some(Box::new(expr_rewrite)),
-                                distinct: distinct.clone(),
-                            });
-                        }
-                    }
-                }
-                AggregateExpression::Sum { expr, distinct } => {
-                    if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
-                        &rewrite_context,
-                        expr,
-                        &ChangeType::NoChange,
-                        &context.extension_with(PathEntry::AggregationOperation),
-                    ) {
-                        keep_aggregate = Some(AggregateExpression::Sum {
-                            expr: Box::new(expr_rewrite),
-                            distinct: distinct.clone(),
-                        });
-                    }
-                }
-                AggregateExpression::Avg { expr, distinct } => {
-                    if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
-                        &rewrite_context,
-                        expr,
-                        &ChangeType::NoChange,
-                        &context.extension_with(PathEntry::AggregationOperation),
-                    ) {
-                        keep_aggregate = Some(AggregateExpression::Avg {
-                            expr: Box::new(expr_rewrite),
-                            distinct: distinct.clone(),
-                        });
-                    }
-                }
-                AggregateExpression::Min { expr, distinct } => {
-                    if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
-                        &rewrite_context,
-                        expr,
-                        &ChangeType::NoChange,
-                        &context.extension_with(PathEntry::AggregationOperation),
-                    ) {
-                        keep_aggregate = Some(AggregateExpression::Min {
-                            expr: Box::new(expr_rewrite),
-                            distinct: distinct.clone(),
-                        });
-                    }
-                }
-                AggregateExpression::Max { expr, distinct } => {
-                    if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
-                        &rewrite_context,
-                        expr,
-                        &ChangeType::NoChange,
-                        &context.extension_with(PathEntry::AggregationOperation),
-                    ) {
-                        keep_aggregate = Some(AggregateExpression::Max {
-                            expr: Box::new(expr_rewrite),
-                            distinct: distinct.clone(),
-                        });
-                    }
-                }
-                AggregateExpression::GroupConcat {
-                    expr,
-                    distinct,
-                    separator,
-                } => {
-                    if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
-                        &rewrite_context,
-                        expr,
-                        &ChangeType::NoChange,
-                        &context.extension_with(PathEntry::AggregationOperation),
-                    ) {
-                        keep_aggregate = Some(AggregateExpression::GroupConcat {
-                            expr: Box::new(expr_rewrite),
-                            distinct: distinct.clone(),
-                            separator: separator.clone(),
-                        });
-                    }
-                }
-                AggregateExpression::Sample { expr, distinct } => {
-                    if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
-                        &rewrite_context,
-                        expr,
-                        &ChangeType::NoChange,
-                        &context.extension_with(PathEntry::AggregationOperation),
-                    ) {
-                        keep_aggregate = Some(AggregateExpression::Sample {
-                            expr: Box::new(expr_rewrite),
-                            distinct: distinct.clone(),
-                        });
-                    }
-                }
-                AggregateExpression::Custom {
-                    name,
-                    expr,
-                    distinct,
-                } => {
-                    if let Some((expr_rewrite, _)) = self.try_recursive_rewrite_expression(
-                        &rewrite_context,
-                        expr,
-                        &ChangeType::NoChange,
-                        &context.extension_with(PathEntry::AggregationOperation),
-                    ) {
-                        keep_aggregate = Some(AggregateExpression::Custom {
-                            name: name.clone(),
-                            expr: Box::new(expr_rewrite),
-                            distinct: distinct.clone(),
-                        });
-                    }
-                }
-            }
-            if let Some(agg) = keep_aggregate {
-                keep_aggregates.push((v.clone(), agg));
-            }
-        }
-        if keep_aggregates.len() == aggregations.len() {
-            self.grouping = Some(Grouping {
-                graph_pattern_hash: hash_graph_pattern(group_graph_pattern),
-                by,
-                aggregations: keep_aggregates
-                    .into_iter()
-                    .map(|(v, a)| (v, AggregateExpressionInContext::new(a, context.clone())))
-                    .collect(),
-                timeseries_funcs,
-            });
-        }
-    }
-}
-
-impl BasicTimeSeriesQuery {
-    pub fn new_empty() -> BasicTimeSeriesQuery {
-        BasicTimeSeriesQuery {
-            identifier_variable: None,
-            timeseries_variable: None,
-            data_point_variable: None,
-            value_variable: None,
-            datatype_variable: None,
-            datatype: None,
-            timestamp_variable: None,
-            ids: None,
         }
     }
 }

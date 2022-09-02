@@ -196,7 +196,7 @@ fn greater_than_or_original(
             if let Value::ChronoDateTime(Some(left_dt)) = left_value {
                 if let SimpleExpr::Column(right_column) = &right {
                     if let Some(colname) = find_colname(right_column) {
-                        if timestamp_col == colname {
+                        if timestamp_col == &colname {
                             let left_year = left_dt.year();
                             let left_month = left_dt.month();
                             let left_day = left_dt.day();
