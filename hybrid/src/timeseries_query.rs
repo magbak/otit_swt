@@ -194,7 +194,85 @@ impl TimeSeriesQuery {
         }
         false
     }
-
+    
+    pub(crate) fn has_equivalent_data_point_variable(
+        &self,
+        variable: &Variable,
+        context: &Context,
+    ) -> bool {
+        for data_point_variable in self.get_data_point_variables() {
+            if data_point_variable.equivalent(variable, context) {
+                return true;
+            }
+        }
+        false
+    }
+    
+    pub(crate) fn has_equivalent_timeseries_variable(
+        &self,
+        variable: &Variable,
+        context: &Context,
+    ) -> bool {
+        for timeseries_variable in self.get_timeseries_variables() {
+            if timeseries_variable.equivalent(variable, context) {
+                return true;
+            }
+        }
+        false
+    }
+    
+    pub(crate) fn get_data_point_variables(&self) -> Vec<&VariableInContext> {
+        match self {
+            TimeSeriesQuery::Basic(b) => {
+                if let Some(id_var) = &b.data_point_variable {
+                    vec![id_var]
+                } else {
+                    vec![]
+                }
+            }
+            TimeSeriesQuery::Filtered(inner, _, _) => inner.get_data_point_variables(),
+            TimeSeriesQuery::InnerSynchronized(inners, _) => {
+                let mut vs = vec![];
+                for inner in inners {
+                    vs.extend(inner.get_data_point_variables())
+                }
+                vs
+            }
+            TimeSeriesQuery::LeftSynchronized(left, right, _, _, _) => {
+                let mut vs = left.get_data_point_variables();
+                vs.extend(right.get_data_point_variables());
+                vs
+            }
+            TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_data_point_variables(),
+        }
+    }
+    
+    pub(crate) fn get_timeseries_variables(&self) -> Vec<&VariableInContext> {
+        match self {
+            TimeSeriesQuery::Basic(b) => {
+                if let Some(var) = &b.timeseries_variable {
+                    vec![var]
+                } else {
+                    vec![]
+                }
+            }
+            TimeSeriesQuery::Filtered(inner, _, _) => inner.get_timeseries_variables(),
+            TimeSeriesQuery::InnerSynchronized(inners, _) => {
+                let mut vs = vec![];
+                for inner in inners {
+                    vs.extend(inner.get_timeseries_variables())
+                }
+                vs
+            }
+            TimeSeriesQuery::LeftSynchronized(left, right, _, _, _) => {
+                let mut vs = left.get_timeseries_variables();
+                vs.extend(right.get_timeseries_variables());
+                vs
+            }
+            TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_timeseries_variables(),
+        }
+    }
+    
     pub(crate) fn get_value_variables(&self) -> Vec<&VariableInContext> {
         match self {
             TimeSeriesQuery::Basic(b) => {

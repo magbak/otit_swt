@@ -87,6 +87,7 @@ impl Engine {
                     &static_result_df,
                     &mut time_series_queries,
                     &variable_constraints,
+                    &self.pushdown_settings,
                 );
             }
             let mut time_series = self

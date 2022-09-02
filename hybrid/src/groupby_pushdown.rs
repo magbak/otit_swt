@@ -9,12 +9,14 @@ use polars::prelude::{ChunkAgg, DataFrame};
 use spargebra::algebra::GraphPattern;
 use spargebra::Query;
 use std::collections::HashSet;
+use crate::pushdown_setting::PushdownSetting;
 
 pub(crate) fn find_all_groupby_pushdowns(
     static_query: &Query,
     static_query_df: &DataFrame,
     time_series_queries: &mut Vec<TimeSeriesQuery>,
     variable_constraints: &VariableConstraints,
+    pushdown_settings: &HashSet<PushdownSetting>
 ) {
     assert!(static_query_df.height() > 0);
     if let Query::Select {
@@ -29,6 +31,7 @@ pub(crate) fn find_all_groupby_pushdowns(
             time_series_queries,
             variable_constraints,
             &Context::new(),
+            pushdown_settings
         )
     }
 }
@@ -39,6 +42,7 @@ fn find_groupby_pushdowns_in_graph_pattern(
     time_series_queries: &mut Vec<TimeSeriesQuery>,
     variable_constraints: &VariableConstraints,
     context: &Context,
+    pushdown_settings: &HashSet<PushdownSetting>
 ) {
     match graph_pattern {
         GraphPattern::Join { left, right } => {
@@ -47,14 +51,14 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::JoinLeftSide),
+                &context.extension_with(PathEntry::JoinLeftSide),pushdown_settings
             );
             find_groupby_pushdowns_in_graph_pattern(
                 right,
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::JoinRightSide),
+                &context.extension_with(PathEntry::JoinRightSide),pushdown_settings
             );
         }
         GraphPattern::LeftJoin { left, right, .. } => {
@@ -63,14 +67,14 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::LeftJoinLeftSide),
+                &context.extension_with(PathEntry::LeftJoinLeftSide),pushdown_settings
             );
             find_groupby_pushdowns_in_graph_pattern(
                 right,
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::LeftJoinRightSide),
+                &context.extension_with(PathEntry::LeftJoinRightSide),pushdown_settings
             );
         }
         GraphPattern::Filter { inner, .. } => {
@@ -79,7 +83,7 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::FilterInner),
+                &context.extension_with(PathEntry::FilterInner),pushdown_settings
             );
         }
         GraphPattern::Union { left, right } => {
@@ -88,14 +92,14 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::UnionLeftSide),
+                &context.extension_with(PathEntry::UnionLeftSide),pushdown_settings
             );
             find_groupby_pushdowns_in_graph_pattern(
                 right,
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::UnionRightSide),
+                &context.extension_with(PathEntry::UnionRightSide),pushdown_settings
             );
         }
         GraphPattern::Graph { inner, .. } => {
@@ -104,7 +108,7 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::GraphInner),
+                &context.extension_with(PathEntry::GraphInner),pushdown_settings
             );
         }
         GraphPattern::Extend { inner, .. } => {
@@ -113,7 +117,7 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::ExtendInner),
+                &context.extension_with(PathEntry::ExtendInner),pushdown_settings
             );
         }
         GraphPattern::Minus { left, right } => {
@@ -122,14 +126,14 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::MinusLeftSide),
+                &context.extension_with(PathEntry::MinusLeftSide),pushdown_settings
             );
             find_groupby_pushdowns_in_graph_pattern(
                 right,
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::MinusRightSide),
+                &context.extension_with(PathEntry::MinusRightSide),pushdown_settings
             );
         }
         GraphPattern::OrderBy { inner, .. } => {
@@ -138,7 +142,7 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::OrderByInner),
+                &context.extension_with(PathEntry::OrderByInner),pushdown_settings
             );
         }
         GraphPattern::Project { inner, .. } => {
@@ -147,7 +151,7 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::ProjectInner),
+                &context.extension_with(PathEntry::ProjectInner),pushdown_settings
             );
         }
         GraphPattern::Distinct { inner } => {
@@ -156,7 +160,7 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::DistinctInner),
+                &context.extension_with(PathEntry::DistinctInner),pushdown_settings
             );
         }
         GraphPattern::Reduced { inner } => {
@@ -165,7 +169,7 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::ReducedInner),
+                &context.extension_with(PathEntry::ReducedInner),pushdown_settings
             );
         }
         GraphPattern::Slice { inner, .. } => {
@@ -174,7 +178,7 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 static_query_df,
                 time_series_queries,
                 variable_constraints,
-                &context.extension_with(PathEntry::SliceInner),
+                &context.extension_with(PathEntry::SliceInner),pushdown_settings
             );
         }
         GraphPattern::Group {
@@ -206,32 +210,16 @@ fn find_groupby_pushdowns_in_graph_pattern(
                         println!("v {:?}, c {:?}", v, c);
                         let in_tsq = match c {
                             Constraint::ExternalTimeseries => {
-                                tsq.timeseries_variable.is_some()
-                                    && tsq
-                                        .timeseries_variable
-                                        .as_ref()
-                                        .unwrap()
-                                        .equivalent(v, context)
+                                tsq.has_equivalent_timeseries_variable(v, context)
                             }
                             Constraint::ExternalDataPoint => {
-                                tsq.data_point_variable.is_some()
-                                    && tsq
-                                        .data_point_variable
-                                        .as_ref()
-                                        .unwrap()
-                                        .equivalent(v, context)
+                                tsq.has_equivalent_data_point_variable(v, context)
                             }
                             Constraint::ExternalDataValue => {
-                                tsq.value_variable.is_some()
-                                    && tsq.value_variable.as_ref().unwrap().equivalent(v, context)
+                                tsq.has_equivalent_value_variable(v, context)
                             }
                             Constraint::ExternalTimestamp => {
-                                tsq.timestamp_variable.is_some()
-                                    && tsq
-                                        .timestamp_variable
-                                        .as_ref()
-                                        .unwrap()
-                                        .equivalent(v, context)
+                                tsq.has_equivalent_timestamp_variable(v, context)
                             }
                             Constraint::ExternallyDerived => {
                                 true //true since we do not want to disqualify our timeseries query.. TODO figure out
@@ -290,6 +278,7 @@ fn find_groupby_pushdowns_in_graph_pattern(
                             timeseries_funcs,
                             by,
                             context,
+                            pushdown_settings
                         );
                     }
                 }
@@ -622,7 +611,7 @@ GROUP BY ?wtur_label ?year ?month ?day ?hour ?minute_10
         ))];
         complete_time_series_queries(&solutions, &mut tsqs).unwrap();
         let static_result_df = create_static_query_result_df(&static_rewrite, solutions);
-        find_all_groupby_pushdowns(&parsed, &static_result_df, &mut tsqs, &variable_constraints);
+        find_all_groupby_pushdowns(&parsed, &static_result_df, &mut tsqs, &variable_constraints, &all_pushdowns());
         //let static_result_df = DataFrame::new();
         println!("TSQS: {:?}", tsqs);
     }
