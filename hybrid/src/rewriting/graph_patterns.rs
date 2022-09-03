@@ -1,5 +1,6 @@
 mod bgp_pattern;
 mod distinct_pattern;
+mod extend_pattern;
 mod filter_pattern;
 mod graph_pattern;
 mod group_pattern;
@@ -14,7 +15,6 @@ mod service_pattern;
 mod sliced_pattern;
 mod union_pattern;
 mod values_pattern;
-mod extend_pattern;
 
 use super::StaticQueryRewriter;
 use crate::change_types::ChangeType;

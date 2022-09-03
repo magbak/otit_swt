@@ -1,13 +1,11 @@
 use hybrid::preprocessing::Preprocessor;
 use hybrid::pushdown_setting::all_pushdowns;
-use hybrid::query_context::{Context, ExpressionInContext, PathEntry, VariableInContext};
+use hybrid::query_context::{Context, PathEntry, VariableInContext};
 use hybrid::rewriting::StaticQueryRewriter;
 use hybrid::splitter::parse_sparql_select_query;
-use hybrid::timeseries_query::TimeSeriesQuery;
+use hybrid::timeseries_query::{BasicTimeSeriesQuery, Synchronizer, TimeSeriesQuery};
 use oxrdf::vocab::xsd;
 use oxrdf::Literal;
-use polars_core::frame::DataFrame;
-use polars_core::series::Series;
 use spargebra::algebra::Expression;
 use spargebra::algebra::Expression::{And, Greater, Less};
 use spargebra::term::Variable;
@@ -27,7 +25,7 @@ fn test_simple_query() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint, true);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
 
     let expected_str = r#"
@@ -58,7 +56,7 @@ fn test_filtered_query() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint, true);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_external_id_0 WHERE {
@@ -90,7 +88,7 @@ fn test_complex_expression_filter() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint, true);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_external_id_0 WHERE {
@@ -123,7 +121,7 @@ fn test_complex_expression_filter_projection() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint, true);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_external_id_0 ?pv WHERE {
@@ -156,7 +154,7 @@ fn test_complex_nested_expression_filter() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint, true);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_external_id_0 ?pv WHERE {
@@ -191,7 +189,7 @@ fn test_option_expression_filter_projection() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint, true);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?pv ?ts_datatype_0 ?ts_external_id_0 WHERE {
@@ -238,7 +236,7 @@ fn test_union_expression() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint, true);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?pv ?ts_datatype_0 ?ts_datatype_1 ?ts_external_id_0 ?ts_external_id_1 WHERE {
@@ -287,7 +285,7 @@ fn test_bind_expression() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint, true);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_datatype_1 ?ts_external_id_0 ?ts_external_id_1 WHERE {
@@ -321,7 +319,7 @@ fn test_fix_dropped_triple() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint, true);
     let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
@@ -337,66 +335,63 @@ fn test_fix_dropped_triple() {
     let expected_query = Query::parse(expected_str, None).unwrap();
     assert_eq!(static_rewrite, expected_query);
 
-    let expected_time_series_queries = vec![TimeSeriesQuery {
-        pushdown_settings: all_pushdowns(),
-        dropped_value_expression: false,
-        identifier_variable: Some(Variable::new_unchecked("ts_external_id_0")),
-        timeseries_variable: Some(VariableInContext::new(
-            Variable::new_unchecked("ts"),
-            Context::from_path(vec![
-                PathEntry::ProjectInner,
-                PathEntry::FilterInner,
-                PathEntry::BGP,
-            ]),
+    let expected_time_series_queries = vec![TimeSeriesQuery::Filtered(
+        Box::new(TimeSeriesQuery::Basic(BasicTimeSeriesQuery {
+            identifier_variable: Some(Variable::new_unchecked("ts_external_id_0")),
+            timeseries_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("ts"),
+                Context::from_path(vec![
+                    PathEntry::ProjectInner,
+                    PathEntry::FilterInner,
+                    PathEntry::BGP,
+                ]),
+            )),
+            data_point_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("dp"),
+                Context::from_path(vec![
+                    PathEntry::ProjectInner,
+                    PathEntry::FilterInner,
+                    PathEntry::BGP,
+                ]),
+            )),
+            value_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("v"),
+                Context::from_path(vec![
+                    PathEntry::ProjectInner,
+                    PathEntry::FilterInner,
+                    PathEntry::BGP,
+                ]),
+            )),
+            datatype_variable: Some(Variable::new_unchecked("ts_datatype_0")),
+            datatype: None,
+            timestamp_variable: Some(VariableInContext::new(
+                Variable::new_unchecked("t"),
+                Context::from_path(vec![
+                    PathEntry::ProjectInner,
+                    PathEntry::FilterInner,
+                    PathEntry::BGP,
+                ]),
+            )),
+            ids: None,
+        })),
+        Some(And(
+            Box::new(Greater(
+                Box::new(Expression::Variable(Variable::new_unchecked("t"))),
+                Box::new(Expression::Literal(Literal::new_typed_literal(
+                    "2022-06-01T08:46:53",
+                    xsd::DATE_TIME,
+                ))),
+            )),
+            Box::new(Less(
+                Box::new(Expression::Variable(Variable::new_unchecked("v"))),
+                Box::new(Expression::Literal(Literal::new_typed_literal(
+                    "50",
+                    xsd::INTEGER,
+                ))),
+            )),
         )),
-        data_point_variable: Some(VariableInContext::new(
-            Variable::new_unchecked("dp"),
-            Context::from_path(vec![
-                PathEntry::ProjectInner,
-                PathEntry::FilterInner,
-                PathEntry::BGP,
-            ]),
-        )),
-        value_variable: Some(VariableInContext::new(
-            Variable::new_unchecked("v"),
-            Context::from_path(vec![
-                PathEntry::ProjectInner,
-                PathEntry::FilterInner,
-                PathEntry::BGP,
-            ]),
-        )),
-        datatype_variable: Some(Variable::new_unchecked("ts_datatype_0")),
-        datatype: None,
-        timestamp_variable: Some(VariableInContext::new(
-            Variable::new_unchecked("t"),
-            Context::from_path(vec![
-                PathEntry::ProjectInner,
-                PathEntry::FilterInner,
-                PathEntry::BGP,
-            ]),
-        )),
-        ids: None,
-        grouping: None,
-        conditions: vec![ExpressionInContext::new(
-            And(
-                Box::new(Greater(
-                    Box::new(Expression::Variable(Variable::new_unchecked("t"))),
-                    Box::new(Expression::Literal(Literal::new_typed_literal(
-                        "2022-06-01T08:46:53",
-                        xsd::DATE_TIME,
-                    ))),
-                )),
-                Box::new(Less(
-                    Box::new(Expression::Variable(Variable::new_unchecked("v"))),
-                    Box::new(Expression::Literal(Literal::new_typed_literal(
-                        "50",
-                        xsd::INTEGER,
-                    ))),
-                )),
-            ),
-            Context::from_path(vec![PathEntry::ProjectInner, PathEntry::FilterExpression]),
-        )],
-    }];
+        false,
+    )];
     assert_eq!(time_series_queries, expected_time_series_queries);
 }
 
@@ -420,7 +415,7 @@ fn test_property_path_expression() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint, true);
     let (static_rewrite, time_series_queries) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?var1 ?var2 ?ts_datatype_0 ?ts_datatype_1 ?ts_external_id_0 ?ts_external_id_1 WHERE {
@@ -433,92 +428,87 @@ fn test_property_path_expression() {
      ?var2 <https://github.com/magbak/otit_swt#hasTimeseries> ?blank_replacement_1 . }
     "#;
     let expected_query = Query::parse(expected_str, None).unwrap();
-    let expected_time_series_queries = vec![
-        TimeSeriesQuery {
-            pushdown_settings: all_pushdowns(),
-            dropped_value_expression: false,
-            identifier_variable: Some(Variable::new_unchecked("ts_external_id_0")),
-            timeseries_variable: Some(VariableInContext::new(
-                Variable::new_unchecked("blank_replacement_0"),
-                Context::from_path(vec![
-                    PathEntry::ProjectInner,
-                    PathEntry::ExtendInner,
-                    PathEntry::BGP,
-                ]),
-            )),
-            data_point_variable: Some(VariableInContext::new(
-                Variable::new_unchecked("dp1"),
-                Context::from_path(vec![
-                    PathEntry::ProjectInner,
-                    PathEntry::ExtendInner,
-                    PathEntry::BGP,
-                ]),
-            )),
-            value_variable: Some(VariableInContext::new(
-                Variable::new_unchecked("val1"),
-                Context::from_path(vec![
-                    PathEntry::ProjectInner,
-                    PathEntry::ExtendInner,
-                    PathEntry::BGP,
-                ]),
-            )),
-            datatype_variable: Some(Variable::new_unchecked("ts_datatype_0")),
-            datatype: None,
-            timestamp_variable: Some(VariableInContext::new(
-                Variable::new_unchecked("t"),
-                Context::from_path(vec![
-                    PathEntry::ProjectInner,
-                    PathEntry::ExtendInner,
-                    PathEntry::BGP,
-                ]),
-            )),
-            ids: None,
-            grouping: None,
-            conditions: vec![],
-        },
-        TimeSeriesQuery {
-            pushdown_settings: all_pushdowns(),
-            dropped_value_expression: false,
-            identifier_variable: Some(Variable::new_unchecked("ts_external_id_1")),
-            timeseries_variable: Some(VariableInContext::new(
-                Variable::new_unchecked("blank_replacement_1"),
-                Context::from_path(vec![
-                    PathEntry::ProjectInner,
-                    PathEntry::ExtendInner,
-                    PathEntry::BGP,
-                ]),
-            )),
-            data_point_variable: Some(VariableInContext::new(
-                Variable::new_unchecked("dp2"),
-                Context::from_path(vec![
-                    PathEntry::ProjectInner,
-                    PathEntry::ExtendInner,
-                    PathEntry::BGP,
-                ]),
-            )),
-            value_variable: Some(VariableInContext::new(
-                Variable::new_unchecked("val2"),
-                Context::from_path(vec![
-                    PathEntry::ProjectInner,
-                    PathEntry::ExtendInner,
-                    PathEntry::BGP,
-                ]),
-            )),
-            datatype_variable: Some(Variable::new_unchecked("ts_datatype_1")),
-            datatype: None,
-            timestamp_variable: Some(VariableInContext::new(
-                Variable::new_unchecked("t"),
-                Context::from_path(vec![
-                    PathEntry::ProjectInner,
-                    PathEntry::ExtendInner,
-                    PathEntry::BGP,
-                ]),
-            )),
-            ids: None,
-            grouping: None,
-            conditions: vec![],
-        },
-    ];
+    let expected_time_series_queries = vec![TimeSeriesQuery::InnerSynchronized(
+        vec![
+            Box::new(TimeSeriesQuery::Basic(BasicTimeSeriesQuery {
+                identifier_variable: Some(Variable::new_unchecked("ts_external_id_1")),
+                timeseries_variable: Some(VariableInContext::new(
+                    Variable::new_unchecked("blank_replacement_1"),
+                    Context::from_path(vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ]),
+                )),
+                data_point_variable: Some(VariableInContext::new(
+                    Variable::new_unchecked("dp2"),
+                    Context::from_path(vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ]),
+                )),
+                value_variable: Some(VariableInContext::new(
+                    Variable::new_unchecked("val2"),
+                    Context::from_path(vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ]),
+                )),
+                datatype_variable: Some(Variable::new_unchecked("ts_datatype_1")),
+                datatype: None,
+                timestamp_variable: Some(VariableInContext::new(
+                    Variable::new_unchecked("t"),
+                    Context::from_path(vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ]),
+                )),
+                ids: None,
+            })),
+            Box::new(TimeSeriesQuery::Basic(BasicTimeSeriesQuery {
+                identifier_variable: Some(Variable::new_unchecked("ts_external_id_0")),
+                timeseries_variable: Some(VariableInContext::new(
+                    Variable::new_unchecked("blank_replacement_0"),
+                    Context::from_path(vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ]),
+                )),
+                data_point_variable: Some(VariableInContext::new(
+                    Variable::new_unchecked("dp1"),
+                    Context::from_path(vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ]),
+                )),
+                value_variable: Some(VariableInContext::new(
+                    Variable::new_unchecked("val1"),
+                    Context::from_path(vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ]),
+                )),
+                datatype_variable: Some(Variable::new_unchecked("ts_datatype_0")),
+                datatype: None,
+                timestamp_variable: Some(VariableInContext::new(
+                    Variable::new_unchecked("t"),
+                    Context::from_path(vec![
+                        PathEntry::ProjectInner,
+                        PathEntry::ExtendInner,
+                        PathEntry::BGP,
+                    ]),
+                )),
+                ids: None,
+            })),
+        ],
+        vec![Synchronizer::Identity("t".to_string())],
+    )];
     assert_eq!(time_series_queries, expected_time_series_queries);
     assert_eq!(static_rewrite, expected_query);
 }
@@ -548,7 +538,7 @@ fn test_having_query() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint, true);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?w ?ts_datatype_0 ?ts_external_id_0 WHERE {
@@ -581,7 +571,7 @@ fn test_exists_query() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint, true);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
     let expected_str = r#"
     SELECT ?w ?s ?ts ?ts_datatype_0 ?ts_external_id_0 WHERE {
@@ -623,7 +613,7 @@ fn test_filter_lost_bug() {
     let parsed = parse_sparql_select_query(sparql).unwrap();
     let mut preprocessor = Preprocessor::new();
     let (preprocessed_query, has_constraint) = preprocessor.preprocess(&parsed);
-    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint);
+    let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &has_constraint, true);
     let (static_rewrite, _) = rewriter.rewrite_query(preprocessed_query).unwrap();
 
     let expected_str = r#"

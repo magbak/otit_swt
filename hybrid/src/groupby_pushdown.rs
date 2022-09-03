@@ -226,7 +226,6 @@ fn find_groupby_pushdowns_in_graph_pattern(
                 let tsq = time_series_queries.get(i).unwrap();
                 if !tsq.dropped_value_expression() {
                     for (v, c) in &vs_and_cs {
-                        println!("v {:?}, c {:?}", v, c);
                         let in_tsq = match c {
                             Constraint::ExternalTimeseries => {
                                 tsq.has_equivalent_timeseries_variable(v, context)
@@ -286,7 +285,7 @@ fn find_groupby_pushdowns_in_graph_pattern(
                             static_query_df,
                         ) {
                             all_identifiers_isomorphic = false;
-                            break
+                            break;
                         }
                     }
 
@@ -607,7 +606,6 @@ GROUP BY ?wtur_label ?year ?month ?day ?hour ?minute_10
         let (preprocessed_query, variable_constraints) = preprocessor.preprocess(&parsed);
         let mut rewriter = StaticQueryRewriter::new(all_pushdowns(), &variable_constraints, true);
         let (static_rewrite, mut tsqs) = rewriter.rewrite_query(preprocessed_query).unwrap();
-        println!("Static rewrite {}", static_rewrite.to_string());
 
         let solutions = vec![QuerySolution::from((
             Rc::new(vec![

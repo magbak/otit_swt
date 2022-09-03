@@ -1,14 +1,17 @@
 use crate::combiner::lazy_aggregate::sparql_aggregate_expression_as_lazy_column_and_expression;
 use crate::combiner::lazy_expressions::lazy_expression;
+use crate::query_context::{Context, PathEntry};
 use crate::timeseries_database::TimeSeriesQueryable;
-use crate::timeseries_query::{BasicTimeSeriesQuery, GroupedTimeSeriesQuery, TimeSeriesQuery};
+use crate::timeseries_query::{
+    BasicTimeSeriesQuery, GroupedTimeSeriesQuery, Synchronizer, TimeSeriesQuery,
+};
 use async_trait::async_trait;
 use polars::frame::DataFrame;
 use polars::prelude::{col, concat, lit, Expr, IntoLazy};
-use std::collections::{HashMap};
-use std::error::Error;
+use polars_core::prelude::JoinType;
 use spargebra::algebra::Expression;
-use crate::query_context::{Context, PathEntry};
+use std::collections::HashMap;
+use std::error::Error;
 
 pub struct InMemoryTimeseriesDatabase {
     pub frames: HashMap<String, DataFrame>,
@@ -26,27 +29,21 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
 }
 
 impl InMemoryTimeseriesDatabase {
-    fn execute_query(&self, tsq:&TimeSeriesQuery) -> Result<DataFrame,  Box<dyn Error>> {
+    fn execute_query(&self, tsq: &TimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
         match tsq {
-            TimeSeriesQuery::Basic(b) => {
-                self.execute_basic(b)
-            }
-            TimeSeriesQuery::Filtered(inner, filter, _) => {
-                self.execute_filtered(inner, filter)
-            }
-            TimeSeriesQuery::InnerSynchronized(_, _) => {
-                unimplemented!()
+            TimeSeriesQuery::Basic(b) => self.execute_basic(b),
+            TimeSeriesQuery::Filtered(inner, filter, _) => self.execute_filtered(inner, filter),
+            TimeSeriesQuery::InnerSynchronized(inners, synchronizers) => {
+                self.execute_inner_synchronized(inners, synchronizers)
             }
             TimeSeriesQuery::LeftSynchronized(_, _, _, _, _) => {
                 unimplemented!()
             }
-            TimeSeriesQuery::Grouped(grouped) => {
-                self.execute_grouped(grouped)
-            }
+            TimeSeriesQuery::Grouped(grouped) => self.execute_grouped(grouped),
         }
     }
 
-    fn execute_basic(&self, btsq:&BasicTimeSeriesQuery) -> Result<DataFrame,  Box<dyn Error>> {
+    fn execute_basic(&self, btsq: &BasicTimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
         let mut lfs = vec![];
         for id in btsq.ids.as_ref().unwrap() {
             if let Some(df) = self.frames.get(id) {
@@ -70,7 +67,6 @@ impl InMemoryTimeseriesDatabase {
                     lit(id.to_string()).alias(btsq.identifier_variable.as_ref().unwrap().as_str()),
                 );
 
-
                 lfs.push(lf);
             } else {
                 panic!("Missing frame");
@@ -80,31 +76,40 @@ impl InMemoryTimeseriesDatabase {
         Ok(out_lf.collect().unwrap())
     }
 
-    fn execute_filtered(&self, tsq:&TimeSeriesQuery, filter:&Option<Expression>) -> Result<DataFrame,  Box<dyn Error>> {
+    fn execute_filtered(
+        &self,
+        tsq: &TimeSeriesQuery,
+        filter: &Option<Expression>,
+    ) -> Result<DataFrame, Box<dyn Error>> {
         let df = self.execute_query(tsq)?;
-        let columns = df.get_column_names().into_iter().map(|x|x.to_string()).collect();
+        let columns = df
+            .get_column_names()
+            .into_iter()
+            .map(|x| x.to_string())
+            .collect();
         if let Some(filter) = filter {
             let tmp_context = Context::from_path(vec![PathEntry::Coalesce(12)]);
-            let mut lf = lazy_expression(
-                filter,
-                df.lazy(),
-                &columns,
-                &mut vec![],
-                &tmp_context,
-            );
-            lf = lf.filter(col(tmp_context.as_str()))
+            let mut lf = lazy_expression(filter, df.lazy(), &columns, &mut vec![], &tmp_context);
+            lf = lf
+                .filter(col(tmp_context.as_str()))
                 .drop_columns([tmp_context.as_str()]);
             Ok(lf.collect().unwrap())
-        }
-        else {
+        } else {
             Ok(df)
         }
     }
 
-    fn execute_grouped(&self, grouped:&GroupedTimeSeriesQuery) -> Result<DataFrame,  Box<dyn Error>> {
+    fn execute_grouped(
+        &self,
+        grouped: &GroupedTimeSeriesQuery,
+    ) -> Result<DataFrame, Box<dyn Error>> {
         //Important to do iteration in reversed direction for nested functions
         let df = self.execute_query(&grouped.tsq)?;
-        let mut columns = df.get_column_names().into_iter().map(|x|x.to_string()).collect();
+        let mut columns = df
+            .get_column_names()
+            .into_iter()
+            .map(|x| x.to_string())
+            .collect();
         let mut out_lf = df.lazy();
         for (v, expression) in grouped.timeseries_funcs.iter().rev() {
             out_lf = lazy_expression(
@@ -154,5 +159,33 @@ impl InMemoryTimeseriesDatabase {
 
         let collected = out_lf.collect()?;
         Ok(collected)
+    }
+
+    fn execute_inner_synchronized(
+        &self,
+        inners: &Vec<Box<TimeSeriesQuery>>,
+        synchronizers: &Vec<Synchronizer>,
+    ) -> Result<DataFrame, Box<dyn Error>> {
+        assert_eq!(synchronizers.len(), 1);
+        if let Synchronizer::Identity(timestamp_col) = synchronizers.get(0).unwrap() {
+            let mut dfs = vec![];
+            for q in inners {
+                let df = self.execute_query(q)?;
+                dfs.push(df);
+            }
+            let mut first_df = dfs.remove(0);
+            for df in dfs.into_iter() {
+                first_df = first_df.join(
+                    &df,
+                    [&timestamp_col],
+                    [&timestamp_col],
+                    JoinType::Inner,
+                    None,
+                )?;
+            }
+            Ok(first_df)
+        } else {
+            todo!()
+        }
     }
 }

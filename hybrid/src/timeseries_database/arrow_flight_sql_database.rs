@@ -21,17 +21,19 @@ use async_trait::async_trait;
 use polars::frame::DataFrame;
 use polars_core::utils::accumulate_dataframes_vertical;
 
-use crate::timeseries_database::timeseries_sql_rewrite::{create_query, TimeSeriesQueryToSQLError, TimeSeriesTable};
+use crate::timeseries_database::timeseries_sql_rewrite::{
+    create_query, TimeSeriesQueryToSQLError, TimeSeriesTable,
+};
 use arrow_format::flight::service::flight_service_client::FlightServiceClient;
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::MessageHeaderRef;
 use log::{debug, warn};
 use polars_core::error::ArrowError;
 use polars_core::prelude::PolarsError;
+use sea_query::PostgresQueryBuilder;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::time::Instant;
-use sea_query::PostgresQueryBuilder;
 use thiserror::Error;
 use tokio_stream::StreamExt;
 use tonic::metadata::MetadataValue;

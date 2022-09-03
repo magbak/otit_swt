@@ -337,14 +337,14 @@ pub fn lazy_expression(
                 .expect("Collect lazy error");
             let mut combiner = Combiner::new();
             let new_inner = rewrite_exists_graph_pattern(inner, &exists_context.as_str());
-            let exists_df = combiner
-                .lazy_graph_pattern(
-                    &mut columns.clone(),
-                    df.clone().lazy(),
-                    &new_inner,
-                    time_series,
-                    &exists_context,
-                )
+            let exists_lf = combiner.lazy_graph_pattern(
+                &mut columns.clone(),
+                df.clone().lazy(),
+                &new_inner,
+                time_series,
+                &exists_context,
+            );
+            let exists_df = exists_lf
                 .select([col(&exists_context.as_str())])
                 .unique(None, UniqueKeepStrategy::First)
                 .collect()

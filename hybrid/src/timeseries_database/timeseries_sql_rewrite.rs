@@ -3,6 +3,7 @@ mod expression_rewrite;
 mod partitioning_support;
 
 use crate::query_context::{AggregateExpressionInContext, ExpressionInContext};
+use crate::timeseries_database::timeseries_sql_rewrite::aggregate_expressions::sparql_aggregate_expression_to_sql_expression;
 use crate::timeseries_database::timeseries_sql_rewrite::expression_rewrite::sparql_expression_to_sql_expression;
 use crate::timeseries_database::timeseries_sql_rewrite::partitioning_support::add_partitioned_timestamp_conditions;
 use crate::timeseries_query::{BasicTimeSeriesQuery, Synchronizer, TimeSeriesQuery};
@@ -14,7 +15,6 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter, Write};
 use std::rc::Rc;
-use crate::timeseries_database::timeseries_sql_rewrite::aggregate_expressions::sparql_aggregate_expression_to_sql_expression;
 
 #[derive(Debug)]
 pub enum TimeSeriesQueryToSQLError {
@@ -125,18 +125,23 @@ pub fn create_query(
         }
         TimeSeriesQuery::Grouped(grouped) => {
             let (inner_select, variable_column_name_map) = create_query(&grouped.tsq, tables)?;
-            create_grouped_query(inner_select, variable_column_name_map, &grouped.by, &grouped.aggregations, &grouped.timeseries_funcs)
+            create_grouped_query(
+                inner_select,
+                variable_column_name_map,
+                &grouped.by,
+                &grouped.aggregations,
+                &grouped.timeseries_funcs,
+            )
         }
     }
 }
 
 fn inner_join_selects(
     mut selects_and_timestamp_cols: Vec<(SelectStatement, HashMap<String, String>)>,
-    timestamp_col: &String
+    timestamp_col: &String,
 ) -> (SelectStatement, HashMap<String, String>) {
-    let (mut first_select, mut first_map) =
-        selects_and_timestamp_cols.remove(0);
-    for (i, (s, map )) in selects_and_timestamp_cols.into_iter().enumerate() {
+    let (mut first_select, mut first_map) = selects_and_timestamp_cols.remove(0);
+    for (i, (s, map)) in selects_and_timestamp_cols.into_iter().enumerate() {
         let select_name = format!("other_{}", i);
 
         first_select.join(
@@ -217,15 +222,15 @@ fn create_grouped_query(
     by: &Vec<Variable>,
     aggregations: &Vec<(Variable, AggregateExpressionInContext)>,
     timeseries_funcs: &Vec<(Variable, ExpressionInContext)>,
-) -> Result<(SelectStatement, HashMap<String,String>), TimeSeriesQueryToSQLError> {
+) -> Result<(SelectStatement, HashMap<String, String>), TimeSeriesQueryToSQLError> {
     let mut inner_query = Query::select();
     let inner_query_str = "inner_query";
     let inner_query_name = Name::Table(inner_query_str.to_string());
     inner_query.from_subquery(query, inner_query_name.clone());
-    for (_,v) in &variable_column_name_map {
-        inner_query.expr(
-            SimpleExpr::Column(ColumnRef::Column(Rc::new(Name::Column(v.clone()))))
-        );
+    for (_, v) in &variable_column_name_map {
+        inner_query.expr(SimpleExpr::Column(ColumnRef::Column(Rc::new(
+            Name::Column(v.clone()),
+        ))));
     }
 
     for (v, e) in timeseries_funcs.iter().rev() {
@@ -255,8 +260,8 @@ fn create_grouped_query(
         new_variable_column_name_map.insert(v.as_str().to_string(), v.as_str().to_string());
     }
 
-    outer_query.group_by_columns(by
-            .iter()
+    outer_query.group_by_columns(
+        by.iter()
             .map(|x| {
                 ColumnRef::TableColumn(
                     Rc::new(inner_query_name.clone()),
@@ -398,7 +403,7 @@ mod tests {
                 Context::new(),
             )),
             datatype_variable: Some(Variable::new_unchecked("dt")),
-            datatype: Some(xsd::INT.into_owned()),
+            datatype: Some(xsd::DOUBLE.into_owned()),
             timestamp_variable: Some(VariableInContext::new(
                 Variable::new_unchecked("t"),
                 Context::new(),

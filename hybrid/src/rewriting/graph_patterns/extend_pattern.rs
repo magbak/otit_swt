@@ -1,11 +1,11 @@
-use std::collections::HashSet;
-use oxrdf::Variable;
-use spargebra::algebra::{Expression, GraphPattern};
+use super::StaticQueryRewriter;
 use crate::change_types::ChangeType;
 use crate::query_context::{Context, PathEntry};
 use crate::rewriting::graph_patterns::GPReturn;
 use crate::rewriting::pushups::apply_pushups;
-use super::StaticQueryRewriter;
+use oxrdf::Variable;
+use spargebra::algebra::{Expression, GraphPattern};
+use std::collections::HashSet;
 
 impl StaticQueryRewriter {
     pub(crate) fn rewrite_extend(

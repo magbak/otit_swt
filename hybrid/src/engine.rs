@@ -73,6 +73,7 @@ impl Engine {
         let (static_rewrite, mut time_series_queries) =
             rewriter.rewrite_query(preprocessed_query).unwrap();
         debug!("Produced static rewrite: {}", static_rewrite);
+        debug!("Produced time series queries: {:?}", time_series_queries);
         let static_query_solutions = execute_sparql_query(endpoint, &static_rewrite).await?;
         complete_time_series_queries(&static_query_solutions, &mut time_series_queries)?;
         let static_result_df =
@@ -134,7 +135,9 @@ pub(crate) fn complete_time_series_queries(
         for basic_query in tsq.get_mut_basic_queries() {
             let mut ids = HashSet::new();
             for sqs in static_query_solutions {
-                if let Some(Term::Literal(lit)) = sqs.get(basic_query.identifier_variable.as_ref().unwrap()) {
+                if let Some(Term::Literal(lit)) =
+                    sqs.get(basic_query.identifier_variable.as_ref().unwrap())
+                {
                     if lit.datatype() == xsd::STRING {
                         ids.insert(lit.value().to_string());
                     } else {
@@ -153,7 +156,8 @@ pub(crate) fn complete_time_series_queries(
                                 return Err(OrchestrationError::InconsistentDatatype(
                                     nn.as_str().to_string(),
                                     dt.as_str().to_string(),
-                                    basic_query.timeseries_variable
+                                    basic_query
+                                        .timeseries_variable
                                         .as_ref()
                                         .unwrap()
                                         .variable

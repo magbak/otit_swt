@@ -15,19 +15,37 @@ pub fn add_partitioned_timestamp_conditions(
         SimpleExpr::Unary(op, inner) => SimpleExpr::Unary(
             op.clone(),
             Box::new(add_partitioned_timestamp_conditions(
-                *inner, timestamp_col, year_col, month_col, day_col,
+                *inner,
+                timestamp_col,
+                year_col,
+                month_col,
+                day_col,
             )),
         ),
         SimpleExpr::FunctionCall(func, inner) => {
             let added = inner
                 .into_iter()
-                .map(|x| add_partitioned_timestamp_conditions(x, timestamp_col, year_col, month_col, day_col))
+                .map(|x| {
+                    add_partitioned_timestamp_conditions(
+                        x,
+                        timestamp_col,
+                        year_col,
+                        month_col,
+                        day_col,
+                    )
+                })
                 .collect();
             SimpleExpr::FunctionCall(func.clone(), added)
         }
-        SimpleExpr::Binary(left, op, right) => {
-            rewrite_binary_expression(*left, op, *right, timestamp_col, year_col, month_col, day_col)
-        }
+        SimpleExpr::Binary(left, op, right) => rewrite_binary_expression(
+            *left,
+            op,
+            *right,
+            timestamp_col,
+            year_col,
+            month_col,
+            day_col,
+        ),
         _ => se,
     }
 }
@@ -78,30 +96,54 @@ fn rewrite_binary_expression(
             }
         }
         BinOper::SmallerThan => {
-            if let Some(e) =
-                smaller_than_or_original(&original, &left, &right, timestamp_col, year_col, month_col, day_col)
-            {
+            if let Some(e) = smaller_than_or_original(
+                &original,
+                &left,
+                &right,
+                timestamp_col,
+                year_col,
+                month_col,
+                day_col,
+            ) {
                 return e;
             }
         }
         BinOper::GreaterThan => {
-            if let Some(e) =
-                greater_than_or_original(&original, &left, &right, timestamp_col,year_col, month_col, day_col)
-            {
+            if let Some(e) = greater_than_or_original(
+                &original,
+                &left,
+                &right,
+                timestamp_col,
+                year_col,
+                month_col,
+                day_col,
+            ) {
                 return e;
             }
         }
         BinOper::SmallerThanOrEqual => {
-            if let Some(e) =
-                smaller_than_or_original(&original, &left, &right, timestamp_col, year_col, month_col, day_col)
-            {
+            if let Some(e) = smaller_than_or_original(
+                &original,
+                &left,
+                &right,
+                timestamp_col,
+                year_col,
+                month_col,
+                day_col,
+            ) {
                 return e;
             }
         }
         BinOper::GreaterThanOrEqual => {
-            if let Some(e) =
-                greater_than_or_original(&original, &left, &right, timestamp_col,year_col, month_col, day_col)
-            {
+            if let Some(e) = greater_than_or_original(
+                &original,
+                &left,
+                &right,
+                timestamp_col,
+                year_col,
+                month_col,
+                day_col,
+            ) {
                 return e;
             }
         }
@@ -109,11 +151,19 @@ fn rewrite_binary_expression(
     };
     SimpleExpr::Binary(
         Box::new(add_partitioned_timestamp_conditions(
-            left, timestamp_col, year_col, month_col, day_col,
+            left,
+            timestamp_col,
+            year_col,
+            month_col,
+            day_col,
         )),
         op,
         Box::new(add_partitioned_timestamp_conditions(
-            right, timestamp_col, year_col, month_col, day_col,
+            right,
+            timestamp_col,
+            year_col,
+            month_col,
+            day_col,
         )),
     )
 }

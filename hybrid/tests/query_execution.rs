@@ -7,7 +7,8 @@ use hybrid::static_sparql::execute_sparql_query;
 use hybrid::timeseries_database::simple_in_memory_timeseries::InMemoryTimeseriesDatabase;
 use log::debug;
 use oxrdf::{NamedNode, Term, Variable};
-use polars::prelude::{CsvReader, SerReader};
+use polars::io::SerWriter;
+use polars::prelude::{CsvReader, CsvWriter, SerReader};
 use rstest::*;
 use serial_test::serial;
 use sparesults::QuerySolution;
@@ -688,15 +689,16 @@ async fn test_optional_clause_query(
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX otit_swt:<https://github.com/magbak/otit_swt#>
     PREFIX types:<http://example.org/types#>
-    SELECT ?w ?v WHERE {
+    SELECT ?w ?v ?greater WHERE {
         ?w types:hasSensor/otit_swt:hasTimeseries/otit_swt:hasDataPoint ?dp .
-        OPTIONAL {
         ?dp otit_swt:hasValue ?v .
-        FILTER(?v > 300)
+        OPTIONAL {
+        BIND(?v>300 as ?greater)
+        FILTER(?greater)
         }
     }
     "#;
-    let df = engine
+    let mut df = engine
         .execute_hybrid_query(query, QUERY_ENDPOINT)
         .await
         .expect("Hybrid error");
@@ -712,7 +714,7 @@ async fn test_optional_clause_query(
         .expect("DF read error");
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
-    // let writer = CsvWriter::new(file);
+    // let mut writer = CsvWriter::new(file);
     // writer.finish(&mut df).expect("writeok");
     // println!("{}", df);
 }
@@ -1008,23 +1010,23 @@ async fn test_coalesce_query(
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX otit_swt:<https://github.com/magbak/otit_swt#>
     PREFIX types:<http://example.org/types#>
-    SELECT ?s1 ?s2 ?t ?v1 ?v2 (COALESCE(?v1, ?v2) as ?c) WHERE {
+    SELECT ?s1 ?t1 ?v1 ?v2 (COALESCE(?v2, ?v1) as ?c) WHERE {
         ?s1 otit_swt:hasTimeseries/otit_swt:hasDataPoint ?dp1 .
         ?dp1 otit_swt:hasValue ?v1 .
-        ?dp1 otit_swt:hasTimestamp ?t .
+        ?dp1 otit_swt:hasTimestamp ?t1 .
         OPTIONAL {
-        ?s2 otit_swt:hasTimeseries/otit_swt:hasDataPoint ?dp2 .
+        ?s1 otit_swt:hasTimeseries/otit_swt:hasDataPoint ?dp2 .
         ?dp2 otit_swt:hasValue ?v2 .
-        ?dp2 otit_swt:hasTimestamp ?t .
-        FILTER((?v1 > 300) && ((?v2 = 203) || (?v2 = 204)))
+        ?dp2 otit_swt:hasTimestamp ?t2 .
+        FILTER(seconds(?t2) >= (seconds(?t1) - 1) && seconds(?t2) <= (seconds(?t1) + 1) && ?v2 > ?v1)
         }
     }
     "#;
-    let df = engine
+    let mut df = engine
         .execute_hybrid_query(query, QUERY_ENDPOINT)
         .await
         .expect("Hybrid error")
-        .sort(&["s1", "s2", "v1", "v2", "t"], vec![false])
+        .sort(&["s1", "t1", "v1", "v2"], vec![false])
         .expect("Sort problem");
 
     let mut file_path = testdata_path.clone();
@@ -1037,12 +1039,11 @@ async fn test_coalesce_query(
         .with_parse_dates(true)
         .finish()
         .expect("DF read error")
-        .sort(&["s1", "s2", "v1", "v2", "t"], vec![false])
+        .sort(&["s1", "t1", "v1", "v2"], vec![false])
         .expect("Sort problem");
-
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
-    // let writer = CsvWriter::new(file);
+    // let mut writer = CsvWriter::new(file);
     // writer.finish(&mut df).expect("writeok");
     // println!("{}", df);
 }

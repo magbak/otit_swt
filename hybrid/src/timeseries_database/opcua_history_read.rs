@@ -38,7 +38,7 @@ pub struct OPCUAHistoryRead {
 #[derive(Debug)]
 pub enum OPCUAHistoryReadError {
     InvalidNodeIdError(String),
-    TimeSeriesQueryTypeNotSupported
+    TimeSeriesQueryTypeNotSupported,
 }
 
 impl Display for OPCUAHistoryReadError {
@@ -91,6 +91,7 @@ impl OPCUAHistoryRead {
 #[async_trait]
 impl TimeSeriesQueryable for OPCUAHistoryRead {
     async fn execute(&mut self, tsq: &TimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
+        validate_tsq(tsq, true)?;
         let session = self.session.write().unwrap();
         let start_time = find_time(tsq, &FindTime::Start);
         let end_time = find_time(tsq, &FindTime::End);
@@ -105,20 +106,17 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                 create_read_processed_details(tsq, start_time, end_time);
             processed_details = Some(processed_details_some);
             timestamp_grouping_colname = colname;
-            if let TimeSeriesQuery::Basic(b) = &*grouped.tsq {
-                for c in b.ids.as_ref().unwrap() {
-                    for (v, _) in &grouped.aggregations {
-                        colnames_identifiers.push((v.as_str().to_string(), c.clone()));
-                    }
+            for c in grouped.tsq.get_ids() {
+                for (v, _) in &grouped.aggregations {
+                    colnames_identifiers.push((v.as_str().to_string(), c.clone()));
                 }
-            } else {
-                return Err(Box::new(OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported))
             }
-        } else if let TimeSeriesQuery::Basic(b) = tsq {
+        } else {
             raw_modified_details = Some(create_raw_details(start_time, end_time));
-            for c in b.ids.as_ref().unwrap() {
+            for c in tsq.get_ids() {
                 colnames_identifiers.push((
-                    b.value_variable
+                    tsq.get_value_variables()
+                        .get(0)
                         .as_ref()
                         .unwrap()
                         .variable
@@ -127,8 +125,6 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                     c.clone(),
                 ))
             }
-        } else {
-            return Err(Box::new(OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported));
         }
 
         let mut nodes_to_read_vec = vec![];
@@ -189,7 +185,13 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                 if let Some(grvar) = &timestamp_grouping_colname {
                     ts.rename(grvar);
                 } else {
-                    ts.rename(tsq.get_timestamp_variables().get(0).unwrap().variable.as_str());
+                    ts.rename(
+                        tsq.get_timestamp_variables()
+                            .get(0)
+                            .unwrap()
+                            .variable
+                            .as_str(),
+                    );
                 }
                 val.rename(colname);
                 if let Some(v) = series_map.get_mut(id) {
@@ -230,6 +232,21 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
 
     fn allow_compound_timeseries_queries(&self) -> bool {
         false
+    }
+}
+
+fn validate_tsq(tsq: &TimeSeriesQuery, toplevel: bool) -> Result<(), OPCUAHistoryReadError> {
+    match tsq {
+        TimeSeriesQuery::Basic(_) => Ok(()),
+        TimeSeriesQuery::Filtered(f, _, _) => validate_tsq(f, false),
+        TimeSeriesQuery::Grouped(g) => {
+            if !toplevel {
+                Err(OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported)
+            } else {
+                validate_tsq(&g.tsq, false)
+            }
+        }
+        _ => Err(OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported),
     }
 }
 
@@ -378,7 +395,6 @@ enum FindTime {
 }
 
 fn find_time(tsq: &TimeSeriesQuery, find_time: &FindTime) -> DateTime {
-
     let mut found_time = None;
     let filter = if let TimeSeriesQuery::Grouped(gr) = tsq {
         if let TimeSeriesQuery::Filtered(_, filter, _) = gr.tsq.as_ref() {

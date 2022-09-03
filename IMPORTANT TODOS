@@ -1,1 +1,3 @@
 Fix left join expression pushdowns
+Fix condition that both datapoints and data values are declared within the same BGP.
+Engine should complain otherwise.

@@ -11,7 +11,7 @@ use crate::pushdown_setting::PushdownSetting;
 use crate::query_context::{Context, VariableInContext};
 use crate::rewriting::expressions::ExReturn;
 use crate::timeseries_query::{BasicTimeSeriesQuery, TimeSeriesQuery};
-use spargebra::algebra::{GraphPattern};
+use spargebra::algebra::GraphPattern;
 use spargebra::term::Variable;
 use spargebra::Query;
 use std::collections::hash_map::DefaultHasher;
@@ -23,9 +23,9 @@ pub struct StaticQueryRewriter {
     variable_counter: u16,
     additional_projections: HashSet<Variable>,
     variable_constraints: VariableConstraints,
-    pub time_series_queries: Vec<TimeSeriesQuery>,
     pushdown_settings: HashSet<PushdownSetting>,
     allow_compound_timeseries_queries: bool,
+    exists_expression_time_series_queries: Vec<TimeSeriesQuery>,
 }
 
 impl StaticQueryRewriter {
@@ -40,7 +40,7 @@ impl StaticQueryRewriter {
             variable_counter: 0,
             additional_projections: Default::default(),
             variable_constraints: variable_constraints.clone(),
-            time_series_queries: vec![],
+            exists_expression_time_series_queries: vec![],
         }
     }
 
@@ -58,13 +58,18 @@ impl StaticQueryRewriter {
                 if &pattern_rewrite.change_type == &ChangeType::NoChange
                     || &pattern_rewrite.change_type == &ChangeType::Relaxed
                 {
+                    let mut all_time_series_queries: Vec<TimeSeriesQuery> = self
+                        .exists_expression_time_series_queries
+                        .drain(0..self.exists_expression_time_series_queries.len())
+                        .collect();
+                    all_time_series_queries.extend(pattern_rewrite.drained_time_series_queries());
                     return Some((
                         Query::Select {
                             dataset: dataset.clone(),
                             pattern: pattern_rewrite.graph_pattern.take().unwrap(),
                             base_iri: base_iri.clone(),
                         },
-                        pattern_rewrite.drained_time_series_queries(),
+                        all_time_series_queries,
                     ));
                 } else {
                     None
@@ -84,8 +89,6 @@ impl StaticQueryRewriter {
             }
         }
     }
-
-
 
     fn rewrite_variable(&self, v: &Variable, context: &Context) -> Option<Variable> {
         if let Some(ctr) = self.variable_constraints.get_constraint(v, context) {

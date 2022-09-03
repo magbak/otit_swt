@@ -79,10 +79,7 @@ impl Error for TimeSeriesValidationError {}
 impl TimeSeriesQuery {
     pub(crate) fn validate(&self, df: &DataFrame) -> Result<(), TimeSeriesValidationError> {
         let expected_columns = self.expected_columns();
-        let df_columns: HashSet<&str> = df
-            .get_column_names()
-            .into_iter()
-            .collect();
+        let df_columns: HashSet<&str> = df.get_column_names().into_iter().collect();
         if expected_columns != df_columns {
             let err = TimeSeriesValidationError {
                 missing_columns: expected_columns
@@ -104,12 +101,7 @@ impl TimeSeriesQuery {
         match self {
             TimeSeriesQuery::Basic(b) => {
                 let mut expected_columns = HashSet::new();
-                expected_columns.insert(
-                    b.identifier_variable
-                        .as_ref()
-                        .unwrap()
-                        .as_str()
-                );
+                expected_columns.insert(b.identifier_variable.as_ref().unwrap().as_str());
                 if let Some(vv) = &b.value_variable {
                     expected_columns.insert(vv.variable.as_str());
                 }
@@ -193,7 +185,7 @@ impl TimeSeriesQuery {
         }
         false
     }
-    
+
     pub(crate) fn has_equivalent_data_point_variable(
         &self,
         variable: &Variable,
@@ -206,7 +198,7 @@ impl TimeSeriesQuery {
         }
         false
     }
-    
+
     pub(crate) fn has_equivalent_timeseries_variable(
         &self,
         variable: &Variable,
@@ -271,7 +263,7 @@ impl TimeSeriesQuery {
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_data_point_variables(),
         }
     }
-    
+
     pub(crate) fn get_timeseries_variables(&self) -> Vec<&VariableInContext> {
         match self {
             TimeSeriesQuery::Basic(b) => {
@@ -297,7 +289,7 @@ impl TimeSeriesQuery {
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_timeseries_variables(),
         }
     }
-    
+
     pub(crate) fn get_value_variables(&self) -> Vec<&VariableInContext> {
         match self {
             TimeSeriesQuery::Basic(b) => {

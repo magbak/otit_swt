@@ -124,7 +124,7 @@ impl StaticQueryRewriter {
         }
 
         if new_triples.is_empty() {
-            panic!("Should never happen!")
+            GPReturn::only_timeseries_queries(new_tsqs)
         } else {
             let mut variables_in_scope = HashSet::new();
             for t in &new_triples {
