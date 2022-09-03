@@ -6,24 +6,27 @@ use std::rc::Rc;
 
 pub fn add_partitioned_timestamp_conditions(
     se: SimpleExpr,
-    timestamp_col: &String,
-    year_col: &String,
-    month_col: &String,
-    day_col: &String,
-) -> SimpleExpr {
+    timestamp_col: &str,
+    year_col: &str,
+    month_col: &str,
+    day_col: &str,
+) -> (SimpleExpr,bool) {
     match se {
-        SimpleExpr::Unary(op, inner) => SimpleExpr::Unary(
-            op.clone(),
-            Box::new(add_partitioned_timestamp_conditions(
-                *inner,
-                timestamp_col,
-                year_col,
-                month_col,
-                day_col,
-            )),
-        ),
+        SimpleExpr::Unary(op, inner) => {
+            let (inner_rewrite, added) = add_partitioned_timestamp_conditions(
+                    *inner,
+                    timestamp_col,
+                    year_col,
+                    month_col,
+                    day_col,
+                );
+            (SimpleExpr::Unary(
+                op.clone(),
+                Box::new(inner_rewrite),
+            ), added)
+        },
         SimpleExpr::FunctionCall(func, inner) => {
-            let added = inner
+            let rewrites_and_added:Vec<(SimpleExpr, bool)> = inner
                 .into_iter()
                 .map(|x| {
                     add_partitioned_timestamp_conditions(
@@ -35,7 +38,9 @@ pub fn add_partitioned_timestamp_conditions(
                     )
                 })
                 .collect();
-            SimpleExpr::FunctionCall(func.clone(), added)
+            let added = rewrites_and_added.iter().fold(false, |x,(_,y)| x||*y);
+            let se_rewrites = rewrites_and_added.into_iter().map(|(x,_)|x).collect();
+            (SimpleExpr::FunctionCall(func.clone(), se_rewrites), added)
         }
         SimpleExpr::Binary(left, op, right) => rewrite_binary_expression(
             *left,
@@ -46,7 +51,7 @@ pub fn add_partitioned_timestamp_conditions(
             month_col,
             day_col,
         ),
-        _ => se,
+        _ => (se,false),
     }
 }
 
@@ -54,11 +59,11 @@ fn rewrite_binary_expression(
     left: SimpleExpr,
     op: BinOper,
     right: SimpleExpr,
-    timestamp_col: &String,
-    year_col: &String,
-    month_col: &String,
-    day_col: &String,
-) -> SimpleExpr {
+    timestamp_col: &str,
+    year_col: &str,
+    month_col: &str,
+    day_col: &str,
+) -> (SimpleExpr,bool) {
     let original = SimpleExpr::Binary(Box::new(left.clone()), op, Box::new(right.clone()));
     match op {
         BinOper::In => {
@@ -78,7 +83,7 @@ fn rewrite_binary_expression(
                 month_col,
                 day_col,
             ) {
-                return e;
+                return (e,true);
             }
         }
         BinOper::NotEqual => {
@@ -92,7 +97,7 @@ fn rewrite_binary_expression(
                 month_col,
                 day_col,
             ) {
-                return e;
+                return (e,true);
             }
         }
         BinOper::SmallerThan => {
@@ -105,7 +110,7 @@ fn rewrite_binary_expression(
                 month_col,
                 day_col,
             ) {
-                return e;
+                return (e,true);
             }
         }
         BinOper::GreaterThan => {
@@ -118,7 +123,7 @@ fn rewrite_binary_expression(
                 month_col,
                 day_col,
             ) {
-                return e;
+                return (e,true);
             }
         }
         BinOper::SmallerThanOrEqual => {
@@ -131,7 +136,7 @@ fn rewrite_binary_expression(
                 month_col,
                 day_col,
             ) {
-                return e;
+                return (e,true);
             }
         }
         BinOper::GreaterThanOrEqual => {
@@ -144,38 +149,41 @@ fn rewrite_binary_expression(
                 month_col,
                 day_col,
             ) {
-                return e;
+                return (e,true);
             }
         }
         _ => {}
     };
-    SimpleExpr::Binary(
-        Box::new(add_partitioned_timestamp_conditions(
+    let (left_part, left_added) = add_partitioned_timestamp_conditions(
             left,
             timestamp_col,
             year_col,
             month_col,
             day_col,
-        )),
-        op,
-        Box::new(add_partitioned_timestamp_conditions(
+        );
+    let (right_part, right_added) = add_partitioned_timestamp_conditions(
             right,
             timestamp_col,
             year_col,
             month_col,
             day_col,
-        )),
-    )
+        );
+
+    (SimpleExpr::Binary(
+        Box::new(left_part),
+        op,
+        Box::new(right_part),
+    ), left_added||right_added)
 }
 
 fn greater_than_or_original(
     original: &SimpleExpr,
     left: &SimpleExpr,
     right: &SimpleExpr,
-    timestamp_col: &String,
-    year_col: &String,
-    month_col: &String,
-    day_col: &String,
+    timestamp_col: &str,
+    year_col: &str,
+    month_col: &str,
+    day_col: &str,
 ) -> Option<SimpleExpr> {
     if let SimpleExpr::Column(left_column) = left {
         if let Some(colname) = find_colname(left_column) {
@@ -186,33 +194,33 @@ fn greater_than_or_original(
                         let right_month = right_dt.month();
                         let right_day = right_dt.day();
                         let year_greater_than_year_expr = col_name_oper_const_num(
-                            year_col.clone(),
+                            year_col.to_string(),
                             right_year,
                             BinOper::GreaterThan,
                         );
                         let year_equal_and_month_greater_expr = SimpleExpr::Binary(
                             Box::new(col_name_oper_const_num(
-                                year_col.clone(),
+                                year_col.to_string(),
                                 right_year,
                                 BinOper::Equal,
                             )),
                             BinOper::And,
                             Box::new(col_name_oper_const_num(
-                                month_col.clone(),
+                                month_col.to_string(),
                                 right_month as i32,
                                 BinOper::GreaterThan,
                             )),
                         );
                         let year_equal_and_month_equal_and_day_greater = SimpleExpr::Binary(
                             Box::new(year_equal_and_month_equal(
-                                year_col.clone(),
+                                year_col.to_string(),
                                 right_year,
-                                month_col.clone(),
+                                month_col.to_string(),
                                 right_month,
                             )),
                             BinOper::And,
                             Box::new(col_name_oper_const_num(
-                                day_col.clone(),
+                                day_col.to_string(),
                                 right_day as i32,
                                 BinOper::GreaterThan,
                             )),
@@ -220,11 +228,11 @@ fn greater_than_or_original(
                         let year_equal_and_month_equal_and_day_equal_and_original =
                             SimpleExpr::Binary(
                                 Box::new(year_equal_and_month_equal_and_day_equal(
-                                    year_col.clone(),
+                                    year_col.to_string(),
                                     right_year,
-                                    month_col.clone(),
+                                    month_col.to_string(),
                                     right_month,
-                                    day_col.clone(),
+                                    day_col.to_string(),
                                     right_day,
                                 )),
                                 BinOper::And,
@@ -252,32 +260,32 @@ fn greater_than_or_original(
                             let left_day = left_dt.day();
                             let year_greater_than_year_expr = const_num_oper_col_name(
                                 left_year,
-                                year_col.clone(),
+                                year_col.to_string(),
                                 BinOper::GreaterThan,
                             );
                             let year_equal_and_month_greater_expr = SimpleExpr::Binary(
                                 Box::new(const_num_oper_col_name(
                                     left_year,
-                                    year_col.clone(),
+                                    year_col.to_string(),
                                     BinOper::Equal,
                                 )),
                                 BinOper::And,
                                 Box::new(const_num_oper_col_name(
                                     left_month as i32,
-                                    month_col.clone(),
+                                    month_col.to_string(),
                                     BinOper::GreaterThan,
                                 )),
                             );
                             let year_equal_and_month_equal_and_day_greater = SimpleExpr::Binary(
                                 Box::new(year_equal_and_month_equal(
-                                    year_col.clone(),
+                                    year_col.to_string(),
                                     left_year,
-                                    month_col.clone(),
+                                    month_col.to_string(),
                                     left_month,
                                 )),
                                 BinOper::And,
                                 Box::new(col_name_oper_const_num(
-                                    day_col.clone(),
+                                    day_col.to_string(),
                                     left_day as i32,
                                     BinOper::GreaterThan,
                                 )),
@@ -285,11 +293,11 @@ fn greater_than_or_original(
                             let year_equal_and_month_equal_and_day_equal_and_original =
                                 SimpleExpr::Binary(
                                     Box::new(year_equal_and_month_equal_and_day_equal(
-                                        year_col.clone(),
+                                        year_col.to_string(),
                                         left_year,
-                                        month_col.clone(),
+                                        month_col.to_string(),
                                         left_month,
-                                        day_col.clone(),
+                                        day_col.to_string(),
                                         left_day,
                                     )),
                                     BinOper::And,
@@ -319,10 +327,10 @@ fn oper_or_original(
     left: &SimpleExpr,
     right: &SimpleExpr,
     oper: BinOper,
-    timestamp_col: &String,
-    year_col: &String,
-    month_col: &String,
-    day_col: &String,
+    timestamp_col: &str,
+    year_col: &str,
+    month_col: &str,
+    day_col: &str,
 ) -> Option<SimpleExpr> {
     if let SimpleExpr::Column(left_column) = left {
         if let Some(colname) = find_colname(left_column) {
@@ -334,14 +342,14 @@ fn oper_or_original(
                         let right_day = right_dt.day();
 
                         let year_not_equal =
-                            col_name_oper_const_num(year_col.clone(), right_year, oper.clone());
+                            col_name_oper_const_num(year_col.to_string(), right_year, oper.clone());
                         let month_not_equal = col_name_oper_const_num(
-                            month_col.clone(),
+                            month_col.to_string(),
                             right_month as i32,
                             oper.clone(),
                         );
                         let day_not_equal = col_name_oper_const_num(
-                            day_col.clone(),
+                            day_col.to_string(),
                             right_day as i32,
                             oper.clone(),
                         );
@@ -368,14 +376,14 @@ fn oper_or_original(
                         let left_day = left_dt.day();
 
                         let year_not_equal =
-                            const_num_oper_col_name(left_year, year_col.clone(), oper.clone());
+                            const_num_oper_col_name(left_year, year_col.to_string(), oper.clone());
                         let month_not_equal = const_num_oper_col_name(
                             left_month as i32,
-                            month_col.clone(),
+                            month_col.to_string(),
                             oper.clone(),
                         );
                         let day_not_equal =
-                            const_num_oper_col_name(left_day as i32, day_col.clone(), oper.clone());
+                            const_num_oper_col_name(left_day as i32, day_col.to_string(), oper.clone());
                         return Some(iterated_binoper(
                             vec![
                                 year_not_equal,
@@ -397,10 +405,10 @@ fn smaller_than_or_original(
     original: &SimpleExpr,
     left: &SimpleExpr,
     right: &SimpleExpr,
-    timestamp_col: &String,
-    year_col: &String,
-    month_col: &String,
-    day_col: &String,
+    timestamp_col: &str,
+    year_col: &str,
+    month_col: &str,
+    day_col: &str,
 ) -> Option<SimpleExpr> {
     if let SimpleExpr::Column(left_column) = left {
         if let Some(colname) = find_colname(left_column) {
@@ -411,33 +419,33 @@ fn smaller_than_or_original(
                         let right_month = right_dt.month();
                         let right_day = right_dt.day();
                         let year_smaller_than_year_expr = col_name_oper_const_num(
-                            year_col.clone(),
+                            year_col.to_string(),
                             right_year,
                             BinOper::SmallerThan,
                         );
                         let year_equal_and_month_smaller_expr = SimpleExpr::Binary(
                             Box::new(col_name_oper_const_num(
-                                year_col.clone(),
+                                year_col.to_string(),
                                 right_year,
                                 BinOper::Equal,
                             )),
                             BinOper::And,
                             Box::new(col_name_oper_const_num(
-                                month_col.clone(),
+                                month_col.to_string(),
                                 right_month as i32,
                                 BinOper::SmallerThan,
                             )),
                         );
                         let year_equal_and_month_equal_and_day_smaller = SimpleExpr::Binary(
                             Box::new(year_equal_and_month_equal(
-                                year_col.clone(),
+                                year_col.to_string(),
                                 right_year,
-                                month_col.clone(),
+                                month_col.to_string(),
                                 right_month,
                             )),
                             BinOper::And,
                             Box::new(col_name_oper_const_num(
-                                day_col.clone(),
+                                day_col.to_string(),
                                 right_day as i32,
                                 BinOper::SmallerThan,
                             )),
@@ -445,11 +453,11 @@ fn smaller_than_or_original(
                         let year_equal_and_month_equal_and_day_equal_and_original =
                             SimpleExpr::Binary(
                                 Box::new(year_equal_and_month_equal_and_day_equal(
-                                    year_col.clone(),
+                                    year_col.to_string(),
                                     right_year,
-                                    month_col.clone(),
+                                    month_col.to_string(),
                                     right_month,
-                                    day_col.clone(),
+                                    day_col.to_string(),
                                     right_day,
                                 )),
                                 BinOper::And,
@@ -477,32 +485,32 @@ fn smaller_than_or_original(
                             let left_day = left_dt.day();
                             let year_smaller_than_year_expr = const_num_oper_col_name(
                                 left_year,
-                                year_col.clone(),
+                                year_col.to_string(),
                                 BinOper::SmallerThan,
                             );
                             let year_equal_and_month_smaller_expr = SimpleExpr::Binary(
                                 Box::new(const_num_oper_col_name(
                                     left_year,
-                                    year_col.clone(),
+                                    year_col.to_string(),
                                     BinOper::Equal,
                                 )),
                                 BinOper::And,
                                 Box::new(const_num_oper_col_name(
                                     left_month as i32,
-                                    month_col.clone(),
+                                    month_col.to_string(),
                                     BinOper::SmallerThan,
                                 )),
                             );
                             let year_equal_and_month_equal_and_day_smaller = SimpleExpr::Binary(
                                 Box::new(year_equal_and_month_equal(
-                                    year_col.clone(),
+                                    year_col.to_string(),
                                     left_year,
-                                    month_col.clone(),
+                                    month_col.to_string(),
                                     left_month,
                                 )),
                                 BinOper::And,
                                 Box::new(col_name_oper_const_num(
-                                    day_col.clone(),
+                                    day_col.to_string(),
                                     left_day as i32,
                                     BinOper::SmallerThan,
                                 )),
@@ -510,11 +518,11 @@ fn smaller_than_or_original(
                             let year_equal_and_month_equal_and_day_equal_and_original =
                                 SimpleExpr::Binary(
                                     Box::new(year_equal_and_month_equal_and_day_equal(
-                                        year_col.clone(),
+                                        year_col.to_string(),
                                         left_year,
-                                        month_col.clone(),
+                                        month_col.to_string(),
                                         left_month,
-                                        day_col.clone(),
+                                        day_col.to_string(),
                                         left_day,
                                     )),
                                     BinOper::And,

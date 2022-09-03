@@ -3,7 +3,6 @@ use polars::export::chrono::{DateTime, NaiveDateTime, Utc};
 use sea_query::Expr as SeaExpr;
 use sea_query::{BinOper, ColumnRef, Function, SimpleExpr, UnOper, Value};
 use spargebra::algebra::Expression;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::constants::DATETIME_AS_SECONDS;
@@ -11,13 +10,12 @@ use crate::timeseries_database::timeseries_sql_rewrite::{Name, TimeSeriesQueryTo
 
 pub(crate) fn sparql_expression_to_sql_expression(
     e: &Expression,
-    variable_column_name_map: &HashMap<String, String>,
     table_name: Option<&Name>,
 ) -> Result<SimpleExpr, TimeSeriesQueryToSQLError> {
     Ok(match e {
         Expression::Or(left, right) => {
-            sparql_expression_to_sql_expression(left, variable_column_name_map, table_name)?.or(
-                sparql_expression_to_sql_expression(right, variable_column_name_map, table_name)?,
+            sparql_expression_to_sql_expression(left, table_name)?.or(
+                sparql_expression_to_sql_expression(right, table_name)?,
             )
         }
         Expression::Literal(l) => {
@@ -50,90 +48,76 @@ pub(crate) fn sparql_expression_to_sql_expression(
             SimpleExpr::Value(value)
         }
         Expression::Variable(v) => {
-            if let Some(found_v) = variable_column_name_map.get(v.as_str()) {
-                if let Some(name) = table_name {
-                    SimpleExpr::Column(ColumnRef::TableColumn(
-                        Rc::new(name.clone()),
-                        Rc::new(Name::Column(v.as_str().to_string())),
-                    ))
-                } else {
-                    SimpleExpr::Column(ColumnRef::Column(Rc::new(Name::Column(
-                        found_v.to_string(),
-                    ))))
-                }
+            if let Some(name) = table_name {
+                SimpleExpr::Column(ColumnRef::TableColumn(
+                    Rc::new(name.clone()),
+                    Rc::new(Name::Column(v.as_str().to_string())),
+                ))
             } else {
-                return Err(TimeSeriesQueryToSQLError::UnknownVariable(
+                SimpleExpr::Column(ColumnRef::Column(Rc::new(Name::Column(
                     v.as_str().to_string(),
-                ));
+                ))))
             }
         }
         Expression::And(left, right) => {
-            sparql_expression_to_sql_expression(left, variable_column_name_map, table_name)?.and(
-                sparql_expression_to_sql_expression(right, variable_column_name_map, table_name)?,
+            sparql_expression_to_sql_expression(left, table_name)?.and(
+                sparql_expression_to_sql_expression(right, table_name)?,
             )
         }
         Expression::Equal(left, right) => {
-            sparql_expression_to_sql_expression(left, variable_column_name_map, table_name)?.equals(
-                sparql_expression_to_sql_expression(right, variable_column_name_map, table_name)?,
+            sparql_expression_to_sql_expression(left, table_name)?.equals(
+                sparql_expression_to_sql_expression(right, table_name)?,
             )
         }
         Expression::Greater(left, right) => SimpleExpr::Binary(
             Box::new(sparql_expression_to_sql_expression(
                 left,
-                variable_column_name_map,
-                table_name,
+                table_name
             )?),
             BinOper::GreaterThan,
             Box::new(sparql_expression_to_sql_expression(
                 right,
-                variable_column_name_map,
-                table_name,
+                table_name
             )?),
         ),
         Expression::GreaterOrEqual(left, right) => SimpleExpr::Binary(
             Box::new(sparql_expression_to_sql_expression(
                 left,
-                variable_column_name_map,
-                table_name,
+                table_name
             )?),
             BinOper::GreaterThanOrEqual,
             Box::new(sparql_expression_to_sql_expression(
                 right,
-                variable_column_name_map,
-                table_name,
+                table_name
             )?),
         ),
         Expression::Less(left, right) => SimpleExpr::Binary(
             Box::new(sparql_expression_to_sql_expression(
                 left,
-                variable_column_name_map,
-                table_name,
+                table_name
             )?),
             BinOper::SmallerThan,
             Box::new(sparql_expression_to_sql_expression(
                 right,
-                variable_column_name_map,
-                table_name,
+                table_name
             )?),
         ),
         Expression::LessOrEqual(left, right) => {
             SimpleExpr::Binary(
                 Box::new(sparql_expression_to_sql_expression(
                     left,
-                    variable_column_name_map,
                     table_name,
                 )?),
                 BinOper::SmallerThanOrEqual,
                 Box::new(sparql_expression_to_sql_expression(
                     right,
-                    variable_column_name_map,
                     table_name,
                 )?),
             ) //Note flipped directions
         }
         Expression::In(left, right) => {
             let simple_right = right.iter().map(|x| {
-                sparql_expression_to_sql_expression(x, variable_column_name_map, table_name)
+                sparql_expression_to_sql_expression(x, table_name)
             });
             let mut simple_right_values = vec![];
             for v in simple_right {
@@ -147,66 +131,60 @@ pub(crate) fn sparql_expression_to_sql_expression(
             }
             SeaExpr::expr(sparql_expression_to_sql_expression(
                 left,
-                variable_column_name_map,
-                table_name,
+                table_name
             )?)
             .is_in(simple_right_values)
         }
         Expression::Add(left, right) => {
-            sparql_expression_to_sql_expression(left, variable_column_name_map, table_name)?.add(
-                sparql_expression_to_sql_expression(right, variable_column_name_map, table_name)?,
+            sparql_expression_to_sql_expression(left, table_name)?.add(
+                sparql_expression_to_sql_expression(right, table_name)?,
             )
         }
         Expression::Subtract(left, right) => {
-            sparql_expression_to_sql_expression(left, variable_column_name_map, table_name)?.sub(
-                sparql_expression_to_sql_expression(right, variable_column_name_map, table_name)?,
+            sparql_expression_to_sql_expression(left, table_name)?.sub(
+                sparql_expression_to_sql_expression(right, table_name)?,
             )
         }
         Expression::Multiply(left, right) => SimpleExpr::Binary(
             Box::new(sparql_expression_to_sql_expression(
                 left,
-                variable_column_name_map,
-                table_name,
+                table_name
             )?),
             BinOper::Mul,
             Box::new(sparql_expression_to_sql_expression(
                 right,
-                variable_column_name_map,
-                table_name,
+                table_name
             )?),
         ),
         Expression::Divide(left, right) => SimpleExpr::Binary(
             Box::new(sparql_expression_to_sql_expression(
                 left,
-                variable_column_name_map,
-                table_name,
+                table_name
             )?),
             BinOper::Div,
             Box::new(sparql_expression_to_sql_expression(
                 right,
-                variable_column_name_map,
-                table_name,
+                table_name
             )?),
         ),
         Expression::UnaryPlus(inner) => {
-            sparql_expression_to_sql_expression(inner, variable_column_name_map, table_name)?
+            sparql_expression_to_sql_expression(inner, table_name)?
         }
         Expression::UnaryMinus(inner) => SimpleExpr::Value(Value::Double(Some(0.0))).sub(
-            sparql_expression_to_sql_expression(inner, variable_column_name_map, table_name)?,
+            sparql_expression_to_sql_expression(inner, table_name)?,
         ),
         Expression::Not(inner) => SimpleExpr::Unary(
             UnOper::Not,
             Box::new(sparql_expression_to_sql_expression(
                 inner,
-                variable_column_name_map,
-                table_name,
+                table_name
             )?),
         ),
         Expression::FunctionCall(f, expressions) => match f {
             spargebra::algebra::Function::Floor => {
                 let e = expressions.first().unwrap();
                 let mapped_e =
-                    sparql_expression_to_sql_expression(e, variable_column_name_map, table_name)?;
+                    sparql_expression_to_sql_expression(e, table_name)?;
                 SimpleExpr::FunctionCall(
                     Function::Custom(Rc::new(Name::Function("FLOOR".to_string()))),
                     vec![mapped_e],
@@ -215,7 +193,7 @@ pub(crate) fn sparql_expression_to_sql_expression(
             spargebra::algebra::Function::Custom(c) => {
                 let e = expressions.first().unwrap();
                 let mapped_e =
-                    sparql_expression_to_sql_expression(e, variable_column_name_map, table_name)?;
+                    sparql_expression_to_sql_expression(e, table_name)?;
                 if c.as_str() == DATETIME_AS_SECONDS {
                     SimpleExpr::FunctionCall(
                         Function::Custom(Rc::new(Name::Function("UNIX_TIMESTAMP".to_string()))),

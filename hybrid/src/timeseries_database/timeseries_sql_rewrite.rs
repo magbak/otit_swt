@@ -11,10 +11,14 @@ use oxrdf::{NamedNode, Variable};
 use sea_query::{Alias, ColumnRef, JoinType, Query, SelectStatement, SimpleExpr, TableRef};
 use sea_query::{Expr as SeaExpr, Iden, Value};
 use spargebra::algebra::Expression;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter, Write};
 use std::rc::Rc;
+
+const YEAR_PARTITION_COLUMN_NAME: &str = "year_partition_column_name";
+const MONTH_PARTITION_COLUMN_NAME: &str = "month_partition_column_name";
+const DAY_PARTITION_COLUMN_NAME: &str = "day_partition_column_name";
 
 #[derive(Debug)]
 pub enum TimeSeriesQueryToSQLError {
@@ -65,39 +69,57 @@ pub struct TimeSeriesTable {
 pub fn create_query(
     tsq: &TimeSeriesQuery,
     tables: &Vec<TimeSeriesTable>,
-) -> Result<(SelectStatement, HashMap<String, String>), TimeSeriesQueryToSQLError> {
+    project_date_partition: bool,
+) -> Result<(SelectStatement, HashSet<String>), TimeSeriesQueryToSQLError> {
     match tsq {
         TimeSeriesQuery::Basic(b) => {
             let table = find_right_table(b, tables)?;
-            Ok(table.create_basic_query(b)?)
+            let (mut select, columns) =
+                table.create_basic_query(b, project_date_partition)?;
+
+            Ok((select, columns))
         }
         TimeSeriesQuery::Filtered(tsq, filter, _) => {
-            let (mut select, variable_column_name_map) = create_query(tsq, tables)?;
+            let mut and_where = None;
+            let mut need_partition_columns = false;
             if let Some(f) = filter {
-                let mut timestamp_col = None;
-                let mut year_col = None;
-                let mut month_col = None;
-                let mut day_col = None;
-
-                if let TimeSeriesQuery::Basic(b) = tsq.as_ref() {
-                    let table = find_right_table(b, tables)?;
-                    timestamp_col = Some(&table.timestamp_column);
-                    year_col = table.year_column.as_ref();
-                    month_col = table.month_column.as_ref();
-                    day_col = table.day_column.as_ref();
-                }
-
-                add_filter(
-                    &mut select,
+                let (se, added_partitioning) = create_filter_expressions(
                     f,
-                    &variable_column_name_map,
-                    timestamp_col,
-                    year_col,
-                    month_col,
-                    day_col,
+                    Some(&tsq.get_timestamp_variables().get(0).unwrap().variable.as_str().to_string()),
+                    check_partitioning_support(tables),
                 )?;
+                need_partition_columns = added_partitioning;
+                and_where = Some(se);
             }
-            Ok((select, variable_column_name_map))
+            let (mut select, columns) = create_query(
+                tsq,
+                tables,
+                need_partition_columns || project_date_partition,
+            )?;
+            if let Some(se) = and_where {
+                select.and_where(se);
+            }
+            let use_select;
+            if !project_date_partition && need_partition_columns {
+                let alias = "filtering_query";
+                let mut outer_select = Query::select();
+                outer_select.from_subquery(select, Alias::new(alias));
+                let mut sorted_cols: Vec<&String> = columns.iter().collect();
+                sorted_cols.sort();
+                for c in sorted_cols {
+                    if c != YEAR_PARTITION_COLUMN_NAME
+                        && c != MONTH_PARTITION_COLUMN_NAME
+                        && c != DAY_PARTITION_COLUMN_NAME
+                    {
+                        outer_select.expr(SimpleExpr::Column(ColumnRef::Column(Rc::new(Name::Column(c.clone())))));
+                    }
+                }
+                use_select = outer_select;
+            } else {
+                use_select = select;
+            }
+
+            Ok((use_select, columns))
         }
         TimeSeriesQuery::InnerSynchronized(inner, synchronizers) => {
             if synchronizers.iter().all(|x| {
@@ -109,7 +131,7 @@ pub fn create_query(
             }) {
                 let mut selects = vec![];
                 for s in inner {
-                    selects.push(create_query(s, tables)?);
+                    selects.push(create_query(s, tables, false)?);
                 }
                 if let Some(Synchronizer::Identity(timestamp_col)) = &synchronizers.get(0) {
                     Ok(inner_join_selects(selects, timestamp_col))
@@ -124,7 +146,8 @@ pub fn create_query(
             todo!()
         }
         TimeSeriesQuery::Grouped(grouped) => {
-            let (inner_select, variable_column_name_map) = create_query(&grouped.tsq, tables)?;
+            let (inner_select, variable_column_name_map) =
+                create_query(&grouped.tsq, tables, false)?;
             create_grouped_query(
                 inner_select,
                 variable_column_name_map,
@@ -137,11 +160,11 @@ pub fn create_query(
 }
 
 fn inner_join_selects(
-    mut selects_and_timestamp_cols: Vec<(SelectStatement, HashMap<String, String>)>,
+    mut selects_and_timestamp_cols: Vec<(SelectStatement, HashSet<String>)>,
     timestamp_col: &String,
-) -> (SelectStatement, HashMap<String, String>) {
-    let (mut first_select, mut first_map) = selects_and_timestamp_cols.remove(0);
-    for (i, (s, map)) in selects_and_timestamp_cols.into_iter().enumerate() {
+) -> (SelectStatement, HashSet<String>) {
+    let (mut first_select, mut first_columns) = selects_and_timestamp_cols.remove(0);
+    for (i, (s, cols)) in selects_and_timestamp_cols.into_iter().enumerate() {
         let select_name = format!("other_{}", i);
 
         first_select.join(
@@ -151,24 +174,26 @@ fn inner_join_selects(
                 timestamp_col.clone(),
             ))))
             .equals(SimpleExpr::Column(ColumnRef::TableColumn(
-                Rc::new(Name::Table(select_name)),
+                Rc::new(Name::Table(select_name.clone())),
                 Rc::new(Name::Column(timestamp_col.clone())),
             ))),
         );
-        for (k, v) in map {
-            if &v != timestamp_col {
+        let mut sorted_cols: Vec<&String> = cols.iter().collect();
+        sorted_cols.sort();
+        for c in sorted_cols {
+            if c != timestamp_col {
                 first_select.expr_as(
                     SimpleExpr::Column(ColumnRef::TableColumn(
-                        Rc::new(Name::Table(v.clone())),
-                        Rc::new(Name::Column(timestamp_col.clone())),
+                        Rc::new(Name::Table(select_name.clone())),
+                        Rc::new(Name::Column(c.clone())),
                     )),
-                    Alias::new(&v),
+                    Alias::new(&c),
                 );
-                first_map.insert(k, v);
+                first_columns.insert(c.clone());
             }
         }
     }
-    (first_select, first_map)
+    (first_select, first_columns)
 }
 
 fn find_right_table<'a>(
@@ -189,82 +214,79 @@ fn find_right_table<'a>(
     }
 }
 
-fn add_filter(
-    select: &mut SelectStatement,
+fn create_filter_expressions(
     expression: &Expression,
-    variable_column_name_map: &HashMap<String, String>,
     timestamp_column: Option<&String>,
-    year_column: Option<&String>,
-    month_column: Option<&String>,
-    day_column: Option<&String>,
-) -> Result<(), TimeSeriesQueryToSQLError> {
-    let mut se = sparql_expression_to_sql_expression(expression, variable_column_name_map, None)?;
-    if timestamp_column.is_some()
-        && year_column.is_some()
-        && month_column.is_some()
-        && day_column.is_some()
-    {
-        se = add_partitioned_timestamp_conditions(
+    partitioning_support: bool,
+) -> Result<(SimpleExpr, bool), TimeSeriesQueryToSQLError> {
+    let mut se = sparql_expression_to_sql_expression(expression, None)?;
+    let mut partitioned = false;
+    if partitioning_support {
+        let (se_part, part_status) = add_partitioned_timestamp_conditions(
             se,
             &timestamp_column.unwrap(),
-            &year_column.unwrap(),
-            &month_column.unwrap(),
-            &day_column.unwrap(),
+            YEAR_PARTITION_COLUMN_NAME,
+            MONTH_PARTITION_COLUMN_NAME,
+            DAY_PARTITION_COLUMN_NAME,
         );
+        se = se_part;
+        partitioned = part_status;
     }
-    select.and_where(se);
-    Ok(())
+    Ok((se, partitioned))
 }
 
 fn create_grouped_query(
     query: SelectStatement,
-    mut variable_column_name_map: HashMap<String, String>,
+    mut columns: HashSet<String>,
     by: &Vec<Variable>,
     aggregations: &Vec<(Variable, AggregateExpressionInContext)>,
     timeseries_funcs: &Vec<(Variable, ExpressionInContext)>,
-) -> Result<(SelectStatement, HashMap<String, String>), TimeSeriesQueryToSQLError> {
+) -> Result<(SelectStatement, HashSet<String>), TimeSeriesQueryToSQLError> {
     let mut inner_query = Query::select();
     let inner_query_str = "inner_query";
     let inner_query_name = Name::Table(inner_query_str.to_string());
     inner_query.from_subquery(query, inner_query_name.clone());
-    for (_, v) in &variable_column_name_map {
-        inner_query.expr(SimpleExpr::Column(ColumnRef::Column(Rc::new(
-            Name::Column(v.clone()),
-        ))));
+    let mut sorted_cols: Vec<&String> = columns.iter().collect();
+    sorted_cols.sort();
+    for c in &sorted_cols {
+        inner_query.expr(SimpleExpr::Column(ColumnRef::TableColumn(
+            Rc::new(inner_query_name.clone()),
+            Rc::new(Name::Column(c.to_string())),
+        )));
     }
 
     for (v, e) in timeseries_funcs.iter().rev() {
         inner_query.expr_as(
             sparql_expression_to_sql_expression(
                 &e.expression,
-                &variable_column_name_map,
                 Some(&inner_query_name),
             )?,
             Alias::new(v.as_str()),
         );
-        variable_column_name_map.insert(v.as_str().to_string(), v.as_str().to_string());
+        columns.insert(v.as_str().to_string());
     }
     let mut outer_query = Query::select();
-    outer_query.from_subquery(inner_query, Alias::new("outer_query"));
+    let outer_query_str = "outer_query";
+    let outer_query_name = Name::Table(outer_query_str.to_string());
+    outer_query.from_subquery(inner_query, Alias::new(outer_query_str));
 
-    let mut new_variable_column_name_map = HashMap::new();
+    let mut new_columns = HashSet::new();
     for (v, agg) in aggregations {
         outer_query.expr_as(
             sparql_aggregate_expression_to_sql_expression(
                 &agg.aggregate_expression,
-                &variable_column_name_map,
-                Some(&inner_query_name),
+                Some(&outer_query_name),
             )?,
             Alias::new(v.as_str()),
         );
-        new_variable_column_name_map.insert(v.as_str().to_string(), v.as_str().to_string());
+        new_columns.insert(v.as_str().to_string());
     }
 
     outer_query.group_by_columns(
         by.iter()
             .map(|x| {
                 ColumnRef::TableColumn(
-                    Rc::new(inner_query_name.clone()),
+                    Rc::new(outer_query_name.clone()),
                     Rc::new(Name::Column(x.as_str().to_string())),
                 )
             })
@@ -273,21 +295,22 @@ fn create_grouped_query(
     for v in by {
         outer_query.expr_as(
             SimpleExpr::Column(ColumnRef::TableColumn(
-                Rc::new(inner_query_name.clone()),
+                Rc::new(outer_query_name.clone()),
                 Rc::new(Name::Column(v.as_str().to_string())),
             )),
             Alias::new(v.as_str()),
         );
-        new_variable_column_name_map.insert(v.as_str().to_string(), v.as_str().to_string());
+        new_columns.insert(v.as_str().to_string());
     }
-    Ok((outer_query, new_variable_column_name_map))
+    Ok((outer_query, new_columns))
 }
 
 impl TimeSeriesTable {
     pub fn create_basic_query(
         &self,
         btsq: &BasicTimeSeriesQuery,
-    ) -> Result<(SelectStatement, HashMap<String, String>), TimeSeriesQueryToSQLError> {
+        project_date_partition: bool,
+    ) -> Result<(SelectStatement, HashSet<String>), TimeSeriesQueryToSQLError> {
         let mut basic_query = Query::select();
         let mut variable_column_name_map = HashMap::new();
         variable_column_name_map.insert(
@@ -316,6 +339,20 @@ impl TimeSeriesTable {
                 .to_string(),
             self.timestamp_column.clone(),
         );
+        if project_date_partition {
+            variable_column_name_map.insert(
+                YEAR_PARTITION_COLUMN_NAME.to_string(),
+                self.year_column.as_ref().unwrap().clone(),
+            );
+            variable_column_name_map.insert(
+                MONTH_PARTITION_COLUMN_NAME.to_string(),
+                self.month_column.as_ref().unwrap().clone(),
+            );
+            variable_column_name_map.insert(
+                DAY_PARTITION_COLUMN_NAME.to_string(),
+                self.day_column.as_ref().unwrap().clone(),
+            );
+        }
 
         let mut kvs: Vec<_> = variable_column_name_map.iter().collect();
         kvs.sort();
@@ -340,7 +377,7 @@ impl TimeSeriesTable {
             );
         }
 
-        Ok((basic_query, variable_column_name_map))
+        Ok((basic_query, variable_column_name_map.into_keys().collect()))
     }
 }
 
@@ -376,6 +413,11 @@ impl Iden for Name {
     }
 }
 
+fn check_partitioning_support(tables: &Vec<TimeSeriesTable>) -> bool {
+    tables
+        .iter()
+        .all(|x| x.day_column.is_some() && x.month_column.is_some() && x.day_column.is_some())
+}
 #[cfg(test)]
 mod tests {
     use crate::query_context::{Context, VariableInContext};
@@ -385,6 +427,7 @@ mod tests {
     use oxrdf::{Literal, NamedNode, Variable};
     use sea_query::PostgresQueryBuilder;
     use spargebra::algebra::Expression;
+    use std::vec;
 
     #[test]
     pub fn test_translate() {
@@ -434,11 +477,11 @@ mod tests {
             day_column: Some("dir2".to_string()),
         };
 
-        let (sql_query, _) = create_query(&tsq, &vec![table]).unwrap();
+        let (sql_query, _) = create_query(&tsq, &vec![table], false).unwrap();
         //println!("{}", sql_query)
         assert_eq!(
             &sql_query.to_string(PostgresQueryBuilder),
-            r#"SELECT "dir3" AS "id", "timestamp" AS "t", "value" AS "v" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('A', 'B') AND (("dir0" < 2022) OR (("dir0" = 2022) AND ("dir1" < 6)) OR ("dir0" = 2022) AND ("dir1" = 6) AND ("dir2" < 1) OR ("dir0" = 2022) AND ("dir1" = 6) AND ("dir2" = 1) AND ("timestamp" <= '2022-06-01 08:46:53'))"#
+            r#"SELECT "id", "t", "v" FROM (SELECT "dir2" AS "day_partition_column_name", "dir3" AS "id", "dir1" AS "month_partition_column_name", "timestamp" AS "t", "value" AS "v", "dir0" AS "year_partition_column_name" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('A', 'B') AND (("year_partition_column_name" < 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" < 6)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 6) AND ("day_partition_column_name" < 1) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 6) AND ("day_partition_column_name" = 1) AND ("t" <= '2022-06-01 08:46:53'))) AS "filtering_query""#
         );
     }
 }

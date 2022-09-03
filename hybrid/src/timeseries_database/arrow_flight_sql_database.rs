@@ -225,7 +225,7 @@ impl TimeSeriesQueryable for ArrowFlightSQLDatabase {
     async fn execute(&mut self, tsq: &TimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
         let query_string;
         {
-            let (query, _) = create_query(tsq, &self.time_series_tables)?;
+            let (query, _) = create_query(tsq, &self.time_series_tables, false)?;
             query_string = query.to_string(PostgresQueryBuilder);
         }
         Ok(self.execute_sql_query(query_string).await?)

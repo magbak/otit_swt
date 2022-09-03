@@ -7,7 +7,6 @@ use std::collections::HashMap;
 //TODO: Support distinct in aggregates.. how???
 pub(crate) fn sparql_aggregate_expression_to_sql_expression(
     agg: &AggregateExpression,
-    variable_column_name_map: &HashMap<String, String>,
     table_name: Option<&Name>,
 ) -> Result<SimpleExpr, TimeSeriesQueryToSQLError> {
     Ok(match agg {
@@ -17,7 +16,6 @@ pub(crate) fn sparql_aggregate_expression_to_sql_expression(
                     Function::Count,
                     vec![sparql_expression_to_sql_expression(
                         some_expr,
-                        &variable_column_name_map,
                         table_name,
                     )?],
                 )
@@ -29,7 +27,6 @@ pub(crate) fn sparql_aggregate_expression_to_sql_expression(
             Function::Sum,
             vec![sparql_expression_to_sql_expression(
                 expr,
-                &variable_column_name_map,
                 table_name,
             )?],
         ),
@@ -37,7 +34,6 @@ pub(crate) fn sparql_aggregate_expression_to_sql_expression(
             Function::Avg,
             vec![sparql_expression_to_sql_expression(
                 expr,
-                &variable_column_name_map,
                 table_name,
             )?],
         ),
@@ -45,7 +41,6 @@ pub(crate) fn sparql_aggregate_expression_to_sql_expression(
             Function::Min,
             vec![sparql_expression_to_sql_expression(
                 expr,
-                &variable_column_name_map,
                 table_name,
             )?],
         ),
@@ -53,7 +48,6 @@ pub(crate) fn sparql_aggregate_expression_to_sql_expression(
             Function::Max,
             vec![sparql_expression_to_sql_expression(
                 expr,
-                &variable_column_name_map,
                 table_name,
             )?],
         ),
