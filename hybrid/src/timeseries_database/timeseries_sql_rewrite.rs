@@ -96,20 +96,20 @@ pub fn create_query(
                 tables,
                 need_partition_columns || project_date_partition,
             )?;
-            if let Some(se) = and_where {
-                select.and_where(se);
-            }
-            let use_select;
-            if !project_date_partition && need_partition_columns {
+
+            let wraps_inner = if let TimeSeriesQuery::Basic(_) = **tsq {true} else {false};
+            let mut use_select;
+            if wraps_inner || (!project_date_partition && need_partition_columns) {
                 let alias = "filtering_query";
                 let mut outer_select = Query::select();
                 outer_select.from_subquery(select, Alias::new(alias));
                 let mut sorted_cols: Vec<&String> = columns.iter().collect();
                 sorted_cols.sort();
                 for c in sorted_cols {
-                    if c != YEAR_PARTITION_COLUMN_NAME
+                    if !(!project_date_partition && need_partition_columns)
+                        || (c != YEAR_PARTITION_COLUMN_NAME
                         && c != MONTH_PARTITION_COLUMN_NAME
-                        && c != DAY_PARTITION_COLUMN_NAME
+                        && c != DAY_PARTITION_COLUMN_NAME)
                     {
                         outer_select.expr(SimpleExpr::Column(ColumnRef::Column(Rc::new(Name::Column(c.clone())))));
                     }
@@ -117,6 +117,10 @@ pub fn create_query(
                 use_select = outer_select;
             } else {
                 use_select = select;
+            }
+
+            if let Some(se) = and_where {
+                use_select.and_where(se);
             }
 
             Ok((use_select, columns))
@@ -481,7 +485,7 @@ mod tests {
         //println!("{}", sql_query)
         assert_eq!(
             &sql_query.to_string(PostgresQueryBuilder),
-            r#"SELECT "id", "t", "v" FROM (SELECT "dir2" AS "day_partition_column_name", "dir3" AS "id", "dir1" AS "month_partition_column_name", "timestamp" AS "t", "value" AS "v", "dir0" AS "year_partition_column_name" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('A', 'B') AND (("year_partition_column_name" < 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" < 6)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 6) AND ("day_partition_column_name" < 1) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 6) AND ("day_partition_column_name" = 1) AND ("t" <= '2022-06-01 08:46:53'))) AS "filtering_query""#
+            r#"SELECT "id", "t", "v" FROM (SELECT "dir2" AS "day_partition_column_name", "dir3" AS "id", "dir1" AS "month_partition_column_name", "timestamp" AS "t", "value" AS "v", "dir0" AS "year_partition_column_name" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('A', 'B')) AS "filtering_query" WHERE ("year_partition_column_name" < 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" < 6)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 6) AND ("day_partition_column_name" < 1) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 6) AND ("day_partition_column_name" = 1) AND ("t" <= '2022-06-01 08:46:53')"#
         );
     }
 }
