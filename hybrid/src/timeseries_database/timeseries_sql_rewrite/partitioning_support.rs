@@ -10,23 +10,23 @@ pub fn add_partitioned_timestamp_conditions(
     year_col: &str,
     month_col: &str,
     day_col: &str,
-) -> (SimpleExpr,bool) {
+) -> (SimpleExpr, bool) {
     match se {
         SimpleExpr::Unary(op, inner) => {
             let (inner_rewrite, added) = add_partitioned_timestamp_conditions(
-                    *inner,
-                    timestamp_col,
-                    year_col,
-                    month_col,
-                    day_col,
-                );
-            (SimpleExpr::Unary(
-                op.clone(),
-                Box::new(inner_rewrite),
-            ), added)
-        },
+                *inner,
+                timestamp_col,
+                year_col,
+                month_col,
+                day_col,
+            );
+            (
+                SimpleExpr::Unary(op.clone(), Box::new(inner_rewrite)),
+                added,
+            )
+        }
         SimpleExpr::FunctionCall(func, inner) => {
-            let rewrites_and_added:Vec<(SimpleExpr, bool)> = inner
+            let rewrites_and_added: Vec<(SimpleExpr, bool)> = inner
                 .into_iter()
                 .map(|x| {
                     add_partitioned_timestamp_conditions(
@@ -38,8 +38,8 @@ pub fn add_partitioned_timestamp_conditions(
                     )
                 })
                 .collect();
-            let added = rewrites_and_added.iter().fold(false, |x,(_,y)| x||*y);
-            let se_rewrites = rewrites_and_added.into_iter().map(|(x,_)|x).collect();
+            let added = rewrites_and_added.iter().fold(false, |x, (_, y)| x || *y);
+            let se_rewrites = rewrites_and_added.into_iter().map(|(x, _)| x).collect();
             (SimpleExpr::FunctionCall(func.clone(), se_rewrites), added)
         }
         SimpleExpr::Binary(left, op, right) => rewrite_binary_expression(
@@ -51,7 +51,7 @@ pub fn add_partitioned_timestamp_conditions(
             month_col,
             day_col,
         ),
-        _ => (se,false),
+        _ => (se, false),
     }
 }
 
@@ -63,7 +63,7 @@ fn rewrite_binary_expression(
     year_col: &str,
     month_col: &str,
     day_col: &str,
-) -> (SimpleExpr,bool) {
+) -> (SimpleExpr, bool) {
     let original = SimpleExpr::Binary(Box::new(left.clone()), op, Box::new(right.clone()));
     match op {
         BinOper::In => {
@@ -83,7 +83,7 @@ fn rewrite_binary_expression(
                 month_col,
                 day_col,
             ) {
-                return (e,true);
+                return (e, true);
             }
         }
         BinOper::NotEqual => {
@@ -97,7 +97,7 @@ fn rewrite_binary_expression(
                 month_col,
                 day_col,
             ) {
-                return (e,true);
+                return (e, true);
             }
         }
         BinOper::SmallerThan => {
@@ -110,7 +110,7 @@ fn rewrite_binary_expression(
                 month_col,
                 day_col,
             ) {
-                return (e,true);
+                return (e, true);
             }
         }
         BinOper::GreaterThan => {
@@ -123,7 +123,7 @@ fn rewrite_binary_expression(
                 month_col,
                 day_col,
             ) {
-                return (e,true);
+                return (e, true);
             }
         }
         BinOper::SmallerThanOrEqual => {
@@ -136,7 +136,7 @@ fn rewrite_binary_expression(
                 month_col,
                 day_col,
             ) {
-                return (e,true);
+                return (e, true);
             }
         }
         BinOper::GreaterThanOrEqual => {
@@ -149,31 +149,20 @@ fn rewrite_binary_expression(
                 month_col,
                 day_col,
             ) {
-                return (e,true);
+                return (e, true);
             }
         }
         _ => {}
     };
-    let (left_part, left_added) = add_partitioned_timestamp_conditions(
-            left,
-            timestamp_col,
-            year_col,
-            month_col,
-            day_col,
-        );
-    let (right_part, right_added) = add_partitioned_timestamp_conditions(
-            right,
-            timestamp_col,
-            year_col,
-            month_col,
-            day_col,
-        );
+    let (left_part, left_added) =
+        add_partitioned_timestamp_conditions(left, timestamp_col, year_col, month_col, day_col);
+    let (right_part, right_added) =
+        add_partitioned_timestamp_conditions(right, timestamp_col, year_col, month_col, day_col);
 
-    (SimpleExpr::Binary(
-        Box::new(left_part),
-        op,
-        Box::new(right_part),
-    ), left_added||right_added)
+    (
+        SimpleExpr::Binary(Box::new(left_part), op, Box::new(right_part)),
+        left_added || right_added,
+    )
 }
 
 fn greater_than_or_original(
@@ -382,8 +371,11 @@ fn oper_or_original(
                             month_col.to_string(),
                             oper.clone(),
                         );
-                        let day_not_equal =
-                            const_num_oper_col_name(left_day as i32, day_col.to_string(), oper.clone());
+                        let day_not_equal = const_num_oper_col_name(
+                            left_day as i32,
+                            day_col.to_string(),
+                            oper.clone(),
+                        );
                         return Some(iterated_binoper(
                             vec![
                                 year_not_equal,
