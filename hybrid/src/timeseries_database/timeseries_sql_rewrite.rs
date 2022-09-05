@@ -174,15 +174,32 @@ fn inner_join_selects(
     timestamp_col: &String,
 ) -> (SelectStatement, HashSet<String>) {
     let (mut first_select, mut first_columns) = selects_and_timestamp_cols.remove(0);
+    let mut new_first_select = Query::select();
+    let first_select_name = "first_query";
+    new_first_select.from_subquery(first_select, Alias::new(first_select_name));
+    let mut sorted_cols: Vec<&String> = first_columns.iter().collect();
+    sorted_cols.sort();
+    for c in sorted_cols {
+        new_first_select.expr_as(
+            SimpleExpr::Column(ColumnRef::TableColumn(
+                Rc::new(Name::Table(first_select_name.to_string())),
+                Rc::new(Name::Column(c.to_string())),
+            )),
+            Alias::new(c),
+        );
+    }
+    first_select = new_first_select;
+
     for (i, (s, cols)) in selects_and_timestamp_cols.into_iter().enumerate() {
         let select_name = format!("other_{}", i);
 
         first_select.join(
             JoinType::InnerJoin,
             TableRef::SubQuery(s, Rc::new(Alias::new(&select_name))),
-            SimpleExpr::Column(ColumnRef::Column(Rc::new(Name::Column(
-                timestamp_col.clone(),
-            ))))
+            SimpleExpr::Column(ColumnRef::TableColumn(
+                Rc::new(Name::Table(first_select_name.to_string())),
+                Rc::new(Name::Column(timestamp_col.clone())),
+            ))
             .equals(SimpleExpr::Column(ColumnRef::TableColumn(
                 Rc::new(Name::Table(select_name.clone())),
                 Rc::new(Name::Column(timestamp_col.clone())),
@@ -289,10 +306,13 @@ fn create_grouped_query(
     let mut sorted_cols: Vec<&String> = columns.iter().collect();
     sorted_cols.sort();
     for c in &sorted_cols {
-        inner_query.expr_as(SimpleExpr::Column(ColumnRef::TableColumn(
-            Rc::new(inner_query_name.clone()),
-            Rc::new(Name::Column(c.to_string())),
-        )), Alias::new(c));
+        inner_query.expr_as(
+            SimpleExpr::Column(ColumnRef::TableColumn(
+                Rc::new(inner_query_name.clone()),
+                Rc::new(Name::Column(c.to_string())),
+            )),
+            Alias::new(c),
+        );
     }
     for (v, _) in timeseries_funcs.iter().rev() {
         let se = ses.remove(0);
@@ -702,7 +722,7 @@ mod tests {
 
         let (sql_query, _) = create_query(&tsq, &vec![table], false).unwrap();
 
-        let expected_str = r#"SELECT AVG("outer_query"."val_dir") AS "f7ca5ee9058effba8691ac9c642fbe95", AVG("outer_query"."val_speed") AS "990362f372e4019bc151c13baf0b50d5", "outer_query"."year" AS "year", "outer_query"."month" AS "month", "outer_query"."day" AS "day", "outer_query"."hour" AS "hour", "outer_query"."minute_10" AS "minute_10", "outer_query"."ts_external_id_1" AS "ts_external_id_1", "outer_query"."ts_external_id_0" AS "ts_external_id_0" FROM (SELECT "inner_query"."t" AS "t", "inner_query"."ts_external_id_1" AS "ts_external_id_1", "inner_query"."ts_external_id_2" AS "ts_external_id_2", "inner_query"."val_dir" AS "val_dir", "inner_query"."val_speed" AS "val_speed", "inner_query"."year_partition_column_name" AS "year", "inner_query"."month_partition_column_name" AS "month", "inner_query"."day_partition_column_name" AS "day", date_part('hour', "inner_query"."t") AS "hour", CAST(FLOOR(date_part('minute', "inner_query"."t") / 10), 'BIGINT') AS "minute_10" FROM (SELECT "timestamp" AS "t", "dir3" AS "ts_external_id_1", "value" AS "val_speed", "other_0"."ts_external_id_2" AS "ts_external_id_2", "other_0"."val_dir" AS "val_dir" FROM "s3.otit-benchmark"."timeseries_double" INNER JOIN (SELECT "timestamp" AS "t", "dir3" AS "ts_external_id_2", "value" AS "val_dir" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('id2')) AS "other_0" ON "t" = "other_0"."t" WHERE "dir3" IN ('id1') AND (("year_partition_column_name" > 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" > 8)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" > 30) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" = 30) AND ("t" >= '2022-08-30 08:46:53') AND (("year_partition_column_name" < 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" < 8)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" < 30) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" = 30) AND ("t" <= '2022-08-30 21:46:53')))) AS "inner_query") AS "outer_query" GROUP BY "outer_query"."year", "outer_query"."month", "outer_query"."day", "outer_query"."hour", "outer_query"."minute_10", "outer_query"."ts_external_id_1", "outer_query"."ts_external_id_0""#;
+        let expected_str = r#"SELECT AVG("outer_query"."val_dir") AS "f7ca5ee9058effba8691ac9c642fbe95", AVG("outer_query"."val_speed") AS "990362f372e4019bc151c13baf0b50d5", "outer_query"."year" AS "year", "outer_query"."month" AS "month", "outer_query"."day" AS "day", "outer_query"."hour" AS "hour", "outer_query"."minute_10" AS "minute_10", "outer_query"."ts_external_id_1" AS "ts_external_id_1", "outer_query"."ts_external_id_0" AS "ts_external_id_0" FROM (SELECT "inner_query"."t" AS "t", "inner_query"."ts_external_id_1" AS "ts_external_id_1", "inner_query"."ts_external_id_2" AS "ts_external_id_2", "inner_query"."val_dir" AS "val_dir", "inner_query"."val_speed" AS "val_speed", "inner_query"."year_partition_column_name" AS "year", "inner_query"."month_partition_column_name" AS "month", "inner_query"."day_partition_column_name" AS "day", date_part('hour', "inner_query"."t") AS "hour", CAST(FLOOR(date_part('minute', "inner_query"."t") / 10), 'BIGINT') AS "minute_10" FROM (SELECT "first_query"."t" AS "t", "first_query"."ts_external_id_1" AS "ts_external_id_1", "first_query"."val_speed" AS "val_speed", "other_0"."ts_external_id_2" AS "ts_external_id_2", "other_0"."val_dir" AS "val_dir" FROM (SELECT "timestamp" AS "t", "dir3" AS "ts_external_id_1", "value" AS "val_speed" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('id1')) AS "first_query" INNER JOIN (SELECT "timestamp" AS "t", "dir3" AS "ts_external_id_2", "value" AS "val_dir" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('id2')) AS "other_0" ON "first_query"."t" = "other_0"."t" WHERE ("year_partition_column_name" > 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" > 8)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" > 30) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" = 30) AND ("t" >= '2022-08-30 08:46:53') AND (("year_partition_column_name" < 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" < 8)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" < 30) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" = 30) AND ("t" <= '2022-08-30 21:46:53'))) AS "inner_query") AS "outer_query" GROUP BY "outer_query"."year", "outer_query"."month", "outer_query"."day", "outer_query"."hour", "outer_query"."minute_10", "outer_query"."ts_external_id_1", "outer_query"."ts_external_id_0""#;
         assert_eq!(expected_str, sql_query.to_string(PostgresQueryBuilder));
     }
 }
