@@ -238,7 +238,7 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
 fn validate_tsq(tsq: &TimeSeriesQuery, toplevel: bool) -> Result<(), OPCUAHistoryReadError> {
     match tsq {
         TimeSeriesQuery::Basic(_) => Ok(()),
-        TimeSeriesQuery::Filtered(f, _, _) => validate_tsq(f, false),
+        TimeSeriesQuery::Filtered(f, _) => validate_tsq(f, false),
         TimeSeriesQuery::Grouped(g) => {
             if !toplevel {
                 Err(OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported)
@@ -320,8 +320,7 @@ fn history_data_to_series_tuple(hd: HistoryData) -> (Series, Series) {
 fn find_aggregate_types(tsq: &TimeSeriesQuery) -> Option<Vec<NodeId>> {
     if let TimeSeriesQuery::Grouped(grouped) = tsq {
         let mut nodes = vec![];
-        for (_, a) in &grouped.aggregations {
-            let agg = &a.aggregate_expression;
+        for (_, agg) in &grouped.aggregations {
             let value_var_str = tsq.get_value_variables().get(0).unwrap().variable.as_str();
             let expr_is_ok = |expr: &Expression| -> bool {
                 if let Expression::Variable(v) = expr {
@@ -397,13 +396,13 @@ enum FindTime {
 fn find_time(tsq: &TimeSeriesQuery, find_time: &FindTime) -> DateTime {
     let mut found_time = None;
     let filter = if let TimeSeriesQuery::Grouped(gr) = tsq {
-        if let TimeSeriesQuery::Filtered(_, filter, _) = gr.tsq.as_ref() {
-            filter.as_ref()
+        if let TimeSeriesQuery::Filtered(_, filter) = gr.tsq.as_ref() {
+            Some(filter)
         } else {
             None
         }
-    } else if let TimeSeriesQuery::Filtered(_, filter, _) = tsq {
-        filter.as_ref()
+    } else if let TimeSeriesQuery::Filtered(_, filter) = tsq {
+        Some(filter)
     } else {
         None
     };

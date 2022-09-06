@@ -10,7 +10,6 @@ use crate::combiner::lazy_expressions::lazy_expression;
 use crate::combiner::lazy_order::lazy_order_expression;
 use crate::combiner::lazy_triple::lazy_triple_pattern;
 use crate::query_context::{Context, PathEntry};
-use crate::rewriting::hash_graph_pattern;
 
 use crate::timeseries_query::TimeSeriesQuery;
 use log::debug;
@@ -425,12 +424,11 @@ impl Combiner {
                 variables,
                 aggregates,
             } => {
-                let graph_pattern_hash = hash_graph_pattern(graph_pattern);
                 let mut found_index = None;
                 for i in 0..time_series.len() {
                     let (tsq, _) = time_series.get(i).as_ref().unwrap();
                     if let TimeSeriesQuery::Grouped(g) = &tsq {
-                        if &graph_pattern_hash == &g.graph_pattern_hash {
+                        if context == &g.graph_pattern_context {
                             found_index = Some(i);
                         }
                     }

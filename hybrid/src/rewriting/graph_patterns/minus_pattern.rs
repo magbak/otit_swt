@@ -2,7 +2,6 @@ use super::StaticQueryRewriter;
 use crate::change_types::ChangeType;
 use crate::query_context::{Context, PathEntry};
 use crate::rewriting::graph_patterns::GPReturn;
-use crate::timeseries_query::TimeSeriesQuery;
 use spargebra::algebra::GraphPattern;
 
 impl StaticQueryRewriter {

@@ -1,10 +1,10 @@
+use log::debug;
 use super::TimeSeriesQueryPrepper;
-use crate::change_types::ChangeType;
 use crate::query_context::{Context, PathEntry};
 use spargebra::algebra::GraphPattern;
 use crate::preparing::graph_patterns::GPPrepReturn;
 
-impl TimeSeriesQueryPrepper {
+impl TimeSeriesQueryPrepper<'_> {
     pub fn prepare_slice(
         &mut self,
         inner: &GraphPattern,
@@ -13,10 +13,16 @@ impl TimeSeriesQueryPrepper {
         try_groupby_complex_query: bool,
         context: &Context,
     ) -> GPPrepReturn {
-        let mut inner_prepare = self.prepare_graph_pattern(
-            inner,
-            required_change_direction,
-            &context.extension_with(PathEntry::SliceInner),
-        );
+        if try_groupby_complex_query {
+            debug!("Encountered graph inside slice, not supported for complex groupby pushdown");
+            return GPPrepReturn::fail_groupby_complex_query()
+        } else {
+            let mut inner_prepare = self.prepare_graph_pattern(
+                inner,
+                try_groupby_complex_query,
+                &context.extension_with(PathEntry::ReducedInner),
+            );
+            inner_prepare
+        }
     }
 }

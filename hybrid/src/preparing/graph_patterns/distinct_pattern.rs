@@ -1,11 +1,11 @@
 use log::debug;
 use super::TimeSeriesQueryPrepper;
-use crate::change_types::ChangeType;
+
 use crate::query_context::{Context, PathEntry};
 use crate::preparing::graph_patterns::GPPrepReturn;
 use spargebra::algebra::GraphPattern;
 
-impl TimeSeriesQueryPrepper {
+impl TimeSeriesQueryPrepper<'_> {
     pub fn prepare_distinct(
         &mut self,
         inner: &GraphPattern,

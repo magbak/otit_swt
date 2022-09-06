@@ -9,7 +9,6 @@ pub mod constants;
 pub mod constraints;
 pub mod engine;
 mod find_query_variables;
-mod groupby_pushdown;
 mod preparing;
 pub mod preprocessing;
 pub mod pushdown_setting;

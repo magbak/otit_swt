@@ -2,7 +2,7 @@ use super::StaticQueryRewriter;
 use crate::change_types::ChangeType;
 use crate::query_context::{Context, PathEntry};
 use crate::rewriting::graph_patterns::GPReturn;
-use crate::timeseries_query::synchronization::create_identity_synchronized_queries;
+
 use spargebra::algebra::GraphPattern;
 
 impl StaticQueryRewriter {
@@ -55,8 +55,7 @@ impl StaticQueryRewriter {
                         left: Box::new(left_graph_pattern),
                         right: Box::new(right_graph_pattern),
                     })
-                    .with_change_type(use_change)
-                    .with_time_series_queries(all_tsqs);
+                    .with_change_type(use_change);
                 return left_rewrite;
             } else {
                 //left some, right none

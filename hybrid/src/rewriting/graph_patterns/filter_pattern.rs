@@ -1,12 +1,9 @@
 use super::StaticQueryRewriter;
 use crate::change_types::ChangeType;
-use crate::pushdown_setting::PushdownSetting;
 use crate::query_context::{Context, PathEntry};
 use crate::rewriting::graph_patterns::GPReturn;
 use crate::rewriting::pushups::apply_pushups;
-use crate::timeseries_query::TimeSeriesQuery;
 use spargebra::algebra::{Expression, GraphPattern};
-use std::collections::HashSet;
 
 impl StaticQueryRewriter {
     pub fn rewrite_filter(
@@ -23,13 +20,6 @@ impl StaticQueryRewriter {
         );
 
         if inner_rewrite.graph_pattern.is_some() {
-            pushdown_expression(
-                inner_rewrite.time_series_queries.as_mut(),
-                expression,
-                &context.extension_with(PathEntry::FilterExpression),
-                &self.pushdown_settings,
-            );
-
             let mut expression_rewrite = self.rewrite_expression(
                 expression,
                 required_change_direction,

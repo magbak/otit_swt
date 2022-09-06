@@ -1,5 +1,4 @@
 use crate::combiner::Combiner;
-use crate::groupby_pushdown::find_all_groupby_pushdowns;
 use crate::preparing::TimeSeriesQueryPrepper;
 use crate::preprocessing::Preprocessor;
 use crate::pushdown_setting::PushdownSetting;
@@ -74,7 +73,7 @@ impl Engine {
             basic_time_series_queries
         );
         let static_query_solutions = execute_sparql_query(endpoint, &static_rewrite).await?;
-        complete_basic_series_queries(&static_query_solutions, &mut basic_time_series_queries)?;
+        complete_basic_time_series_queries(&static_query_solutions, &mut basic_time_series_queries)?;
         let static_result_df =
             create_static_query_result_df(&static_rewrite, static_query_solutions);
         let mut prepper = TimeSeriesQueryPrepper::new(
@@ -84,21 +83,12 @@ impl Engine {
             basic_time_series_queries,
             &static_result_df,
         );
-        let mut time_series_queries = prepper.prepare(parsed_query);
+        let time_series_queries = prepper.prepare(&parsed_query);
 
         debug!("Static result dataframe: {}", static_result_df);
         if static_result_df.height() == 0 {
             todo!("Empty static df not supported yet")
         } else {
-            if self.pushdown_settings.contains(&PushdownSetting::GroupBy) {
-                find_all_groupby_pushdowns(
-                    &parsed_query,
-                    &static_result_df,
-                    &mut time_series_queries,
-                    &variable_constraints,
-                    &self.pushdown_settings,
-                );
-            }
             let mut time_series = self
                 .execute_time_series_queries(time_series_queries)
                 .await?;

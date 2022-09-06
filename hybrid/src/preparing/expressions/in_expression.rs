@@ -1,12 +1,9 @@
 use super::TimeSeriesQueryPrepper;
-use crate::change_types::ChangeType;
 use crate::query_context::{Context, PathEntry};
-use oxrdf::Variable;
 use spargebra::algebra::Expression;
-use std::collections::HashSet;
 use crate::preparing::expressions::EXPrepReturn;
 
-impl TimeSeriesQueryPrepper {
+impl TimeSeriesQueryPrepper<'_> {
     pub fn prepare_in_expression(
         &mut self,
         left: &Expression,
@@ -19,5 +16,13 @@ impl TimeSeriesQueryPrepper {
             try_groupby_complex_query,
             &context.extension_with(PathEntry::InLeft),
         );
+        let mut prepared:Vec<EXPrepReturn> = expressions.iter().map(|x|self.prepare_expression(x, try_groupby_complex_query, context)).collect();
+        if left_prepare.fail_groupby_complex_query || prepared.iter().any(|x|x.fail_groupby_complex_query) {
+            return EXPrepReturn::fail_groupby_complex_query()
+        }
+        for p in &mut prepared {
+            left_prepare.with_time_series_queries_from(p)
+        }
+        left_prepare
     }
 }

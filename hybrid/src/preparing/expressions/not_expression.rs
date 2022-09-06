@@ -1,12 +1,9 @@
 use super::TimeSeriesQueryPrepper;
-use crate::change_types::ChangeType;
 use crate::query_context::{Context, PathEntry};
 use crate::preparing::expressions::EXPrepReturn;
-use oxrdf::Variable;
 use spargebra::algebra::Expression;
-use std::collections::HashSet;
 
-impl TimeSeriesQueryPrepper {
+impl TimeSeriesQueryPrepper<'_> {
     pub fn prepare_not_expression(
         &mut self,
         wrapped: &Expression,
@@ -18,5 +15,6 @@ impl TimeSeriesQueryPrepper {
             try_groupby_complex_query,
             &context.extension_with(PathEntry::Not),
         );
+        wrapped_prepare
     }
 }

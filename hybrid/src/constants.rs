@@ -9,3 +9,4 @@ pub const NANOS_AS_DATETIME: &str = "https://github.com/magbak/otit_swt#NanosAsD
 pub const DATETIME_AS_SECONDS: &str = "https://github.com/magbak/otit_swt#DateTimeAsSeconds";
 pub const SECONDS_AS_DATETIME: &str = "https://github.com/magbak/otit_swt#SecondsAsDateTime";
 pub const NEST: &str = "https://github.com/magbak/otit_swt#nestAggregation";
+pub const GROUPING_COL: &str = "grouping_col";

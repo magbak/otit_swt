@@ -1,10 +1,7 @@
-mod aggregate_expression;
 mod expressions;
 mod graph_patterns;
-mod order_expression;
 mod synchronization;
 
-use crate::change_types::ChangeType;
 use crate::pushdown_setting::PushdownSetting;
 use crate::query_context::Context;
 use crate::timeseries_query::{BasicTimeSeriesQuery, TimeSeriesQuery};
@@ -35,16 +32,16 @@ impl TimeSeriesQueryPrepper<'_> {
         }
     }
 
-    pub fn prepare(&mut self, query: Query) -> Vec<TimeSeriesQuery> {
+    pub fn prepare(&mut self, query: &Query) -> Vec<TimeSeriesQuery> {
         if let Query::Select {
             dataset,
             pattern,
             base_iri,
-        } = &query
+        } = query
         {
             let mut pattern_prepared =
                 self.prepare_graph_pattern(pattern, false, &Context::new());
-            pattern_prepared.drained_time_series_queries().collect()
+            pattern_prepared.drained_time_series_queries()
         } else {
             panic!("Only support for Select");
         }

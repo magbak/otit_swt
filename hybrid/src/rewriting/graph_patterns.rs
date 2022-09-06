@@ -19,7 +19,6 @@ mod values_pattern;
 use super::StaticQueryRewriter;
 use crate::change_types::ChangeType;
 use crate::query_context::Context;
-use crate::timeseries_query::TimeSeriesQuery;
 use oxrdf::Variable;
 use spargebra::algebra::GraphPattern;
 use std::collections::{HashMap, HashSet};

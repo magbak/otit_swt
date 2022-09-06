@@ -2,7 +2,6 @@ use super::StaticQueryRewriter;
 use crate::change_types::ChangeType;
 use crate::query_context::{Context, PathEntry};
 use crate::rewriting::graph_patterns::GPReturn;
-use crate::timeseries_query::TimeSeriesQuery;
 use spargebra::algebra::GraphPattern;
 
 impl StaticQueryRewriter {
@@ -22,16 +21,6 @@ impl StaticQueryRewriter {
             right,
             required_change_direction,
             &context.extension_with(PathEntry::UnionRightSide),
-        );
-
-        let mut all_tsqs: Vec<TimeSeriesQuery> = left_rewrite
-            .time_series_queries
-            .drain(0..left_rewrite.time_series_queries.len())
-            .collect();
-        all_tsqs.extend(
-            right_rewrite
-                .time_series_queries
-                .drain(0..right_rewrite.time_series_queries.len()),
         );
 
         match required_change_direction {

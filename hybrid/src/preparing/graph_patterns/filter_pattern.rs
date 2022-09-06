@@ -1,14 +1,12 @@
 use super::TimeSeriesQueryPrepper;
-use crate::change_types::ChangeType;
-use crate::pushdown_setting::PushdownSetting;
 use crate::query_context::{Context, PathEntry};
 use crate::preparing::graph_patterns::GPPrepReturn;
-use crate::preparing::pushups::apply_pushups;
 use crate::timeseries_query::TimeSeriesQuery;
 use spargebra::algebra::{Expression, GraphPattern};
-use std::collections::HashSet;
+use crate::change_types::ChangeType;
+use crate::preparing::graph_patterns::filter_expression_rewrites::rewrite_filter_expression;
 
-impl TimeSeriesQueryPrepper {
+impl TimeSeriesQueryPrepper<'_> {
     pub fn prepare_filter(
         &mut self,
         expression: &Expression,
@@ -16,15 +14,26 @@ impl TimeSeriesQueryPrepper {
         try_groupby_complex_query: bool,
         context: &Context,
     ) -> GPPrepReturn {
+        let mut expression_prepare = self.prepare_expression(expression, try_groupby_complex_query, context);
         let mut inner_prepare = self.prepare_graph_pattern(
             inner,
-            required_change_direction,
+            try_groupby_complex_query,
             &context.extension_with(PathEntry::FilterInner),
         );
+        if expression_prepare.fail_groupby_complex_query && inner_prepare.fail_groupby_complex_query {
+           return GPPrepReturn::fail_groupby_complex_query()
+        }
+
         let mut out_tsqs=  vec![];
-        for t in inner_prepare.drain_time_series_queries() {
+        out_tsqs.extend(expression_prepare.drained_time_series_queries());
+        for t in inner_prepare.drained_time_series_queries() {
+            let use_change_type = if try_groupby_complex_query {
+                ChangeType::NoChange
+            } else {
+                ChangeType::Relaxed
+            };
             let (time_series_condition, lost_value) =
-                t.rewrite_filter_expression(expression, context, pushdown_settings);
+                rewrite_filter_expression(&t, expression,  &use_change_type,context, &self.pushdown_settings);
             if try_groupby_complex_query && lost_value {
                 return GPPrepReturn::fail_groupby_complex_query();
             }

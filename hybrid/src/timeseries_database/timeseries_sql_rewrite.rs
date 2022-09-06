@@ -78,25 +78,23 @@ pub fn create_query(
 
             Ok((select, columns))
         }
-        TimeSeriesQuery::Filtered(tsq, filter, _) => {
-            let mut and_where = None;
+        TimeSeriesQuery::Filtered(tsq, filter) => {
             let mut need_partition_columns = false;
-            if let Some(f) = filter {
-                let (se, added_partitioning) = create_filter_expressions(
-                    f,
-                    Some(
-                        &tsq.get_timestamp_variables()
-                            .get(0)
-                            .unwrap()
-                            .variable
-                            .as_str()
-                            .to_string(),
-                    ),
-                    check_partitioning_support(tables),
-                )?;
-                need_partition_columns = added_partitioning;
-                and_where = Some(se);
-            }
+
+            let (se, added_partitioning) = create_filter_expressions(
+                filter,
+                Some(
+                    &tsq.get_timestamp_variables()
+                        .get(0)
+                        .unwrap()
+                        .variable
+                        .as_str()
+                        .to_string(),
+                ),
+                check_partitioning_support(tables),
+            )?;
+            need_partition_columns = added_partitioning;
+
             let (mut select, columns) = create_query(
                 tsq,
                 tables,
@@ -131,9 +129,7 @@ pub fn create_query(
                 use_select = select;
             }
 
-            if let Some(se) = and_where {
-                use_select.and_where(se);
-            }
+            use_select.and_where(se);
 
             Ok((use_select, columns))
         }
@@ -157,9 +153,6 @@ pub fn create_query(
             } else {
                 todo!("Not implemented yet")
             }
-        }
-        TimeSeriesQuery::LeftSynchronized(_left, _right, _synchronizers, _filter, _) => {
-            todo!()
         }
         TimeSeriesQuery::Grouped(grouped) => create_grouped_query(
             &grouped.tsq,
@@ -528,14 +521,13 @@ mod tests {
         };
         let tsq = TimeSeriesQuery::Filtered(
             Box::new(TimeSeriesQuery::Basic(basic_tsq)),
-            Some(Expression::LessOrEqual(
+            Expression::LessOrEqual(
                 Box::new(Expression::Variable(Variable::new_unchecked("t"))),
                 Box::new(Expression::Literal(Literal::new_typed_literal(
                     "2022-06-01T08:46:53",
                     xsd::DATE_TIME,
                 ))),
-            )),
-            false,
+            ),
         );
 
         let table = TimeSeriesTable {
@@ -611,7 +603,7 @@ mod tests {
                     ],
                     vec![Synchronizer::Identity("t".to_string())],
                 )),
-                Some(Expression::And(
+                Expression::And(
                     Box::new(Expression::GreaterOrEqual(
                         Box::new(Expression::Variable(Variable::new_unchecked("t"))),
                         Box::new(Expression::Literal(Literal::new_typed_literal(
@@ -627,9 +619,7 @@ mod tests {
                         ))),
                     )),
                 )),
-                false,
-            )),
-            graph_pattern_hash: 16812051342539225582,
+            ),
             by: vec![
                 Variable::new_unchecked("year".to_string()),
                 Variable::new_unchecked("month".to_string()),

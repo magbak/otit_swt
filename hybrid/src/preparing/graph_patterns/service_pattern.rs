@@ -1,11 +1,11 @@
 use super::TimeSeriesQueryPrepper;
-use crate::change_types::ChangeType;
-use crate::query_context::{Context, PathEntry};
+
+use crate::query_context::{Context};
 use spargebra::algebra::GraphPattern;
 use spargebra::term::NamedNodePattern;
 use crate::preparing::graph_patterns::GPPrepReturn;
 
-impl TimeSeriesQueryPrepper {
+impl TimeSeriesQueryPrepper<'_> {
     pub fn prepare_service(
         &mut self,
         name: &NamedNodePattern,
@@ -14,9 +14,7 @@ impl TimeSeriesQueryPrepper {
         try_groupby_complex_query: bool,
         context: &Context,
     ) -> GPPrepReturn {
-        let mut inner_prepare = self.prepare_graph_pattern(
-            inner,
-            &context.extension_with(PathEntry::ServiceInner),
-        );
+        //Service pattern should not contain anything dynamic
+        GPPrepReturn::new(vec![])
     }
 }

@@ -10,25 +10,39 @@ mod or_expression;
 mod unary_ordinary_expression;
 
 use super::TimeSeriesQueryPrepper;
-use crate::change_types::ChangeType;
 use crate::query_context::Context;
-use oxrdf::Variable;
-use spargebra::algebra::{Expression, GraphPattern};
-use std::collections::HashSet;
+use spargebra::algebra::{Expression};
 use crate::preparing::expressions::binary_ordinary_expression::BinaryOrdinaryOperator;
 use crate::preparing::expressions::unary_ordinary_expression::UnaryOrdinaryOperator;
+use crate::timeseries_query::TimeSeriesQuery;
 
-pub struct EXPrepReturn {}
+pub struct EXPrepReturn {
+    pub fail_groupby_complex_query: bool,
+    pub time_series_queries:Vec<TimeSeriesQuery>
+}
 
 impl EXPrepReturn {
-    fn new() -> EXPrepReturn {
+    fn new(time_series_queries:Vec<TimeSeriesQuery>) -> EXPrepReturn {
         EXPrepReturn {
-            
+            time_series_queries,
+            fail_groupby_complex_query:false,
         }
+    }
+
+    pub fn fail_groupby_complex_query() -> EXPrepReturn {
+        EXPrepReturn { fail_groupby_complex_query: true, time_series_queries: vec![] }
+    }
+
+    pub fn with_time_series_queries_from(&mut self, other:&mut EXPrepReturn) {
+        self.time_series_queries.extend(other.drained_time_series_queries());
+    }
+
+    pub fn drained_time_series_queries(&mut self) -> Vec<TimeSeriesQuery> {
+        self.time_series_queries.drain(0..self.time_series_queries.len()).collect()
     }
 }
 
-impl TimeSeriesQueryPrepper {
+impl TimeSeriesQueryPrepper<'_> {
     pub fn prepare_expression(
         &mut self,
         expression: &Expression,
@@ -37,23 +51,15 @@ impl TimeSeriesQueryPrepper {
     ) -> EXPrepReturn {
         match expression {
             Expression::NamedNode(nn) => {
-                let mut exr = EXPrepReturn::new();
+                let mut exr = EXPrepReturn::new(vec![]);
                 exr
             }
             Expression::Literal(l) => {
-                let mut exr = EXPrepReturn::new();
+                let mut exr = EXPrepReturn::new(vec![]);
                 exr
             }
             Expression::Variable(v) => {
-                if let Some(prepared_variable) = self.prepare_variable(v, context) {
-                    if variables_in_scope.contains(v) {
-                        let mut exr = EXPrepReturn::new();
-                        exr.with_expression(Expression::Variable(prepared_variable))
-                            .with_change_type(ChangeType::NoChange);
-                        return exr;
-                    }
-                }
-                EXPrepReturn::new()
+                EXPrepReturn::new(vec![])
             }
             Expression::Or(left, right) => self.prepare_or_expression(
                 left,
@@ -163,12 +169,7 @@ impl TimeSeriesQueryPrepper {
             ),
             Expression::Exists(wrapped) => self.prepare_exists_expression(wrapped, try_groupby_complex_query, context),
             Expression::Bound(v) => {
-                let mut exr = EXPrepReturn::new();
-                if let Some(v_prepared) = self.prepare_variable(v, context) {
-                    exr.with_expression(Expression::Bound(v_prepared))
-                        .with_change_type(ChangeType::NoChange);
-                }
-                exr
+                EXPrepReturn::new(vec![])
             }
             Expression::If(left, mid, right) => {
                 self.prepare_if_expression(left, mid, right,try_groupby_complex_query, context)

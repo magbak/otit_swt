@@ -7,16 +7,12 @@ mod pushups;
 
 use crate::change_types::ChangeType;
 use crate::constraints::{Constraint, VariableConstraints};
-use crate::pushdown_setting::PushdownSetting;
-use crate::query_context::{Context, VariableInContext};
+use crate::query_context::{Context};
 use crate::rewriting::expressions::ExReturn;
-use crate::timeseries_query::{BasicTimeSeriesQuery, TimeSeriesQuery};
-use spargebra::algebra::GraphPattern;
+use crate::timeseries_query::{BasicTimeSeriesQuery};
 use spargebra::term::Variable;
 use spargebra::Query;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
 
 #[derive(Debug)]
 pub struct StaticQueryRewriter {
@@ -94,10 +90,4 @@ impl StaticQueryRewriter {
             Some(v.clone())
         }
     }
-}
-
-pub(crate) fn hash_graph_pattern(graph_pattern: &GraphPattern) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    graph_pattern.hash(&mut hasher);
-    hasher.finish()
 }

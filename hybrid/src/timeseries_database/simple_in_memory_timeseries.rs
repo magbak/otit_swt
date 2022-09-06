@@ -32,12 +32,9 @@ impl InMemoryTimeseriesDatabase {
     fn execute_query(&self, tsq: &TimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
         match tsq {
             TimeSeriesQuery::Basic(b) => self.execute_basic(b),
-            TimeSeriesQuery::Filtered(inner, filter, _) => self.execute_filtered(inner, filter),
+            TimeSeriesQuery::Filtered(inner, filter) => self.execute_filtered(inner, filter),
             TimeSeriesQuery::InnerSynchronized(inners, synchronizers) => {
                 self.execute_inner_synchronized(inners, synchronizers)
-            }
-            TimeSeriesQuery::LeftSynchronized(_, _, _, _, _) => {
-                unimplemented!()
             }
             TimeSeriesQuery::Grouped(grouped) => self.execute_grouped(grouped),
         }
@@ -135,7 +132,7 @@ impl InMemoryTimeseriesDatabase {
             let (lf, agg_expr, used_context) =
                 sparql_aggregate_expression_as_lazy_column_and_expression(
                     v,
-                    &agg.aggregate_expression,
+                    agg,
                     &timestamp_names,
                     &columns,
                     out_lf,

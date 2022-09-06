@@ -15,18 +15,16 @@ mod service_pattern;
 mod sliced_pattern;
 mod union_pattern;
 mod values_pattern;
+pub(crate) mod filter_expression_rewrites;
 
 use super::TimeSeriesQueryPrepper;
-use crate::change_types::ChangeType;
 use crate::query_context::Context;
 use crate::timeseries_query::TimeSeriesQuery;
-use oxrdf::Variable;
 use spargebra::algebra::GraphPattern;
-use std::collections::{HashMap, HashSet};
 
 pub struct GPPrepReturn {
-    fail_groupby_complex_query: bool,
-    time_series_queries: Vec<TimeSeriesQuery>,
+    pub fail_groupby_complex_query: bool,
+    pub time_series_queries: Vec<TimeSeriesQuery>,
 }
 
 impl GPPrepReturn {
@@ -37,16 +35,20 @@ impl GPPrepReturn {
         }
     }
 
-    fn fail_groupby_complex_query() -> GPPrepReturn {
+    pub fn fail_groupby_complex_query() -> GPPrepReturn {
         GPPrepReturn { fail_groupby_complex_query: true, time_series_queries: vec![] }
     }
 
-    fn drain_time_series_queries(&mut self) -> Vec<TimeSeriesQuery> {
-        self.time_series_queries.drain(0..self.time_series_queries).collect()
+    pub fn drained_time_series_queries(&mut self) -> Vec<TimeSeriesQuery> {
+        self.time_series_queries.drain(0..self.time_series_queries.len()).collect()
+    }
+
+    pub fn with_time_series_queries_from(&mut self, other:&mut GPPrepReturn) {
+        self.time_series_queries.extend(other.drained_time_series_queries())
     }
 }
 
-impl TimeSeriesQueryPrepper {
+impl TimeSeriesQueryPrepper<'_> {
     pub fn prepare_graph_pattern(
         &mut self,
         graph_pattern: &GraphPattern,
