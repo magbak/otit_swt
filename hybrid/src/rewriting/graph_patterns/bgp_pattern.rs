@@ -115,16 +115,10 @@ impl StaticQueryRewriter {
 
         //We wait until last to process the dynamic triples, making sure all relationships are known first.
         process_dynamic_triples(&mut new_basic_tsqs, dynamic_triples, &context);
-        let mut new_tsqs = new_basic_tsqs
-            .into_iter()
-            .map(|x| TimeSeriesQuery::Basic(x))
-            .collect();
-        if self.allow_compound_timeseries_queries {
-            new_tsqs = create_identity_synchronized_queries(new_tsqs)
-        }
+        self.basic_time_series_queries.extend(new_basic_tsqs);
 
         if new_triples.is_empty() {
-            GPReturn::only_timeseries_queries(new_tsqs)
+            GPReturn::none()
         } else {
             let mut variables_in_scope = HashSet::new();
             for t in &new_triples {
@@ -144,10 +138,26 @@ impl StaticQueryRewriter {
                 variables_in_scope,
                 datatypes_in_scope,
                 external_ids_in_scope,
-                new_tsqs,
             );
             gpr
         }
+    }
+
+    fn create_basic_time_series_query(
+        &mut self,
+        time_series_variable: &Variable,
+        time_series_id_variable: &Variable,
+        datatype_variable: &Variable,
+        context: &Context,
+    ) -> BasicTimeSeriesQuery {
+        let mut ts_query = BasicTimeSeriesQuery::new_empty();
+        ts_query.identifier_variable = Some(time_series_id_variable.clone());
+        ts_query.datatype_variable = Some(datatype_variable.clone());
+        ts_query.timeseries_variable = Some(VariableInContext::new(
+            time_series_variable.clone(),
+            context.clone(),
+        ));
+        ts_query
     }
 }
 

@@ -25,17 +25,6 @@ impl StaticQueryRewriter {
             required_change_direction,
             &context.extension_with(PathEntry::LeftJoinRightSide),
         );
-
-        //TODO: check if there is a left synchronized tsq here..
-        let mut all_tsqs: Vec<TimeSeriesQuery> = left_rewrite
-            .time_series_queries
-            .drain(0..left_rewrite.time_series_queries.len())
-            .collect();
-        all_tsqs.extend(
-            right_rewrite
-                .time_series_queries
-                .drain(0..right_rewrite.time_series_queries.len()),
-        );
         let mut expression_rewrite_opt = None;
 
         if left_rewrite.graph_pattern.is_some() {
@@ -79,7 +68,7 @@ impl StaticQueryRewriter {
                         {
                             use_change = ChangeType::Constrained;
                         } else {
-                            return GPReturn::only_timeseries_queries(all_tsqs);
+                            return GPReturn::none();
                         }
                         let left_graph_pattern = left_rewrite.graph_pattern.take().unwrap();
                         let right_graph_pattern = right_rewrite.graph_pattern.take().unwrap();
@@ -92,8 +81,7 @@ impl StaticQueryRewriter {
                                 right: Box::new(right_graph_pattern),
                                 expression: Some(expression_rewrite.expression.take().unwrap()),
                             })
-                            .with_change_type(use_change)
-                            .with_time_series_queries(all_tsqs);
+                            .with_change_type(use_change);
                         return left_rewrite;
                     } else {
                         //Expression rewrite is none, but we had an original expression
@@ -113,11 +101,10 @@ impl StaticQueryRewriter {
                                     right: Box::new(right_graph_pattern),
                                     expression: None,
                                 })
-                                .with_change_type(ChangeType::Relaxed)
-                                .with_time_series_queries(all_tsqs);
+                                .with_change_type(ChangeType::Relaxed);
                             return left_rewrite;
                         } else {
-                            return GPReturn::only_timeseries_queries(all_tsqs);
+                            return GPReturn::none();
                         }
                     }
                 } else {
@@ -133,8 +120,7 @@ impl StaticQueryRewriter {
                                 right: Box::new(right_graph_pattern),
                                 expression: None,
                             })
-                            .with_change_type(ChangeType::NoChange)
-                            .with_time_series_queries(all_tsqs);
+                            .with_change_type(ChangeType::NoChange);
                         return left_rewrite;
                     } else if (&left_rewrite.change_type == &ChangeType::NoChange
                         || &left_rewrite.change_type == &ChangeType::Relaxed)
@@ -149,8 +135,7 @@ impl StaticQueryRewriter {
                                 right: Box::new(right_graph_pattern),
                                 expression: None,
                             })
-                            .with_change_type(ChangeType::Relaxed)
-                            .with_time_series_queries(all_tsqs);
+                            .with_change_type(ChangeType::Relaxed);
                         return left_rewrite;
                     } else if (&left_rewrite.change_type == &ChangeType::NoChange
                         || &left_rewrite.change_type == &ChangeType::Constrained)
@@ -165,8 +150,7 @@ impl StaticQueryRewriter {
                                 right: Box::new(right_graph_pattern),
                                 expression: None,
                             })
-                            .with_change_type(ChangeType::Constrained)
-                            .with_time_series_queries(all_tsqs);
+                            .with_change_type(ChangeType::Constrained);
                         return left_rewrite;
                     }
                 }
@@ -204,8 +188,7 @@ impl StaticQueryRewriter {
                                         &mut expression_rewrite.graph_pattern_pushups,
                                     )),
                                 })
-                                .with_change_type(ChangeType::Relaxed)
-                                .with_time_series_queries(all_tsqs);
+                                .with_change_type(ChangeType::Relaxed);
                             return left_rewrite;
                         }
                     }
@@ -213,9 +196,7 @@ impl StaticQueryRewriter {
                     if &left_rewrite.change_type == &ChangeType::NoChange
                         || &left_rewrite.change_type == &ChangeType::Relaxed
                     {
-                        left_rewrite
-                            .with_change_type(ChangeType::Relaxed)
-                            .with_time_series_queries(all_tsqs);
+                        left_rewrite.with_change_type(ChangeType::Relaxed);
                         return left_rewrite;
                     }
                 }
@@ -247,21 +228,18 @@ impl StaticQueryRewriter {
                             )),
                             expr: expression_rewrite.expression.take().unwrap(),
                         })
-                        .with_change_type(ChangeType::Relaxed)
-                        .with_time_series_queries(all_tsqs);
+                        .with_change_type(ChangeType::Relaxed);
                     return right_rewrite;
                 }
             } else {
                 if &right_rewrite.change_type == &ChangeType::NoChange
                     || &right_rewrite.change_type == &ChangeType::Relaxed
                 {
-                    right_rewrite
-                        .with_change_type(ChangeType::Relaxed)
-                        .with_time_series_queries(all_tsqs);
+                    right_rewrite.with_change_type(ChangeType::Relaxed);
                     return right_rewrite;
                 }
             }
         }
-        GPReturn::only_timeseries_queries(all_tsqs)
+        GPReturn::none()
     }
 }

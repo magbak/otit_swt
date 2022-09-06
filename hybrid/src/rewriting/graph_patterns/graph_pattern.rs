@@ -22,6 +22,6 @@ impl StaticQueryRewriter {
             });
             return inner_gpr;
         }
-        GPReturn::only_timeseries_queries(inner_gpr.drained_time_series_queries())
+        GPReturn::none()
     }
 }

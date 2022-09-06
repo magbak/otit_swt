@@ -55,6 +55,6 @@ impl StaticQueryRewriter {
         if expr_rewrite.graph_pattern_pushups.len() > 0 {
             todo!("Solution will require graph pattern pushups for graph patterns!!");
         }
-        return GPReturn::only_timeseries_queries(inner_rewrite.drained_time_series_queries());
+        return GPReturn::none();
     }
 }

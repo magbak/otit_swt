@@ -23,28 +23,20 @@ pub struct StaticQueryRewriter {
     variable_counter: u16,
     additional_projections: HashSet<Variable>,
     variable_constraints: VariableConstraints,
-    pushdown_settings: HashSet<PushdownSetting>,
-    allow_compound_timeseries_queries: bool,
-    exists_expression_time_series_queries: Vec<TimeSeriesQuery>,
+    basic_time_series_queries: Vec<BasicTimeSeriesQuery>,
 }
 
 impl StaticQueryRewriter {
-    pub fn new(
-        pushdown_settings: HashSet<PushdownSetting>,
-        variable_constraints: &VariableConstraints,
-        allow_compound_timeseries_queries: bool,
-    ) -> StaticQueryRewriter {
+    pub fn new(variable_constraints: &VariableConstraints) -> StaticQueryRewriter {
         StaticQueryRewriter {
-            allow_compound_timeseries_queries,
-            pushdown_settings,
             variable_counter: 0,
             additional_projections: Default::default(),
             variable_constraints: variable_constraints.clone(),
-            exists_expression_time_series_queries: vec![],
+            basic_time_series_queries: vec![],
         }
     }
 
-    pub fn rewrite_query(&mut self, query: Query) -> Option<(Query, Vec<TimeSeriesQuery>)> {
+    pub fn rewrite_query(&mut self, query: Query) -> Option<(Query, Vec<BasicTimeSeriesQuery>)> {
         if let Query::Select {
             dataset,
             pattern,
@@ -58,18 +50,15 @@ impl StaticQueryRewriter {
                 if &pattern_rewrite.change_type == &ChangeType::NoChange
                     || &pattern_rewrite.change_type == &ChangeType::Relaxed
                 {
-                    let mut all_time_series_queries: Vec<TimeSeriesQuery> = self
-                        .exists_expression_time_series_queries
-                        .drain(0..self.exists_expression_time_series_queries.len())
-                        .collect();
-                    all_time_series_queries.extend(pattern_rewrite.drained_time_series_queries());
                     return Some((
                         Query::Select {
                             dataset: dataset.clone(),
                             pattern: pattern_rewrite.graph_pattern.take().unwrap(),
                             base_iri: base_iri.clone(),
                         },
-                        all_time_series_queries,
+                        self.basic_time_series_queries
+                            .drain(0..self.basic_time_series_queries.len())
+                            .collect(),
                     ));
                 } else {
                     None
@@ -104,23 +93,6 @@ impl StaticQueryRewriter {
         } else {
             Some(v.clone())
         }
-    }
-
-    fn create_basic_time_series_query(
-        &mut self,
-        time_series_variable: &Variable,
-        time_series_id_variable: &Variable,
-        datatype_variable: &Variable,
-        context: &Context,
-    ) -> BasicTimeSeriesQuery {
-        let mut ts_query = BasicTimeSeriesQuery::new_empty();
-        ts_query.identifier_variable = Some(time_series_id_variable.clone());
-        ts_query.datatype_variable = Some(datatype_variable.clone());
-        ts_query.timeseries_variable = Some(VariableInContext::new(
-            time_series_variable.clone(),
-            context.clone(),
-        ));
-        ts_query
     }
 }
 

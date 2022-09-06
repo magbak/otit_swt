@@ -1,5 +1,4 @@
 pub(crate) mod expression_rewrites;
-pub(crate) mod synchronization;
 
 use crate::change_types::ChangeType;
 use crate::pushdown_setting::PushdownSetting;
@@ -19,7 +18,7 @@ use std::fmt::{Display, Formatter};
 #[derive(Debug, Clone, PartialEq)]
 pub enum TimeSeriesQuery {
     Basic(BasicTimeSeriesQuery),
-    Filtered(Box<TimeSeriesQuery>, Option<Expression>, bool), //Flag lets us know if filtering is complete.
+    Filtered(Box<TimeSeriesQuery>, Expression), //Flag lets us know if filtering is complete.
     InnerSynchronized(Vec<Box<TimeSeriesQuery>>, Vec<Synchronizer>),
     LeftSynchronized(
         Box<TimeSeriesQuery>,
@@ -39,7 +38,7 @@ pub enum Synchronizer {
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroupedTimeSeriesQuery {
     pub tsq: Box<TimeSeriesQuery>,
-    pub graph_pattern_hash: u64,
+    pub graph_pattern_context: Context,
     pub by: Vec<Variable>,
     pub aggregations: Vec<(Variable, AggregateExpressionInContext)>,
     pub timeseries_funcs: Vec<(Variable, ExpressionInContext)>,
@@ -110,7 +109,7 @@ impl TimeSeriesQuery {
                 }
                 expected_columns
             }
-            TimeSeriesQuery::Filtered(inner, _, _) => inner.expected_columns(),
+            TimeSeriesQuery::Filtered(inner, _) => inner.expected_columns(),
             TimeSeriesQuery::InnerSynchronized(inners, _synchronizers) => {
                 inners.iter().fold(HashSet::new(), |mut exp, tsq| {
                     exp.extend(tsq.expected_columns());
@@ -135,28 +134,12 @@ impl TimeSeriesQuery {
         }
     }
 
-    pub(crate) fn dropped_value_expression(&self) -> bool {
-        match self {
-            TimeSeriesQuery::Basic(_) => false,
-            TimeSeriesQuery::Filtered(inner, _, dropped) => {
-                *dropped || inner.dropped_value_expression()
-            }
-            TimeSeriesQuery::InnerSynchronized(inners, _) => inners
-                .iter()
-                .fold(false, |x, y| x || y.dropped_value_expression()),
-            TimeSeriesQuery::LeftSynchronized(left, right, _, _, dropped) => {
-                *dropped || left.dropped_value_expression() || right.dropped_value_expression()
-            }
-            TimeSeriesQuery::Grouped(grouped) => grouped.tsq.dropped_value_expression(),
-        }
-    }
-
     pub(crate) fn get_mut_basic_queries(&mut self) -> Vec<&mut BasicTimeSeriesQuery> {
         match self {
             TimeSeriesQuery::Basic(b) => {
                 vec![b]
             }
-            TimeSeriesQuery::Filtered(inner, _, _) => inner.get_mut_basic_queries(),
+            TimeSeriesQuery::Filtered(inner, _) => inner.get_mut_basic_queries(),
             TimeSeriesQuery::InnerSynchronized(inners, _) => {
                 let mut basics = vec![];
                 for inner in inners {
@@ -221,7 +204,7 @@ impl TimeSeriesQuery {
                     vec![]
                 }
             }
-            TimeSeriesQuery::Filtered(inner, _, _) => inner.get_ids(),
+            TimeSeriesQuery::Filtered(inner, _) => inner.get_ids(),
             TimeSeriesQuery::InnerSynchronized(inners, _) => {
                 let mut ss = vec![];
                 for inner in inners {
@@ -247,7 +230,7 @@ impl TimeSeriesQuery {
                     vec![]
                 }
             }
-            TimeSeriesQuery::Filtered(inner, _, _) => inner.get_data_point_variables(),
+            TimeSeriesQuery::Filtered(inner, _) => inner.get_data_point_variables(),
             TimeSeriesQuery::InnerSynchronized(inners, _) => {
                 let mut vs = vec![];
                 for inner in inners {
@@ -273,7 +256,7 @@ impl TimeSeriesQuery {
                     vec![]
                 }
             }
-            TimeSeriesQuery::Filtered(inner, _, _) => inner.get_timeseries_variables(),
+            TimeSeriesQuery::Filtered(inner, _) => inner.get_timeseries_variables(),
             TimeSeriesQuery::InnerSynchronized(inners, _) => {
                 let mut vs = vec![];
                 for inner in inners {
@@ -299,7 +282,7 @@ impl TimeSeriesQuery {
                     vec![]
                 }
             }
-            TimeSeriesQuery::Filtered(inner, _, _) => inner.get_value_variables(),
+            TimeSeriesQuery::Filtered(inner, _) => inner.get_value_variables(),
             TimeSeriesQuery::InnerSynchronized(inners, _) => {
                 let mut vs = vec![];
                 for inner in inners {
@@ -325,7 +308,7 @@ impl TimeSeriesQuery {
                     vec![]
                 }
             }
-            TimeSeriesQuery::Filtered(inner, _, _) => inner.get_identifier_variables(),
+            TimeSeriesQuery::Filtered(inner, _) => inner.get_identifier_variables(),
             TimeSeriesQuery::InnerSynchronized(inners, _) => {
                 let mut vs = vec![];
                 for inner in inners {
@@ -364,7 +347,7 @@ impl TimeSeriesQuery {
                     vec![]
                 }
             }
-            TimeSeriesQuery::Filtered(t, _, _) => t.get_timestamp_variables(),
+            TimeSeriesQuery::Filtered(t, _) => t.get_timestamp_variables(),
             TimeSeriesQuery::InnerSynchronized(ts, _) => {
                 let mut vs = vec![];
                 for t in ts {

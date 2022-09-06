@@ -30,7 +30,6 @@ pub struct GPReturn {
     pub(crate) variables_in_scope: HashSet<Variable>,
     pub(crate) datatypes_in_scope: HashMap<Variable, Vec<Variable>>,
     pub(crate) external_ids_in_scope: HashMap<Variable, Vec<Variable>>,
-    pub(crate) time_series_queries: Vec<TimeSeriesQuery>,
 }
 
 impl GPReturn {
@@ -40,7 +39,6 @@ impl GPReturn {
         variables_in_scope: HashSet<Variable>,
         datatypes_in_scope: HashMap<Variable, Vec<Variable>>,
         external_ids_in_scope: HashMap<Variable, Vec<Variable>>,
-        time_series_queries: Vec<TimeSeriesQuery>,
     ) -> GPReturn {
         GPReturn {
             graph_pattern: Some(graph_pattern),
@@ -48,24 +46,16 @@ impl GPReturn {
             variables_in_scope,
             datatypes_in_scope,
             external_ids_in_scope,
-            time_series_queries,
         }
     }
 
-    pub(crate) fn drained_time_series_queries(&mut self) -> Vec<TimeSeriesQuery> {
-        self.time_series_queries
-            .drain(0..self.time_series_queries.len())
-            .collect()
-    }
-
-    fn only_timeseries_queries(time_series_queries: Vec<TimeSeriesQuery>) -> GPReturn {
+    fn none() -> GPReturn {
         GPReturn {
             graph_pattern: None,
             change_type: ChangeType::Relaxed,
             variables_in_scope: Default::default(),
             datatypes_in_scope: Default::default(),
             external_ids_in_scope: Default::default(),
-            time_series_queries,
         }
     }
 
@@ -100,11 +90,6 @@ impl GPReturn {
                 self.external_ids_in_scope.insert(k, v);
             }
         }
-        self
-    }
-
-    pub(crate) fn with_time_series_queries(&mut self, tsqs: Vec<TimeSeriesQuery>) -> &mut GPReturn {
-        self.time_series_queries = tsqs;
         self
     }
 }

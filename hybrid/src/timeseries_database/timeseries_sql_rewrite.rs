@@ -6,7 +6,9 @@ use crate::timeseries_database::timeseries_sql_rewrite::expression_rewrite::SPAR
 use crate::timeseries_database::timeseries_sql_rewrite::partitioning_support::add_partitioned_timestamp_conditions;
 use crate::timeseries_query::{BasicTimeSeriesQuery, Synchronizer, TimeSeriesQuery};
 use oxrdf::{NamedNode, Variable};
-use sea_query::{Alias, BinOper, ColumnRef, JoinType, Query, SelectStatement, SimpleExpr, TableRef};
+use sea_query::{
+    Alias, BinOper, ColumnRef, JoinType, Query, SelectStatement, SimpleExpr, TableRef,
+};
 use sea_query::{Expr as SeaExpr, Iden, Value};
 use spargebra::algebra::Expression;
 use std::collections::{HashMap, HashSet};
@@ -165,7 +167,7 @@ pub fn create_query(
             &grouped.aggregations,
             &grouped.timeseries_funcs,
             tables,
-            project_date_partition
+            project_date_partition,
         ),
     }
 }
@@ -194,26 +196,34 @@ fn inner_join_selects(
     for (i, (s, cols)) in selects_and_timestamp_cols.into_iter().enumerate() {
         let select_name = format!("other_{}", i);
         let mut conditions = vec![];
-        let col_conditions = [timestamp_col.clone(), YEAR_PARTITION_COLUMN_NAME.to_string(), MONTH_PARTITION_COLUMN_NAME.to_string(), DAY_PARTITION_COLUMN_NAME.to_string()];
+        let col_conditions = [
+            timestamp_col.clone(),
+            YEAR_PARTITION_COLUMN_NAME.to_string(),
+            MONTH_PARTITION_COLUMN_NAME.to_string(),
+            DAY_PARTITION_COLUMN_NAME.to_string(),
+        ];
         for c in col_conditions {
-            conditions.push(SimpleExpr::Column(ColumnRef::TableColumn(
-                Rc::new(Name::Table(first_select_name.to_string())),
-                Rc::new(Name::Column(c.clone())),
-            ))
-            .equals(SimpleExpr::Column(ColumnRef::TableColumn(
-                Rc::new(Name::Table(select_name.clone())),
-                Rc::new(Name::Column(c)),
-            ))));
+            conditions.push(
+                SimpleExpr::Column(ColumnRef::TableColumn(
+                    Rc::new(Name::Table(first_select_name.to_string())),
+                    Rc::new(Name::Column(c.clone())),
+                ))
+                .equals(SimpleExpr::Column(ColumnRef::TableColumn(
+                    Rc::new(Name::Table(select_name.clone())),
+                    Rc::new(Name::Column(c)),
+                ))),
+            );
         }
         let mut first_condition = conditions.remove(0);
         for c in conditions {
-            first_condition = SimpleExpr::Binary(Box::new(first_condition), BinOper::And, Box::new(c));
+            first_condition =
+                SimpleExpr::Binary(Box::new(first_condition), BinOper::And, Box::new(c));
         }
 
         first_select.join(
             JoinType::InnerJoin,
             TableRef::SubQuery(s, Rc::new(Alias::new(&select_name))),
-            first_condition
+            first_condition,
         );
         let mut sorted_cols: Vec<&String> = cols.iter().collect();
         sorted_cols.sort();
@@ -309,7 +319,9 @@ fn create_grouped_query(
     let (query, columns) = create_query(
         &inner_tsq,
         tables,
-        expr_transformer.used_partitioning || agg_transformer.used_partitioning || project_date_partition,
+        expr_transformer.used_partitioning
+            || agg_transformer.used_partitioning
+            || project_date_partition,
     )?;
     let mut inner_query = Query::select();
 

@@ -15,8 +15,6 @@ impl StaticQueryRewriter {
             &ChangeType::NoChange,
             &context.extension_with(PathEntry::Exists),
         );
-        self.exists_expression_time_series_queries
-            .extend(wrapped_rewrite.drained_time_series_queries());
         let mut exr = ExReturn::new();
         if wrapped_rewrite.graph_pattern.is_some() {
             if wrapped_rewrite.change_type == ChangeType::NoChange {

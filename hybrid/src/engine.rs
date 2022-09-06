@@ -1,5 +1,6 @@
 use crate::combiner::Combiner;
 use crate::groupby_pushdown::find_all_groupby_pushdowns;
+use crate::preparing::TimeSeriesQueryPrepper;
 use crate::preprocessing::Preprocessor;
 use crate::pushdown_setting::PushdownSetting;
 use crate::rewriting::StaticQueryRewriter;
@@ -7,7 +8,7 @@ use crate::sparql_result_to_polars::create_static_query_result_df;
 use crate::splitter::parse_sparql_select_query;
 use crate::static_sparql::execute_sparql_query;
 use crate::timeseries_database::TimeSeriesQueryable;
-use crate::timeseries_query::TimeSeriesQuery;
+use crate::timeseries_query::{BasicTimeSeriesQuery, TimeSeriesQuery};
 use log::debug;
 use oxrdf::vocab::xsd;
 use oxrdf::Term;
@@ -64,20 +65,27 @@ impl Engine {
         let mut preprocessor = Preprocessor::new();
         let (preprocessed_query, variable_constraints) = preprocessor.preprocess(&parsed_query);
         debug!("Constraints: {:?}", variable_constraints);
-        let mut rewriter = StaticQueryRewriter::new(
-            self.pushdown_settings.clone(),
-            &variable_constraints,
-            self.time_series_database
-                .allow_compound_timeseries_queries(),
-        );
-        let (static_rewrite, mut time_series_queries) =
+        let mut rewriter = StaticQueryRewriter::new(&variable_constraints);
+        let (static_rewrite, mut basic_time_series_queries) =
             rewriter.rewrite_query(preprocessed_query).unwrap();
         debug!("Produced static rewrite: {}", static_rewrite);
-        debug!("Produced time series queries: {:?}", time_series_queries);
+        debug!(
+            "Produced basic time series queries: {:?}",
+            basic_time_series_queries
+        );
         let static_query_solutions = execute_sparql_query(endpoint, &static_rewrite).await?;
-        complete_time_series_queries(&static_query_solutions, &mut time_series_queries)?;
+        complete_basic_series_queries(&static_query_solutions, &mut basic_time_series_queries)?;
         let static_result_df =
             create_static_query_result_df(&static_rewrite, static_query_solutions);
+        let mut prepper = TimeSeriesQueryPrepper::new(
+            self.pushdown_settings.clone(),
+            self.time_series_database
+                .allow_compound_timeseries_queries(),
+            basic_time_series_queries,
+            &static_result_df,
+        );
+        let mut time_series_queries = prepper.prepare(parsed_query);
+
         debug!("Static result dataframe: {}", static_result_df);
         if static_result_df.height() == 0 {
             todo!("Empty static df not supported yet")
@@ -127,51 +135,49 @@ impl Engine {
     }
 }
 
-pub(crate) fn complete_time_series_queries(
+pub(crate) fn complete_basic_time_series_queries(
     static_query_solutions: &Vec<QuerySolution>,
-    time_series_queries: &mut Vec<TimeSeriesQuery>,
+    basic_time_series_queries: &mut Vec<BasicTimeSeriesQuery>,
 ) -> Result<(), OrchestrationError> {
-    for tsq in time_series_queries {
-        for basic_query in tsq.get_mut_basic_queries() {
-            let mut ids = HashSet::new();
-            for sqs in static_query_solutions {
-                if let Some(Term::Literal(lit)) =
-                    sqs.get(basic_query.identifier_variable.as_ref().unwrap())
-                {
-                    if lit.datatype() == xsd::STRING {
-                        ids.insert(lit.value().to_string());
-                    } else {
-                        todo!()
-                    }
+    for basic_query in basic_time_series_queries {
+        let mut ids = HashSet::new();
+        for sqs in static_query_solutions {
+            if let Some(Term::Literal(lit)) =
+                sqs.get(basic_query.identifier_variable.as_ref().unwrap())
+            {
+                if lit.datatype() == xsd::STRING {
+                    ids.insert(lit.value().to_string());
+                } else {
+                    todo!()
                 }
             }
+        }
 
-            if let Some(datatype_var) = &basic_query.datatype_variable {
-                for sqs in static_query_solutions {
-                    if let Some(Term::NamedNode(nn)) = sqs.get(datatype_var) {
-                        if basic_query.datatype.is_none() {
-                            basic_query.datatype = Some(nn.clone());
-                        } else if let Some(dt) = &basic_query.datatype {
-                            if dt.as_str() != nn.as_str() {
-                                return Err(OrchestrationError::InconsistentDatatype(
-                                    nn.as_str().to_string(),
-                                    dt.as_str().to_string(),
-                                    basic_query
-                                        .timeseries_variable
-                                        .as_ref()
-                                        .unwrap()
-                                        .variable
-                                        .to_string(),
-                                ));
-                            }
+        if let Some(datatype_var) = &basic_query.datatype_variable {
+            for sqs in static_query_solutions {
+                if let Some(Term::NamedNode(nn)) = sqs.get(datatype_var) {
+                    if basic_query.datatype.is_none() {
+                        basic_query.datatype = Some(nn.clone());
+                    } else if let Some(dt) = &basic_query.datatype {
+                        if dt.as_str() != nn.as_str() {
+                            return Err(OrchestrationError::InconsistentDatatype(
+                                nn.as_str().to_string(),
+                                dt.as_str().to_string(),
+                                basic_query
+                                    .timeseries_variable
+                                    .as_ref()
+                                    .unwrap()
+                                    .variable
+                                    .to_string(),
+                            ));
                         }
                     }
                 }
             }
-            let mut ids_vec: Vec<String> = ids.into_iter().collect();
-            ids_vec.sort();
-            basic_query.ids = Some(ids_vec);
         }
+        let mut ids_vec: Vec<String> = ids.into_iter().collect();
+        ids_vec.sort();
+        basic_query.ids = Some(ids_vec);
     }
     Ok(())
 }

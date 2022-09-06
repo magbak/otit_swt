@@ -46,9 +46,7 @@ impl StaticQueryRewriter {
                     {
                         use_change = ChangeType::Relaxed;
                     } else {
-                        return GPReturn::only_timeseries_queries(
-                            inner_rewrite.drained_time_series_queries(),
-                        );
+                        return GPReturn::none();
                     }
                 } else if expression_rewrite.change_type.as_ref().unwrap()
                     == &ChangeType::Constrained
@@ -56,9 +54,7 @@ impl StaticQueryRewriter {
                     if &inner_rewrite.change_type == &ChangeType::Constrained {
                         use_change = ChangeType::Constrained;
                     } else {
-                        return GPReturn::only_timeseries_queries(
-                            inner_rewrite.drained_time_series_queries(),
-                        );
+                        return GPReturn::none();
                     }
                 } else {
                     panic!("Should never happen");
@@ -84,33 +80,6 @@ impl StaticQueryRewriter {
                 return inner_rewrite;
             }
         }
-        GPReturn::only_timeseries_queries(inner_rewrite.drained_time_series_queries())
+        GPReturn::none()
     }
-}
-
-fn pushdown_expression(
-    tsqs: &mut Vec<TimeSeriesQuery>,
-    expr: &Expression,
-    context: &Context,
-    pushdown_settings: &HashSet<PushdownSetting>,
-) {
-    //Todo check if expr is a synchronizer, else do stuff below
-    let mut out_tsqs = vec![];
-
-    for t in tsqs.drain(0..tsqs.len()) {
-        let (time_series_condition, lost_value) =
-            t.rewrite_filter_expression(expr, context, pushdown_settings);
-        if let Some(expr) = time_series_condition {
-            out_tsqs.push(TimeSeriesQuery::Filtered(
-                Box::new(t),
-                Some(expr),
-                lost_value,
-            ))
-        } else if lost_value {
-            out_tsqs.push(TimeSeriesQuery::Filtered(Box::new(t), None, lost_value))
-        } else {
-            out_tsqs.push(t);
-        }
-    }
-    tsqs.extend(out_tsqs.into_iter());
 }

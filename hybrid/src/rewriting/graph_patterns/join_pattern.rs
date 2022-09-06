@@ -23,11 +23,6 @@ impl StaticQueryRewriter {
             required_change_direction,
             &context.extension_with(PathEntry::JoinRightSide),
         );
-        let mut all_tsqs = left_rewrite.drained_time_series_queries();
-        all_tsqs.extend(right_rewrite.drained_time_series_queries().into_iter());
-        if self.allow_compound_timeseries_queries {
-            all_tsqs = create_identity_synchronized_queries(all_tsqs);
-        }
 
         if left_rewrite.graph_pattern.is_some() {
             if right_rewrite.graph_pattern.is_some() {
@@ -49,7 +44,7 @@ impl StaticQueryRewriter {
                 {
                     use_change = ChangeType::Constrained;
                 } else {
-                    return GPReturn::only_timeseries_queries(all_tsqs);
+                    return GPReturn::none();
                 }
                 let left_graph_pattern = left_rewrite.graph_pattern.take().unwrap();
                 let right_graph_pattern = right_rewrite.graph_pattern.take().unwrap();
@@ -68,9 +63,7 @@ impl StaticQueryRewriter {
                 if &left_rewrite.change_type == &ChangeType::NoChange
                     || &left_rewrite.change_type == &ChangeType::Relaxed
                 {
-                    left_rewrite
-                        .with_change_type(ChangeType::Relaxed)
-                        .with_time_series_queries(all_tsqs);
+                    left_rewrite.with_change_type(ChangeType::Relaxed);
                     return left_rewrite;
                 }
             }
@@ -79,12 +72,10 @@ impl StaticQueryRewriter {
             if &right_rewrite.change_type == &ChangeType::NoChange
                 || &right_rewrite.change_type == &ChangeType::Relaxed
             {
-                right_rewrite
-                    .with_change_type(ChangeType::Relaxed)
-                    .with_time_series_queries(all_tsqs);
+                right_rewrite.with_change_type(ChangeType::Relaxed);
                 return right_rewrite;
             }
         }
-        GPReturn::only_timeseries_queries(all_tsqs)
+        GPReturn::none()
     }
 }

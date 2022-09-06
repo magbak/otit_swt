@@ -73,8 +73,6 @@ impl StaticQueryRewriter {
                 return graph_pattern_rewrite;
             }
         }
-        return GPReturn::only_timeseries_queries(
-            graph_pattern_rewrite.drained_time_series_queries(),
-        );
+        return GPReturn::none();
     }
 }

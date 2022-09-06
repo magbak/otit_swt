@@ -469,7 +469,7 @@ impl Context {
 #[derive(Clone, PartialEq, Debug)]
 pub struct VariableInContext {
     pub variable: Variable,
-    context: Context,
+    pub(crate) context: Context,
 }
 
 impl VariableInContext {
