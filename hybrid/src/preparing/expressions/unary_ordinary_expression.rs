@@ -8,7 +8,7 @@ pub(crate) enum UnaryOrdinaryOperator {
     UnaryMinus,
 }
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub fn prepare_unary_ordinary_expression(
         &mut self,
         wrapped: &Expression,

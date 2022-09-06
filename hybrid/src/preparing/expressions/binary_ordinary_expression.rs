@@ -16,7 +16,7 @@ pub enum BinaryOrdinaryOperator {
     Equal,
 }
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub fn prepare_binary_ordinary_expression(
         &mut self,
         left: &Expression,

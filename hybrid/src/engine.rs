@@ -81,9 +81,10 @@ impl Engine {
             self.time_series_database
                 .allow_compound_timeseries_queries(),
             basic_time_series_queries,
-            &static_result_df,
+            static_result_df,
         );
         let time_series_queries = prepper.prepare(&parsed_query);
+        let TimeSeriesQueryPrepper { static_result_df, .. } = prepper;
 
         debug!("Static result dataframe: {}", static_result_df);
         if static_result_df.height() == 0 {

@@ -3,7 +3,7 @@ use crate::query_context::{Context, PathEntry};
 use crate::preparing::expressions::EXPrepReturn;
 use spargebra::algebra::Expression;
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub fn prepare_coalesce_expression(
         &mut self,
         wrapped: &Vec<Expression>,

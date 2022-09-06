@@ -42,7 +42,7 @@ impl EXPrepReturn {
     }
 }
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub fn prepare_expression(
         &mut self,
         expression: &Expression,

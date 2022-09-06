@@ -160,7 +160,7 @@ pub fn create_query(
             tables,
             project_date_partition,
         ),
-        TimeSeriesQuery::GroupedBasic(_, _, _) => {}
+        TimeSeriesQuery::GroupedBasic(_,_,_) => {}
         TimeSeriesQuery::ExpressionAs(_, _, _) => {}
     }
 }
@@ -289,8 +289,6 @@ fn create_grouped_query(
     let inner_query_str = "inner_query";
     let inner_query_name = Name::Table(inner_query_str.to_string());
     let mut expr_transformer = create_transformer(partitioning_support, Some(&inner_query_name));
-    let mut ses = vec![];
-
 
     //Outer query aggregations:
     let outer_query_str = "outer_query";

@@ -10,20 +10,20 @@ use spargebra::Query;
 use std::collections::HashSet;
 
 #[derive(Debug)]
-pub struct TimeSeriesQueryPrepper<'a> {
+pub struct TimeSeriesQueryPrepper {
     pushdown_settings: HashSet<PushdownSetting>,
     allow_compound_timeseries_queries: bool,
     basic_time_series_queries: Vec<BasicTimeSeriesQuery>,
-    static_result_df: &'a DataFrame,
+    static_result_df: DataFrame,
     grouping_counter: u16,
 }
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub fn new(
         pushdown_settings: HashSet<PushdownSetting>,
         allow_compound_timeseries_queries: bool,
         basic_time_series_queries: Vec<BasicTimeSeriesQuery>,
-        static_result_df: &DataFrame,
+        static_result_df: DataFrame,
     ) -> TimeSeriesQueryPrepper {
         TimeSeriesQueryPrepper {
             allow_compound_timeseries_queries,

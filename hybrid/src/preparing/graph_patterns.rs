@@ -48,7 +48,7 @@ impl GPPrepReturn {
     }
 }
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub fn prepare_graph_pattern(
         &mut self,
         graph_pattern: &GraphPattern,

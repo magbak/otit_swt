@@ -5,7 +5,7 @@ use spargebra::algebra::GraphPattern;
 use spargebra::term::NamedNodePattern;
 use crate::preparing::graph_patterns::GPPrepReturn;
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub fn prepare_service(
         &mut self,
         name: &NamedNodePattern,

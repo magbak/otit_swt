@@ -5,7 +5,7 @@ use crate::query_context::{Context, PathEntry};
 use log::debug;
 use spargebra::algebra::{GraphPattern, OrderExpression};
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub fn prepare_order_by(
         &mut self,
         inner: &GraphPattern,

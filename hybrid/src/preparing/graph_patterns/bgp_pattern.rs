@@ -4,7 +4,7 @@ use crate::query_context::{Context, PathEntry};
 use crate::timeseries_query::{TimeSeriesQuery};
 use crate::preparing::synchronization::{create_identity_synchronized_queries};
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub(crate) fn prepare_bgp(
         &mut self,
         try_groupby_complex_query: bool,

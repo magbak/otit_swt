@@ -7,7 +7,7 @@ use oxrdf::Variable;
 use spargebra::algebra::{Expression, GraphPattern};
 use std::collections::HashSet;
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub(crate) fn prepare_extend(
         &mut self,
         inner: &GraphPattern,

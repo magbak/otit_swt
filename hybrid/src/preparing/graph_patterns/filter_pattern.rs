@@ -6,7 +6,7 @@ use spargebra::algebra::{Expression, GraphPattern};
 use crate::change_types::ChangeType;
 use crate::preparing::graph_patterns::filter_expression_rewrites::rewrite_filter_expression;
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub fn prepare_filter(
         &mut self,
         expression: &Expression,

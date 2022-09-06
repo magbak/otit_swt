@@ -1,6 +1,5 @@
-use crate::query_context::{
-    Context, VariableInContext,
-};
+use crate::find_query_variables::find_all_used_variables_in_expression;
+use crate::query_context::{Context, VariableInContext};
 use oxrdf::NamedNode;
 use polars::frame::DataFrame;
 use spargebra::algebra::{AggregateExpression, Expression};
@@ -8,7 +7,6 @@ use spargebra::term::Variable;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use crate::find_query_variables::find_all_used_variables_in_expression;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TimeSeriesQuery {
@@ -43,6 +41,20 @@ pub struct BasicTimeSeriesQuery {
     pub datatype: Option<NamedNode>,
     pub timestamp_variable: Option<VariableInContext>,
     pub ids: Option<Vec<String>>,
+}
+
+impl BasicTimeSeriesQuery {
+    fn expected_columns(&self) -> HashSet<&str> {
+        let mut expected_columns = HashSet::new();
+        expected_columns.insert(self.identifier_variable.as_ref().unwrap().as_str());
+        if let Some(vv) = &self.value_variable {
+            expected_columns.insert(vv.variable.as_str());
+        }
+        if let Some(tsv) = &self.timestamp_variable {
+            expected_columns.insert(tsv.variable.as_str());
+        }
+        expected_columns
+    }
 }
 
 #[derive(Debug)]
@@ -87,18 +99,8 @@ impl TimeSeriesQuery {
 
     fn expected_columns<'a>(&'a self) -> HashSet<&'a str> {
         match self {
-            TimeSeriesQuery::Basic(b) => {
-                let mut expected_columns = HashSet::new();
-                expected_columns.insert(b.identifier_variable.as_ref().unwrap().as_str());
-                if let Some(vv) = &b.value_variable {
-                    expected_columns.insert(vv.variable.as_str());
-                }
-                if let Some(tsv) = &b.timestamp_variable {
-                    expected_columns.insert(tsv.variable.as_str());
-                }
-                expected_columns
-            }
-            TimeSeriesQuery::Filtered(inner, _) => inner.expected_columns(),
+            TimeSeriesQuery::Basic(b) => b.expected_columns(),
+            TimeSeriesQuery::Filtered(inner, ..) => inner.expected_columns(),
             TimeSeriesQuery::InnerSynchronized(inners, _synchronizers) => {
                 inners.iter().fold(HashSet::new(), |mut exp, tsq| {
                     exp.extend(tsq.expected_columns());
@@ -112,8 +114,12 @@ impl TimeSeriesQuery {
                 }
                 expected_columns
             }
-            TimeSeriesQuery::GroupedBasic(_, _, _) => {}
-            TimeSeriesQuery::ExpressionAs(_, _, _) => {}
+            TimeSeriesQuery::GroupedBasic(b, ..) => {
+                b.expected_columns()
+            }
+            TimeSeriesQuery::ExpressionAs(t, ..) => {
+                t.expected_columns()
+            }
         }
     }
 
@@ -131,8 +137,10 @@ impl TimeSeriesQuery {
                 basics
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_mut_basic_queries(),
-            TimeSeriesQuery::GroupedBasic(_, _, _) => {}
-            TimeSeriesQuery::ExpressionAs(_, _, _) => {}
+            TimeSeriesQuery::GroupedBasic(b, ..) => {
+                vec![b]
+            }
+            TimeSeriesQuery::ExpressionAs(t, ..) => t.get_mut_basic_queries(),
         }
     }
 
@@ -193,16 +201,22 @@ impl TimeSeriesQuery {
                 ss
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_ids(),
-            TimeSeriesQuery::GroupedBasic(_, _, _) => {}
-            TimeSeriesQuery::ExpressionAs(_, _, _) => {}
+            TimeSeriesQuery::GroupedBasic(b, ..) => {
+                if let Some(ids) = &b.ids {
+                    ids.iter().collect()
+                } else {
+                    vec![]
+                }
+            }
+            TimeSeriesQuery::ExpressionAs(tsq, ..) => tsq.get_ids(),
         }
     }
 
     pub(crate) fn get_data_point_variables(&self) -> Vec<&VariableInContext> {
         match self {
             TimeSeriesQuery::Basic(b) => {
-                if let Some(id_var) = &b.data_point_variable {
-                    vec![id_var]
+                if let Some(data_point_var) = &b.data_point_variable {
+                    vec![data_point_var]
                 } else {
                     vec![]
                 }
@@ -216,8 +230,14 @@ impl TimeSeriesQuery {
                 vs
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_data_point_variables(),
-            TimeSeriesQuery::GroupedBasic(_, _, _) => {}
-            TimeSeriesQuery::ExpressionAs(_, _, _) => {}
+            TimeSeriesQuery::GroupedBasic(b, ..) => {
+                if let Some(data_point_var) = &b.data_point_variable {
+                    vec![data_point_var]
+                } else {
+                    vec![]
+                }
+            }
+            TimeSeriesQuery::ExpressionAs(t, ..) => t.get_data_point_variables(),
         }
     }
 
@@ -239,8 +259,16 @@ impl TimeSeriesQuery {
                 vs
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_timeseries_variables(),
-            TimeSeriesQuery::GroupedBasic(_, _, _) => {}
-            TimeSeriesQuery::ExpressionAs(_, _, _) => {}
+            TimeSeriesQuery::GroupedBasic(b, ..) => {
+                if let Some(var) = &b.timeseries_variable {
+                    vec![var]
+                } else {
+                    vec![]
+                }
+            }
+            TimeSeriesQuery::ExpressionAs(tsq, ..) => {
+                tsq.get_timeseries_variables()
+            }
         }
     }
 
@@ -262,8 +290,16 @@ impl TimeSeriesQuery {
                 vs
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_value_variables(),
-            TimeSeriesQuery::GroupedBasic(_, _, _) => {}
-            TimeSeriesQuery::ExpressionAs(_, _, _) => {}
+            TimeSeriesQuery::GroupedBasic(b,..) => {
+                if let Some(val_var) = &b.value_variable {
+                    vec![val_var]
+                } else {
+                    vec![]
+                }
+            }
+            TimeSeriesQuery::ExpressionAs(t, ..) => {
+                t.get_value_variables()
+            }
         }
     }
 
@@ -285,8 +321,16 @@ impl TimeSeriesQuery {
                 vs
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_identifier_variables(),
-            TimeSeriesQuery::GroupedBasic(_, _, _) => {}
-            TimeSeriesQuery::ExpressionAs(_, _, _) => {}
+            TimeSeriesQuery::GroupedBasic(b,..) => {
+                if let Some(id_var) = &b.identifier_variable {
+                    vec![id_var]
+                } else {
+                    vec![]
+                }
+            }
+            TimeSeriesQuery::ExpressionAs(t, ..) => {
+                t.get_identifier_variables()
+            }
         }
     }
 
@@ -321,6 +365,16 @@ impl TimeSeriesQuery {
                 vs
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_timestamp_variables(),
+            TimeSeriesQuery::GroupedBasic(b, ..) => {
+                if let Some(v) = &b.timestamp_variable {
+                    vec![v]
+                } else {
+                    vec![]
+                }
+            }
+            TimeSeriesQuery::ExpressionAs(t, ..) => {
+                t.get_timestamp_variables()
+            }
         }
     }
 }
@@ -341,13 +395,15 @@ impl BasicTimeSeriesQuery {
 }
 
 impl TimeSeriesQuery {
-    pub fn get_timeseries_functions(&self, context:&Context) -> Vec<(&Variable,&Expression)>{
-        match &*self.tsq {
-            TimeSeriesQuery::Basic(..) => {vec![]}
-            TimeSeriesQuery::GroupedBasic(..) => {}
-            TimeSeriesQuery::Filtered(tsq, _) => {
-                tsq.get_timeseries_functions(context)
+    pub fn get_timeseries_functions(&self, context: &Context) -> Vec<(&Variable, &Expression)> {
+        match self {
+            TimeSeriesQuery::Basic(..) => {
+                vec![]
             }
+            TimeSeriesQuery::GroupedBasic(..) => {
+                vec![]
+            }
+            TimeSeriesQuery::Filtered(tsq, _) => tsq.get_timeseries_functions(context),
             TimeSeriesQuery::InnerSynchronized(tsqs, _) => {
                 let mut out_tsfs = vec![];
                 for tsq in tsqs {
@@ -370,11 +426,10 @@ impl TimeSeriesQuery {
                     }
                 }
                 if exists_timeseries_var && all_are_timeseries_var {
-                    tsfs.push((v,e))
+                    tsfs.push((v, e))
                 }
                 tsfs.extend(tsq.get_timeseries_functions(context));
                 tsfs
-
             }
             TimeSeriesQuery::Grouped(..) => {
                 panic!("Not supported")

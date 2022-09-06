@@ -4,7 +4,7 @@ use crate::query_context::{Context, PathEntry};
 use crate::preparing::graph_patterns::GPPrepReturn;
 use spargebra::algebra::GraphPattern;
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub fn prepare_minus(
         &mut self,
         left: &GraphPattern,

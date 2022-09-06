@@ -3,7 +3,7 @@ use crate::query_context::{Context, PathEntry};
 use spargebra::algebra::{GraphPattern};
 use crate::preparing::expressions::EXPrepReturn;
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub fn prepare_exists_expression(
         &mut self,
         wrapped: &GraphPattern,

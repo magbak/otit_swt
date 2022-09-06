@@ -4,7 +4,7 @@ use crate::query_context::{Context, PathEntry};
 
 use oxrdf::Variable;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{JoinType, NamedFrom, UniqueKeepStrategy};
+use polars_core::prelude::{JoinType, UniqueKeepStrategy};
 use polars_core::series::Series;
 use spargebra::algebra::{AggregateExpression, GraphPattern};
 use crate::constants::GROUPING_COL;
@@ -14,7 +14,7 @@ use crate::pushdown_setting::PushdownSetting;
 use crate::timeseries_query::{GroupedTimeSeriesQuery, TimeSeriesQuery};
 use super::TimeSeriesQueryPrepper;
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub fn prepare_group(
         &mut self,
         graph_pattern: &GraphPattern,
@@ -64,10 +64,10 @@ impl TimeSeriesQueryPrepper<'_> {
         self.grouping_counter +=1;
         let by_names: Vec<String> = by.iter().map(|x|x.as_str().to_string()).collect();
         let mut df = self.static_result_df.select(by_names).unwrap().unique(Some(by_names.as_slice()), UniqueKeepStrategy::First).unwrap();
-        let mut series = Series::from_iter(0..df.height());
+        let mut series = Series::from_iter(0..(df.height() as u32));
         series.rename(&grouping_col);
         df.with_column(series).unwrap();
-        self.static_result_df = self.static_result_df.join(df, by_names.as_slice(), by_names.as_slice(), JoinType::Inner, None).unwrap();
+        self.static_result_df = self.static_result_df.join(&df, by_names.as_slice(), by_names.as_slice(), JoinType::Inner, None).unwrap();
         grouping_col
     }
 }

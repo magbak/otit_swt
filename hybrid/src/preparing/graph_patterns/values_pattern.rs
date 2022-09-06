@@ -4,7 +4,7 @@ use oxrdf::Variable;
 use spargebra::term::GroundTerm;
 use crate::preparing::graph_patterns::GPPrepReturn;
 
-impl TimeSeriesQueryPrepper<'_> {
+impl TimeSeriesQueryPrepper {
     pub fn prepare_values(
         &mut self,
         _variables: &Vec<Variable>,
