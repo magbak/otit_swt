@@ -1,7 +1,6 @@
 mod expression_rewrite;
 mod partitioning_support;
 
-use crate::query_context::{AggregateExpressionInContext, ExpressionInContext};
 use crate::timeseries_database::timeseries_sql_rewrite::expression_rewrite::SPARQLToSQLExpressionTransformer;
 use crate::timeseries_database::timeseries_sql_rewrite::partitioning_support::add_partitioned_timestamp_conditions;
 use crate::timeseries_query::{BasicTimeSeriesQuery, Synchronizer, TimeSeriesQuery};
@@ -10,7 +9,7 @@ use sea_query::{
     Alias, BinOper, ColumnRef, JoinType, Query, SelectStatement, SimpleExpr, TableRef,
 };
 use sea_query::{Expr as SeaExpr, Iden, Value};
-use spargebra::algebra::Expression;
+use spargebra::algebra::{AggregateExpression, Expression};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter, Write};
@@ -158,10 +157,11 @@ pub fn create_query(
             &grouped.tsq,
             &grouped.by,
             &grouped.aggregations,
-            &grouped.timeseries_funcs,
             tables,
             project_date_partition,
         ),
+        TimeSeriesQuery::GroupedBasic(_, _, _) => {}
+        TimeSeriesQuery::ExpressionAs(_, _, _) => {}
     }
 }
 
@@ -279,8 +279,7 @@ fn create_filter_expressions(
 fn create_grouped_query(
     inner_tsq: &TimeSeriesQuery,
     by: &Vec<Variable>,
-    aggregations: &Vec<(Variable, AggregateExpressionInContext)>,
-    timeseries_funcs: &Vec<(Variable, ExpressionInContext)>,
+    aggregations: &Vec<(Variable, AggregateExpression)>,
     tables: &Vec<TimeSeriesTable>,
     project_date_partition: bool,
 ) -> Result<(SelectStatement, HashSet<String>), TimeSeriesQueryToSQLError> {
@@ -291,10 +290,7 @@ fn create_grouped_query(
     let inner_query_name = Name::Table(inner_query_str.to_string());
     let mut expr_transformer = create_transformer(partitioning_support, Some(&inner_query_name));
     let mut ses = vec![];
-    for (_, e) in timeseries_funcs.iter().rev() {
-        let se = expr_transformer.sparql_expression_to_sql_expression(&e.expression)?;
-        ses.push(se);
-    }
+
 
     //Outer query aggregations:
     let outer_query_str = "outer_query";
@@ -305,7 +301,7 @@ fn create_grouped_query(
     for (_, agg) in aggregations {
         aggs.push(
             agg_transformer
-                .sparql_aggregate_expression_to_sql_expression(&agg.aggregate_expression)?,
+                .sparql_aggregate_expression_to_sql_expression(agg)?,
         );
     }
 
@@ -329,10 +325,6 @@ fn create_grouped_query(
             )),
             Alias::new(c),
         );
-    }
-    for (v, _) in timeseries_funcs.iter().rev() {
-        let se = ses.remove(0);
-        inner_query.expr_as(se, Alias::new(v.as_str()));
     }
 
     let mut outer_query = Query::select();
@@ -480,6 +472,25 @@ fn check_partitioning_support(tables: &Vec<TimeSeriesTable>) -> bool {
         .iter()
         .all(|x| x.day_column.is_some() && x.month_column.is_some() && x.day_column.is_some())
 }
+
+
+fn create_transformer(
+    partitioning_support: bool,
+    table_name: Option<&Name>,
+) -> SPARQLToSQLExpressionTransformer {
+    if partitioning_support {
+        SPARQLToSQLExpressionTransformer::new(
+            table_name,
+            Some(YEAR_PARTITION_COLUMN_NAME),
+            Some(MONTH_PARTITION_COLUMN_NAME),
+            Some(DAY_PARTITION_COLUMN_NAME),
+        )
+    } else {
+        SPARQLToSQLExpressionTransformer::new(table_name, None, None, None)
+    }
+}
+
+/*
 #[cfg(test)]
 mod tests {
     use crate::query_context::{
@@ -620,6 +631,7 @@ mod tests {
                     )),
                 )),
             ),
+            graph_pattern_context: Context::new(),
             by: vec![
                 Variable::new_unchecked("year".to_string()),
                 Variable::new_unchecked("month".to_string()),
@@ -632,27 +644,22 @@ mod tests {
             aggregations: vec![
                 (
                     Variable::new_unchecked("f7ca5ee9058effba8691ac9c642fbe95"),
-                    AggregateExpressionInContext::new(
                         AggregateExpression::Avg {
                             expr: Box::new(Expression::Variable(Variable::new_unchecked(
                                 "val_dir",
                             ))),
                             distinct: false,
-                        },
-                        Context::new(),
-                    ),
+                        }
                 ),
                 (
                     Variable::new_unchecked("990362f372e4019bc151c13baf0b50d5"),
-                    AggregateExpressionInContext::new(
+
                         AggregateExpression::Avg {
                             expr: Box::new(Expression::Variable(Variable::new_unchecked(
                                 "val_speed",
                             ))),
                             distinct: false,
                         },
-                        Context::new(),
-                    ),
                 ),
             ],
             timeseries_funcs: vec![
@@ -739,19 +746,4 @@ mod tests {
         assert_eq!(expected_str, sql_query.to_string(PostgresQueryBuilder));
     }
 }
-
-fn create_transformer(
-    partitioning_support: bool,
-    table_name: Option<&Name>,
-) -> SPARQLToSQLExpressionTransformer {
-    if partitioning_support {
-        SPARQLToSQLExpressionTransformer::new(
-            table_name,
-            Some(YEAR_PARTITION_COLUMN_NAME),
-            Some(MONTH_PARTITION_COLUMN_NAME),
-            Some(DAY_PARTITION_COLUMN_NAME),
-        )
-    } else {
-        SPARQLToSQLExpressionTransformer::new(table_name, None, None, None)
-    }
-}
+*/

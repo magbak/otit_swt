@@ -37,6 +37,14 @@ impl InMemoryTimeseriesDatabase {
                 self.execute_inner_synchronized(inners, synchronizers)
             }
             TimeSeriesQuery::Grouped(grouped) => self.execute_grouped(grouped),
+            TimeSeriesQuery::GroupedBasic(btsq, df, groupby_col) => {
+                let mut basic_df = self.execute_basic(btsq)?;
+                basic_df = basic_df.join(df, [btsq.identifier_variable.as_ref().unwrap().as_str()], [btsq.identifier_variable.as_ref().unwrap().as_str()], JoinType::Inner, None).unwrap();
+                Ok(basic_df)
+            }
+            TimeSeriesQuery::ExpressionAs(tsq, v, e) => {
+                self.execute_query(tsq)
+            }
         }
     }
 
@@ -76,7 +84,7 @@ impl InMemoryTimeseriesDatabase {
     fn execute_filtered(
         &self,
         tsq: &TimeSeriesQuery,
-        filter: &Option<Expression>,
+        filter: &Expression,
     ) -> Result<DataFrame, Box<dyn Error>> {
         let df = self.execute_query(tsq)?;
         let columns = df
@@ -84,16 +92,12 @@ impl InMemoryTimeseriesDatabase {
             .into_iter()
             .map(|x| x.to_string())
             .collect();
-        if let Some(filter) = filter {
-            let tmp_context = Context::from_path(vec![PathEntry::Coalesce(12)]);
-            let mut lf = lazy_expression(filter, df.lazy(), &columns, &mut vec![], &tmp_context);
-            lf = lf
-                .filter(col(tmp_context.as_str()))
-                .drop_columns([tmp_context.as_str()]);
-            Ok(lf.collect().unwrap())
-        } else {
-            Ok(df)
-        }
+        let tmp_context = Context::from_path(vec![PathEntry::Coalesce(12)]);
+        let mut lf = lazy_expression(filter, df.lazy(), &columns, &mut vec![], &tmp_context);
+        lf = lf
+            .filter(col(tmp_context.as_str()))
+            .drop_columns([tmp_context.as_str()]);
+        Ok(lf.collect().unwrap())
     }
 
     fn execute_grouped(
@@ -108,15 +112,16 @@ impl InMemoryTimeseriesDatabase {
             .map(|x| x.to_string())
             .collect();
         let mut out_lf = df.lazy();
-        for (v, expression) in grouped.timeseries_funcs.iter().rev() {
+        let tmp_context = Context::from_path(vec![PathEntry::Coalesce(13)]);
+        for (v, expression) in grouped.tsq.get_timeseries_functions(&grouped.graph_pattern_context).into_iter().rev() {
             out_lf = lazy_expression(
-                &expression.expression,
+                expression,
                 out_lf,
                 &columns,
                 &mut vec![],
-                &expression.context,
+                &tmp_context,
             )
-            .rename([expression.context.as_str()], [v.as_str()]);
+            .rename([tmp_context.as_str()], [v.as_str()]);
             columns.insert(v.as_str().to_string());
         }
         let mut aggregation_exprs = vec![];
@@ -137,7 +142,7 @@ impl InMemoryTimeseriesDatabase {
                     &columns,
                     out_lf,
                     &mut vec![],
-                    &agg.context,
+                    &grouped.graph_pattern_context,
                 );
             out_lf = lf;
             aggregation_exprs.push(agg_expr);

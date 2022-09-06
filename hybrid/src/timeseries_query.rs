@@ -8,6 +8,7 @@ use spargebra::term::Variable;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use crate::find_query_variables::find_all_used_variables_in_expression;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TimeSeriesQuery {
@@ -28,6 +29,7 @@ pub enum Synchronizer {
 pub struct GroupedTimeSeriesQuery {
     pub tsq: Box<TimeSeriesQuery>,
     pub graph_pattern_context: Context,
+    pub by: Vec<Variable>,
     pub aggregations: Vec<(Variable, AggregateExpression)>,
 }
 
@@ -110,6 +112,8 @@ impl TimeSeriesQuery {
                 }
                 expected_columns
             }
+            TimeSeriesQuery::GroupedBasic(_, _, _) => {}
+            TimeSeriesQuery::ExpressionAs(_, _, _) => {}
         }
     }
 
@@ -127,6 +131,8 @@ impl TimeSeriesQuery {
                 basics
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_mut_basic_queries(),
+            TimeSeriesQuery::GroupedBasic(_, _, _) => {}
+            TimeSeriesQuery::ExpressionAs(_, _, _) => {}
         }
     }
 
@@ -187,6 +193,8 @@ impl TimeSeriesQuery {
                 ss
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_ids(),
+            TimeSeriesQuery::GroupedBasic(_, _, _) => {}
+            TimeSeriesQuery::ExpressionAs(_, _, _) => {}
         }
     }
 
@@ -208,6 +216,8 @@ impl TimeSeriesQuery {
                 vs
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_data_point_variables(),
+            TimeSeriesQuery::GroupedBasic(_, _, _) => {}
+            TimeSeriesQuery::ExpressionAs(_, _, _) => {}
         }
     }
 
@@ -229,6 +239,8 @@ impl TimeSeriesQuery {
                 vs
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_timeseries_variables(),
+            TimeSeriesQuery::GroupedBasic(_, _, _) => {}
+            TimeSeriesQuery::ExpressionAs(_, _, _) => {}
         }
     }
 
@@ -250,6 +262,8 @@ impl TimeSeriesQuery {
                 vs
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_value_variables(),
+            TimeSeriesQuery::GroupedBasic(_, _, _) => {}
+            TimeSeriesQuery::ExpressionAs(_, _, _) => {}
         }
     }
 
@@ -271,6 +285,8 @@ impl TimeSeriesQuery {
                 vs
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_identifier_variables(),
+            TimeSeriesQuery::GroupedBasic(_, _, _) => {}
+            TimeSeriesQuery::ExpressionAs(_, _, _) => {}
         }
     }
 
@@ -320,6 +336,49 @@ impl BasicTimeSeriesQuery {
             datatype: None,
             timestamp_variable: None,
             ids: None,
+        }
+    }
+}
+
+impl TimeSeriesQuery {
+    pub fn get_timeseries_functions(&self, context:&Context) -> Vec<(&Variable,&Expression)>{
+        match &*self.tsq {
+            TimeSeriesQuery::Basic(..) => {vec![]}
+            TimeSeriesQuery::GroupedBasic(..) => {}
+            TimeSeriesQuery::Filtered(tsq, _) => {
+                tsq.get_timeseries_functions(context)
+            }
+            TimeSeriesQuery::InnerSynchronized(tsqs, _) => {
+                let mut out_tsfs = vec![];
+                for tsq in tsqs {
+                    out_tsfs.extend(tsq.get_timeseries_functions(context))
+                }
+                out_tsfs
+            }
+            TimeSeriesQuery::ExpressionAs(tsq, v, e) => {
+                let mut tsfs = vec![];
+                let mut used_vars = HashSet::new();
+                find_all_used_variables_in_expression(e, &mut used_vars);
+                let mut exists_timeseries_var = false;
+                let mut all_are_timeseries_var = true;
+                for v in &used_vars {
+                    if tsq.has_equivalent_timestamp_variable(v, context) {
+                        exists_timeseries_var = true;
+                    } else {
+                        all_are_timeseries_var = false;
+                        break;
+                    }
+                }
+                if exists_timeseries_var && all_are_timeseries_var {
+                    tsfs.push((v,e))
+                }
+                tsfs.extend(tsq.get_timeseries_functions(context));
+                tsfs
+
+            }
+            TimeSeriesQuery::Grouped(..) => {
+                panic!("Not supported")
+            }
         }
     }
 }

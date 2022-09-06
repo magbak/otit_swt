@@ -15,6 +15,7 @@ pub struct TimeSeriesQueryPrepper<'a> {
     allow_compound_timeseries_queries: bool,
     basic_time_series_queries: Vec<BasicTimeSeriesQuery>,
     static_result_df: &'a DataFrame,
+    grouping_counter: u16,
 }
 
 impl TimeSeriesQueryPrepper<'_> {
@@ -29,6 +30,7 @@ impl TimeSeriesQueryPrepper<'_> {
             pushdown_settings,
             basic_time_series_queries,
             static_result_df,
+            grouping_counter:0
         }
     }
 

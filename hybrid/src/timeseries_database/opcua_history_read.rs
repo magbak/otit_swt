@@ -22,6 +22,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
+use crate::query_context::Context;
 
 const OPCUA_AGG_FUNC_AVERAGE: u32 = 2342;
 const OPCUA_AGG_FUNC_COUNT: u32 = 2352;
@@ -103,7 +104,7 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
         let mut colnames_identifiers = vec![];
         if let TimeSeriesQuery::Grouped(grouped) = tsq {
             let (colname, processed_details_some) =
-                create_read_processed_details(tsq, start_time, end_time);
+                create_read_processed_details(tsq, start_time, end_time, &grouped.graph_pattern_context);
             processed_details = Some(processed_details_some);
             timestamp_grouping_colname = colname;
             for c in grouped.tsq.get_ids() {
@@ -264,6 +265,7 @@ fn create_read_processed_details(
     tsq: &TimeSeriesQuery,
     start_time: DateTime,
     end_time: DateTime,
+    context: &Context,
 ) -> (Option<String>, ReadProcessedDetails) {
     let aggregate_type = find_aggregate_types(tsq);
 
@@ -274,7 +276,7 @@ fn create_read_processed_details(
         percent_data_good: 0,
         use_sloped_extrapolation: false,
     };
-    let interval_opt = find_grouping_interval(tsq);
+    let interval_opt = find_grouping_interval(tsq, context);
     let (out_string, processing_interval) = if let Some((s, interval)) = interval_opt {
         (Some(s), interval)
     } else {
@@ -622,14 +624,14 @@ fn datetime_from_expression(
     }
 }
 
-fn find_grouping_interval(tsq: &TimeSeriesQuery) -> Option<(String, f64)> {
+fn find_grouping_interval(tsq: &TimeSeriesQuery, context:&Context) -> Option<(String, f64)> {
     if let TimeSeriesQuery::Grouped(grouped) = tsq {
         let mut tsf = None;
         let mut grvar = None;
         for v in &grouped.by {
-            for (t, e) in &grouped.timeseries_funcs {
+            for (t, e) in tsq.get_timeseries_functions(context) {
                 if t == v {
-                    tsf = Some((t, &e.expression));
+                    tsf = Some((t, e));
                     grvar = Some(v);
                 }
             }
