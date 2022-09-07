@@ -75,7 +75,8 @@ impl Combiner {
 
         let mut lf = static_result_df.lazy();
         lf = self.lazy_graph_pattern(&mut columns, lf, inner_graph_pattern, time_series, &context);
-
+        let df = lf.clone().collect().unwrap();
+        debug!("DF: {}", df);
         let projections = project_variables
             .iter()
             .map(|c| col(c.as_str()))
@@ -429,7 +430,6 @@ impl Combiner {
                 for i in 0..time_series.len() {
                     let (tsq, _) = time_series.get(i).as_ref().unwrap();
                     if let TimeSeriesQuery::Grouped(g) = &tsq {
-                        println!("combiner group ctx {:?}, gctx: {:?}", context, g.graph_pattern_context);
                         if context == &g.graph_pattern_context {
                             found_index = Some(i);
                         }
@@ -439,9 +439,10 @@ impl Combiner {
                     let (tsq, df) = time_series.remove(index);
                     join_tsq(columns, input_lf, tsq, df)
                 } else {
+                    let lf = input_lf.collect().unwrap().lazy(); //Workaround for stack overflow
                     self.lazy_group_without_pushdown(
                         columns,
-                        input_lf,
+                        lf,
                         inner,
                         variables,
                         aggregates,
@@ -483,7 +484,6 @@ impl Combiner {
             }
             column_variables.push(v.clone());
         }
-
         let mut aggregate_expressions = vec![];
         let mut aggregate_inner_contexts = vec![];
         for i in 0..aggregates.len() {

@@ -29,7 +29,8 @@ pub fn lazy_expression(
     time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
     context: &Context,
 ) -> LazyFrame {
-    match expr {
+    debug!("Combining started processing expression {}", expr);
+    let lf = match expr {
         Expression::NamedNode(nn) => {
             let inner_lf = inner_lf.with_column(
                 Expr::Literal(sparql_named_node_to_polars_literal_value(nn))
@@ -435,6 +436,7 @@ pub fn lazy_expression(
                 .map(|i| context.extension_with(PathEntry::FunctionCall(i as u16)))
                 .collect();
             let mut inner_lf = inner_lf;
+            debug!("INNER LF BEFORE DF: {}", inner_lf.clone().collect().unwrap());
             for i in 0..args.len() {
                 inner_lf = lazy_expression(
                     args.get(i).unwrap(),
@@ -442,7 +444,9 @@ pub fn lazy_expression(
                     columns,
                     time_series,
                     args_contexts.get(i).unwrap(),
-                );
+                ).collect().unwrap().lazy(); //TODO: workaround for stack overflow - post bug?
+                debug!("INNER LF AFTER {:?}: {}",args.get(i), inner_lf.clone().collect().unwrap());
+
             }
             match func {
                 Function::Year => {
@@ -525,6 +529,7 @@ pub fn lazy_expression(
                 }
                 Function::Concat => {
                     assert!(args.len() > 1);
+                    debug!("INNER LF DF: {}", inner_lf.clone().collect().unwrap());
                     inner_lf = inner_lf.with_column(
                         concat_str(
                             args_contexts
@@ -614,5 +619,7 @@ pub fn lazy_expression(
                     .collect::<Vec<&str>>(),
             )
         }
-    }
+    };
+    debug!("Combining ended processing expression {}", expr);
+    lf
 }

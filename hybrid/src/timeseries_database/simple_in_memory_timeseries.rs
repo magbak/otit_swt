@@ -7,7 +7,7 @@ use crate::timeseries_query::{
 };
 use async_trait::async_trait;
 use polars::frame::DataFrame;
-use polars::prelude::{col, concat, lit, Expr, IntoLazy};
+use polars::prelude::{col, concat, lit, IntoLazy};
 use polars_core::prelude::JoinType;
 use spargebra::algebra::Expression;
 use std::collections::HashMap;

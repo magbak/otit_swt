@@ -90,7 +90,6 @@ impl Engine {
         let TimeSeriesQueryPrepper {
             static_result_df, ..
         } = prepper;
-
         debug!("Static result dataframe: {}", static_result_df);
         if static_result_df.height() == 0 {
             todo!("Empty static df not supported yet")

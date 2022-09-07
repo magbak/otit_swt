@@ -336,7 +336,7 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
     PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
     PREFIX otit_swt:<https://github.com/magbak/otit_swt#>
     PREFIX types:<http://example.org/types#>
-    SELECT ?w (CONCAT(?year, "-", ?month, "-", ?day, "-", ?hour, "-", ?minute, "-", (?second_5 * 5)) as ?period) (SUM(?v) as ?sum_v) WHERE {
+    SELECT ?w (CONCAT(?year, "-", ?month, "-", ?day, "-", ?hour, "-", ?minute, "-", (?second_5*5)) as ?period) (SUM(?v) as ?sum_v) WHERE {
         ?w types:hasSensor ?s .
         ?s otit_swt:hasTimeseries ?ts .
         ?ts otit_swt:hasDataPoint ?dp .
@@ -350,7 +350,7 @@ async fn test_pushdown_group_by_second_having_hybrid_query(
         BIND(year(?t) AS ?year)
         FILTER(?t > "2022-06-01T08:46:53"^^xsd:dateTime)
     } GROUP BY ?w ?year ?month ?day ?hour ?minute ?second_5
-    HAVING (SUM(?v) > 199)
+    HAVING (SUM(?v)>100)
     "#;
     let df = engine
         .execute_hybrid_query(query, QUERY_ENDPOINT)
