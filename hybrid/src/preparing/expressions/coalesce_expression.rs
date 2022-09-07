@@ -1,13 +1,13 @@
 use super::TimeSeriesQueryPrepper;
-use crate::query_context::{Context, PathEntry};
 use crate::preparing::expressions::EXPrepReturn;
+use crate::query_context::{Context, PathEntry};
 use spargebra::algebra::Expression;
 
 impl TimeSeriesQueryPrepper {
     pub fn prepare_coalesce_expression(
         &mut self,
         wrapped: &Vec<Expression>,
-                try_groupby_complex_query: bool,
+        try_groupby_complex_query: bool,
         context: &Context,
     ) -> EXPrepReturn {
         let mut prepared = wrapped
@@ -21,8 +21,8 @@ impl TimeSeriesQueryPrepper {
                 )
             })
             .collect::<Vec<EXPrepReturn>>();
-        if prepared.iter().any(|x|x.fail_groupby_complex_query) {
-            return EXPrepReturn::fail_groupby_complex_query()
+        if prepared.iter().any(|x| x.fail_groupby_complex_query) {
+            return EXPrepReturn::fail_groupby_complex_query();
         }
         if prepared.is_empty() {
             EXPrepReturn::new(vec![])

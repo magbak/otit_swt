@@ -36,6 +36,7 @@ impl Combiner {
         static_result_df: DataFrame,
         time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
     ) -> LazyFrame {
+        println!("Combiner init with df: {}", static_result_df);
         let project_variables;
         let inner_graph_pattern;
         let mut distinct = false;
@@ -428,6 +429,7 @@ impl Combiner {
                 for i in 0..time_series.len() {
                     let (tsq, _) = time_series.get(i).as_ref().unwrap();
                     if let TimeSeriesQuery::Grouped(g) = &tsq {
+                        println!("combiner group ctx {:?}, gctx: {:?}", context, g.graph_pattern_context);
                         if context == &g.graph_pattern_context {
                             found_index = Some(i);
                         }

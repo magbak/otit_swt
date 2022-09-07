@@ -1,6 +1,7 @@
 mod bgp_pattern;
 mod distinct_pattern;
 mod extend_pattern;
+pub(crate) mod filter_expression_rewrites;
 mod filter_pattern;
 mod graph_pattern;
 mod group_pattern;
@@ -15,13 +16,13 @@ mod service_pattern;
 mod sliced_pattern;
 mod union_pattern;
 mod values_pattern;
-pub(crate) mod filter_expression_rewrites;
 
 use super::TimeSeriesQueryPrepper;
 use crate::query_context::Context;
 use crate::timeseries_query::TimeSeriesQuery;
 use spargebra::algebra::GraphPattern;
 
+#[derive(Debug)]
 pub struct GPPrepReturn {
     pub fail_groupby_complex_query: bool,
     pub time_series_queries: Vec<TimeSeriesQuery>,
@@ -36,15 +37,21 @@ impl GPPrepReturn {
     }
 
     pub fn fail_groupby_complex_query() -> GPPrepReturn {
-        GPPrepReturn { fail_groupby_complex_query: true, time_series_queries: vec![] }
+        GPPrepReturn {
+            fail_groupby_complex_query: true,
+            time_series_queries: vec![],
+        }
     }
 
     pub fn drained_time_series_queries(&mut self) -> Vec<TimeSeriesQuery> {
-        self.time_series_queries.drain(0..self.time_series_queries.len()).collect()
+        self.time_series_queries
+            .drain(0..self.time_series_queries.len())
+            .collect()
     }
 
-    pub fn with_time_series_queries_from(&mut self, other:&mut GPPrepReturn) {
-        self.time_series_queries.extend(other.drained_time_series_queries())
+    pub fn with_time_series_queries_from(&mut self, other: &mut GPPrepReturn) {
+        self.time_series_queries
+            .extend(other.drained_time_series_queries())
     }
 }
 
@@ -56,8 +63,8 @@ impl TimeSeriesQueryPrepper {
         context: &Context,
     ) -> GPPrepReturn {
         match graph_pattern {
-            GraphPattern::Bgp { patterns:_ } => {
-                self.prepare_bgp( try_groupby_complex_query, context)
+            GraphPattern::Bgp { patterns: _ } => {
+                self.prepare_bgp(try_groupby_complex_query, context)
             }
             GraphPattern::Path {
                 subject,
@@ -71,21 +78,29 @@ impl TimeSeriesQueryPrepper {
                 left,
                 right,
                 expression,
-            } => self.prepare_left_join(left, right, expression, try_groupby_complex_query, context),
+            } => {
+                self.prepare_left_join(left, right, expression, try_groupby_complex_query, context)
+            }
             GraphPattern::Filter { expr, inner } => {
                 self.prepare_filter(expr, inner, try_groupby_complex_query, context)
             }
             GraphPattern::Union { left, right } => {
                 self.prepare_union(left, right, try_groupby_complex_query, context)
             }
-            GraphPattern::Graph { name, inner } => {
-                self.prepare_graph(name, inner, try_groupby_complex_query, context)
+            GraphPattern::Graph { inner, .. } => {
+                self.prepare_graph(inner, try_groupby_complex_query, context)
             }
             GraphPattern::Extend {
                 inner,
                 variable,
                 expression,
-            } => self.prepare_extend(inner, variable, expression, try_groupby_complex_query, context),
+            } => self.prepare_extend(
+                inner,
+                variable,
+                expression,
+                try_groupby_complex_query,
+                context,
+            ),
             GraphPattern::Minus { left, right } => {
                 self.prepare_minus(left, right, try_groupby_complex_query, context)
             }
@@ -114,12 +129,14 @@ impl TimeSeriesQueryPrepper {
                 inner,
                 variables,
                 aggregates,
-            } => self.prepare_group(inner, variables, aggregates, try_groupby_complex_query, context),
-            GraphPattern::Service {
-                name,
+            } => self.prepare_group(
                 inner,
-                silent,
-            } => self.prepare_service(name, inner, silent, try_groupby_complex_query, context),
+                variables,
+                aggregates,
+                try_groupby_complex_query,
+                context,
+            ),
+            GraphPattern::Service { .. } => self.prepare_service(),
         }
     }
 }

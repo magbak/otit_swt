@@ -9,7 +9,7 @@ impl TimeSeriesQueryPrepper {
     pub fn prepare_order_by(
         &mut self,
         inner: &GraphPattern,
-        order_expressions: &Vec<OrderExpression>,
+        _order_expressions: &Vec<OrderExpression>,
         try_groupby_complex_query: bool,
         context: &Context,
     ) -> GPPrepReturn {

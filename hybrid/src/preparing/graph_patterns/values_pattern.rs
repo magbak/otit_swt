@@ -1,8 +1,8 @@
 use super::TimeSeriesQueryPrepper;
 
+use crate::preparing::graph_patterns::GPPrepReturn;
 use oxrdf::Variable;
 use spargebra::term::GroundTerm;
-use crate::preparing::graph_patterns::GPPrepReturn;
 
 impl TimeSeriesQueryPrepper {
     pub fn prepare_values(

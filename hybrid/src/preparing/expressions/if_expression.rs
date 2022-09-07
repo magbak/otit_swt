@@ -1,7 +1,7 @@
 use super::TimeSeriesQueryPrepper;
+use crate::preparing::expressions::EXPrepReturn;
 use crate::query_context::{Context, PathEntry};
 use spargebra::algebra::Expression;
-use crate::preparing::expressions::EXPrepReturn;
 
 impl TimeSeriesQueryPrepper {
     pub fn prepare_if_expression(
@@ -9,7 +9,7 @@ impl TimeSeriesQueryPrepper {
         left: &Expression,
         mid: &Expression,
         right: &Expression,
-                try_groupby_complex_query: bool,
+        try_groupby_complex_query: bool,
         context: &Context,
     ) -> EXPrepReturn {
         let mut left_prepare = self.prepare_expression(

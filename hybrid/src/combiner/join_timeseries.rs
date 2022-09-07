@@ -9,6 +9,7 @@ pub fn join_tsq(
     tsq: TimeSeriesQuery,
     df: DataFrame,
 ) -> LazyFrame {
+    println!("Join tsq: {}", df);
     let mut join_on = vec![];
     for c in df.get_column_names() {
         if columns.contains(c) {
@@ -17,9 +18,17 @@ pub fn join_tsq(
             columns.insert(c.to_string());
         }
     }
-    let id_vars = tsq.get_identifier_variables();
-    for id_var in &id_vars {
-        assert!(columns.contains(id_var.as_str()));
+
+    let to_drop: Vec<&str>;
+    if let TimeSeriesQuery::Grouped(_) = &tsq {
+        let groupby_col = tsq.get_groupby_column();
+        to_drop = vec![groupby_col.unwrap().as_str()]
+    } else {
+        let id_vars = tsq.get_identifier_variables();
+        for id_var in &id_vars {
+            assert!(columns.contains(id_var.as_str()));
+        }
+        to_drop = id_vars.iter().map(|x| x.as_str()).collect();
     }
     let mut output_lf = input_lf.join(
         df.lazy(),
@@ -28,9 +37,8 @@ pub fn join_tsq(
         JoinType::Inner,
     );
 
-    let id_vars_names: Vec<&str> = id_vars.iter().map(|x| x.as_str()).collect();
-    output_lf = output_lf.drop_columns(id_vars_names.as_slice());
-    for var_name in id_vars_names {
+    output_lf = output_lf.drop_columns(to_drop.as_slice());
+    for var_name in to_drop {
         columns.remove(var_name);
     }
     output_lf

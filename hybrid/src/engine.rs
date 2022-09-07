@@ -73,7 +73,10 @@ impl Engine {
             basic_time_series_queries
         );
         let static_query_solutions = execute_sparql_query(endpoint, &static_rewrite).await?;
-        complete_basic_time_series_queries(&static_query_solutions, &mut basic_time_series_queries)?;
+        complete_basic_time_series_queries(
+            &static_query_solutions,
+            &mut basic_time_series_queries,
+        )?;
         let static_result_df =
             create_static_query_result_df(&static_rewrite, static_query_solutions);
         let mut prepper = TimeSeriesQueryPrepper::new(
@@ -84,7 +87,9 @@ impl Engine {
             static_result_df,
         );
         let time_series_queries = prepper.prepare(&parsed_query);
-        let TimeSeriesQueryPrepper { static_result_df, .. } = prepper;
+        let TimeSeriesQueryPrepper {
+            static_result_df, ..
+        } = prepper;
 
         debug!("Static result dataframe: {}", static_result_df);
         if static_result_df.height() == 0 {

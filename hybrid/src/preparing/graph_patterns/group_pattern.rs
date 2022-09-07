@@ -1,18 +1,18 @@
-use std::collections::HashSet;
-use log::debug;
 use crate::query_context::{Context, PathEntry};
+use log::debug;
+use std::collections::HashSet;
 
-use oxrdf::Variable;
-use polars_core::frame::DataFrame;
-use polars_core::prelude::{JoinType, UniqueKeepStrategy};
-use polars_core::series::Series;
-use spargebra::algebra::{AggregateExpression, GraphPattern};
+use super::TimeSeriesQueryPrepper;
 use crate::constants::GROUPING_COL;
 use crate::find_query_variables::find_all_used_variables_in_aggregate_expression;
 use crate::preparing::graph_patterns::GPPrepReturn;
 use crate::pushdown_setting::PushdownSetting;
 use crate::timeseries_query::{GroupedTimeSeriesQuery, TimeSeriesQuery};
-use super::TimeSeriesQueryPrepper;
+use oxrdf::Variable;
+use polars_core::frame::DataFrame;
+use polars_core::prelude::{JoinType, UniqueKeepStrategy};
+use polars_core::series::Series;
+use spargebra::algebra::{AggregateExpression, GraphPattern};
 
 impl TimeSeriesQueryPrepper {
     pub fn prepare_group(
@@ -24,16 +24,15 @@ impl TimeSeriesQueryPrepper {
         context: &Context,
     ) -> GPPrepReturn {
         if try_groupby_complex_query {
-            return GPPrepReturn::fail_groupby_complex_query()
+            return GPPrepReturn::fail_groupby_complex_query();
         }
         let inner_context = &context.extension_with(PathEntry::GroupInner);
-        let mut try_graph_pattern_prepare = self.prepare_graph_pattern(
-            graph_pattern,
-            true,
-            &inner_context,
-        );
+        let mut try_graph_pattern_prepare =
+            self.prepare_graph_pattern(graph_pattern, true, &inner_context);
 
-        if !try_graph_pattern_prepare.fail_groupby_complex_query && self.pushdown_settings.contains(&PushdownSetting::GroupBy){
+        if !try_graph_pattern_prepare.fail_groupby_complex_query
+            && self.pushdown_settings.contains(&PushdownSetting::GroupBy)
+        {
             let mut time_series_queries = try_graph_pattern_prepare.drained_time_series_queries();
 
             if time_series_queries.len() == 1 {
@@ -42,45 +41,74 @@ impl TimeSeriesQueryPrepper {
 
                 if in_scope {
                     let grouping_col = self.add_grouping_col(by);
-                    tsq = add_basic_groupby_mapping_values(tsq, &self.static_result_df, &grouping_col);
-                    GroupedTimeSeriesQuery {
+                    tsq = add_basic_groupby_mapping_values(
+                        tsq,
+                        &self.static_result_df,
+                        &grouping_col,
+                    );
+                    let mut idvars = tsq.get_identifier_variables();
+                    assert_eq!(idvars.len(), 1);
+                    let idvar = idvars.remove(0);
+                    self.static_result_df = self.static_result_df.drop(idvar.as_str()).unwrap();
+
+                    tsq = TimeSeriesQuery::Grouped(GroupedTimeSeriesQuery {
                         tsq: Box::new(tsq),
                         graph_pattern_context: context.clone(),
                         by: by.clone(),
                         aggregations: aggregations.clone(),
-                    };
+                    });
+                    return GPPrepReturn::new(vec![tsq])
                 }
             }
         }
 
         self.prepare_graph_pattern(
-        graph_pattern,
-        false,
-        &context.extension_with(PathEntry::GroupInner))
+            graph_pattern,
+            false,
+            &context.extension_with(PathEntry::GroupInner),
+        )
     }
 
     fn add_grouping_col(&mut self, by: &Vec<Variable>) -> String {
         let grouping_col = format!("{}_{}", GROUPING_COL, self.grouping_counter);
-        self.grouping_counter +=1;
-        let by_names: Vec<String> = by.iter().map(|x|x.as_str().to_string()).collect();
-        let mut df = self.static_result_df.select(by_names).unwrap().unique(Some(by_names.as_slice()), UniqueKeepStrategy::First).unwrap();
+        self.grouping_counter += 1;
+        let by_names: Vec<String> = by.iter().map(|x| x.as_str().to_string()).collect();
+        let mut df = self
+            .static_result_df
+            .select(by_names.as_slice())
+            .unwrap()
+            .unique(Some(by_names.as_slice()), UniqueKeepStrategy::First)
+            .unwrap();
         let mut series = Series::from_iter(0..(df.height() as u32));
         series.rename(&grouping_col);
         df.with_column(series).unwrap();
-        self.static_result_df = self.static_result_df.join(&df, by_names.as_slice(), by_names.as_slice(), JoinType::Inner, None).unwrap();
+        self.static_result_df = self
+            .static_result_df
+            .join(
+                &df,
+                by_names.as_slice(),
+                by_names.as_slice(),
+                JoinType::Inner,
+                None,
+            )
+            .unwrap();
         grouping_col
     }
 }
 
-fn check_aggregations_are_in_scope(tsq: &TimeSeriesQuery, context:&Context, aggregations: &Vec<(Variable, AggregateExpression)>) -> bool {
+fn check_aggregations_are_in_scope(
+    tsq: &TimeSeriesQuery,
+    context: &Context,
+    aggregations: &Vec<(Variable, AggregateExpression)>,
+) -> bool {
     for (_, ae) in aggregations {
         let mut used_vars = HashSet::new();
         find_all_used_variables_in_aggregate_expression(ae, &mut used_vars);
         for v in &used_vars {
             if tsq.has_equivalent_timestamp_variable(v, context) {
-                continue
+                continue;
             } else if tsq.has_equivalent_value_variable(v, context) {
-                continue
+                continue;
             } else {
                 debug!("Variable {:?} in aggregate expression not in scope", v);
                 return false;
@@ -90,36 +118,53 @@ fn check_aggregations_are_in_scope(tsq: &TimeSeriesQuery, context:&Context, aggr
     true
 }
 
-fn add_basic_groupby_mapping_values(tsq:TimeSeriesQuery, static_result_df:&DataFrame, grouping_col:&str) -> TimeSeriesQuery{
+fn add_basic_groupby_mapping_values(
+    tsq: TimeSeriesQuery,
+    static_result_df: &DataFrame,
+    grouping_col: &str,
+) -> TimeSeriesQuery {
     match tsq {
         TimeSeriesQuery::Basic(b) => {
-            let mut by_vec = vec![grouping_col, b.identifier_variable.as_ref().unwrap().as_str()];
+            let mut by_vec = vec![
+                grouping_col,
+                b.identifier_variable.as_ref().unwrap().as_str(),
+            ];
             let df = static_result_df.select(by_vec).unwrap();
-            TimeSeriesQuery::GroupedBasic(
-                b,
-                df,
-                    grouping_col.to_string()
-            )
+            TimeSeriesQuery::GroupedBasic(b, df, grouping_col.to_string())
         }
-        TimeSeriesQuery::Filtered(tsq, f) => {
-            TimeSeriesQuery::Filtered(Box::new(add_basic_groupby_mapping_values(*tsq, static_result_df, grouping_col)), f)
-        }
+        TimeSeriesQuery::Filtered(tsq, f) => TimeSeriesQuery::Filtered(
+            Box::new(add_basic_groupby_mapping_values(
+                *tsq,
+                static_result_df,
+                grouping_col,
+            )),
+            f,
+        ),
         TimeSeriesQuery::InnerSynchronized(inners, syncs) => {
             let mut tsq_added = vec![];
             for tsq in inners {
-               tsq_added.push(Box::new(add_basic_groupby_mapping_values(*tsq, static_result_df, grouping_col)))
+                tsq_added.push(Box::new(add_basic_groupby_mapping_values(
+                    *tsq,
+                    static_result_df,
+                    grouping_col,
+                )))
             }
             TimeSeriesQuery::InnerSynchronized(tsq_added, syncs)
         }
-        TimeSeriesQuery::ExpressionAs(tsq, v, e) => {
-            TimeSeriesQuery::ExpressionAs(Box::new(add_basic_groupby_mapping_values(*tsq, static_result_df, grouping_col)), v,e)
-        }
+        TimeSeriesQuery::ExpressionAs(tsq, v, e) => TimeSeriesQuery::ExpressionAs(
+            Box::new(add_basic_groupby_mapping_values(
+                *tsq,
+                static_result_df,
+                grouping_col,
+            )),
+            v,
+            e,
+        ),
         TimeSeriesQuery::Grouped(_) => {
             panic!("Should never happen")
         }
-        TimeSeriesQuery::GroupedBasic(_,_,_) => {
+        TimeSeriesQuery::GroupedBasic(_, _, _) => {
             panic!("Should never happen")
         }
     }
 }
-

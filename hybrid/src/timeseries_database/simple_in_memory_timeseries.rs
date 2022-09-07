@@ -30,6 +30,7 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
 
 impl InMemoryTimeseriesDatabase {
     fn execute_query(&self, tsq: &TimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
+        println!("Executing query: {:?}", tsq);
         match tsq {
             TimeSeriesQuery::Basic(b) => self.execute_basic(b),
             TimeSeriesQuery::Filtered(inner, filter) => self.execute_filtered(inner, filter),
@@ -37,13 +38,32 @@ impl InMemoryTimeseriesDatabase {
                 self.execute_inner_synchronized(inners, synchronizers)
             }
             TimeSeriesQuery::Grouped(grouped) => self.execute_grouped(grouped),
-            TimeSeriesQuery::GroupedBasic(btsq, df, groupby_col) => {
+            TimeSeriesQuery::GroupedBasic(btsq, df, ..) => {
                 let mut basic_df = self.execute_basic(btsq)?;
-                basic_df = basic_df.join(df, [btsq.identifier_variable.as_ref().unwrap().as_str()], [btsq.identifier_variable.as_ref().unwrap().as_str()], JoinType::Inner, None).unwrap();
+                basic_df = basic_df
+                    .join(
+                        df,
+                        [btsq.identifier_variable.as_ref().unwrap().as_str()],
+                        [btsq.identifier_variable.as_ref().unwrap().as_str()],
+                        JoinType::Inner,
+                        None,
+                    )
+                    .unwrap();
+                basic_df = basic_df.drop(btsq.identifier_variable.as_ref().unwrap().as_str()).unwrap();
                 Ok(basic_df)
             }
             TimeSeriesQuery::ExpressionAs(tsq, v, e) => {
-                self.execute_query(tsq)
+                let mut df = self.execute_query(tsq)?;
+                let tmp_context = Context::from_path(vec![PathEntry::Coalesce(13)]);
+                let columns = df
+                    .get_column_names()
+                    .into_iter()
+                    .map(|x| x.to_string())
+                    .collect();
+                let out_lf = lazy_expression(e, df.lazy(), &columns, &mut vec![], &tmp_context)
+                    .rename([tmp_context.as_str()], [v.as_str()]);
+                df = out_lf.collect().unwrap();
+                Ok(df)
             }
         }
     }
@@ -106,24 +126,14 @@ impl InMemoryTimeseriesDatabase {
     ) -> Result<DataFrame, Box<dyn Error>> {
         //Important to do iteration in reversed direction for nested functions
         let df = self.execute_query(&grouped.tsq)?;
+        println!("Execute grouped working on : {:?}", df);
         let mut columns = df
             .get_column_names()
             .into_iter()
             .map(|x| x.to_string())
             .collect();
         let mut out_lf = df.lazy();
-        let tmp_context = Context::from_path(vec![PathEntry::Coalesce(13)]);
-        for (v, expression) in grouped.tsq.get_timeseries_functions(&grouped.graph_pattern_context).into_iter().rev() {
-            out_lf = lazy_expression(
-                expression,
-                out_lf,
-                &columns,
-                &mut vec![],
-                &tmp_context,
-            )
-            .rename([tmp_context.as_str()], [v.as_str()]);
-            columns.insert(v.as_str().to_string());
-        }
+
         let mut aggregation_exprs = vec![];
         let timestamp_name = if let Some(ts_var) = grouped.tsq.get_timestamp_variables().get(0) {
             ts_var.variable.as_str().to_string()
@@ -150,8 +160,7 @@ impl InMemoryTimeseriesDatabase {
                 aggregate_inner_contexts.push(inner_context);
             }
         }
-        let by: Vec<Expr> = grouped.by.iter().map(|c| col(c.as_str())).collect();
-        let grouped_lf = out_lf.groupby(by);
+        let grouped_lf = out_lf.groupby(vec![col(grouped.tsq.get_groupby_column().unwrap())]);
         out_lf = grouped_lf.agg(aggregation_exprs.as_slice()).drop_columns(
             aggregate_inner_contexts
                 .iter()
@@ -160,6 +169,7 @@ impl InMemoryTimeseriesDatabase {
         );
 
         let collected = out_lf.collect()?;
+        println!("Finish grouping {:?}", collected);
         Ok(collected)
     }
 

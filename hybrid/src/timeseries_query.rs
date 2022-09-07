@@ -112,14 +112,17 @@ impl TimeSeriesQuery {
                 for (v, _) in &g.aggregations {
                     expected_columns.insert(v.as_str());
                 }
+                let grouping_col = self.get_groupby_column();
+                expected_columns.insert(grouping_col.unwrap().as_str());
                 expected_columns
             }
-            TimeSeriesQuery::GroupedBasic(b, ..) => {
-                b.expected_columns()
-            }
-            TimeSeriesQuery::ExpressionAs(t, ..) => {
-                t.expected_columns()
-            }
+            TimeSeriesQuery::GroupedBasic(b, _, c) => {
+                let mut expected = b.expected_columns();
+                expected.insert(c.as_str());
+                expected.remove(b.identifier_variable.as_ref().unwrap().as_str());
+                expected
+            },
+            TimeSeriesQuery::ExpressionAs(t, ..) => t.expected_columns(),
         }
     }
 
@@ -266,9 +269,7 @@ impl TimeSeriesQuery {
                     vec![]
                 }
             }
-            TimeSeriesQuery::ExpressionAs(tsq, ..) => {
-                tsq.get_timeseries_variables()
-            }
+            TimeSeriesQuery::ExpressionAs(tsq, ..) => tsq.get_timeseries_variables(),
         }
     }
 
@@ -290,16 +291,14 @@ impl TimeSeriesQuery {
                 vs
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_value_variables(),
-            TimeSeriesQuery::GroupedBasic(b,..) => {
+            TimeSeriesQuery::GroupedBasic(b, ..) => {
                 if let Some(val_var) = &b.value_variable {
                     vec![val_var]
                 } else {
                     vec![]
                 }
             }
-            TimeSeriesQuery::ExpressionAs(t, ..) => {
-                t.get_value_variables()
-            }
+            TimeSeriesQuery::ExpressionAs(t, ..) => t.get_value_variables(),
         }
     }
 
@@ -321,16 +320,14 @@ impl TimeSeriesQuery {
                 vs
             }
             TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_identifier_variables(),
-            TimeSeriesQuery::GroupedBasic(b,..) => {
+            TimeSeriesQuery::GroupedBasic(b, ..) => {
                 if let Some(id_var) = &b.identifier_variable {
                     vec![id_var]
                 } else {
                     vec![]
                 }
             }
-            TimeSeriesQuery::ExpressionAs(t, ..) => {
-                t.get_identifier_variables()
-            }
+            TimeSeriesQuery::ExpressionAs(t, ..) => t.get_identifier_variables(),
         }
     }
 
@@ -372,9 +369,7 @@ impl TimeSeriesQuery {
                     vec![]
                 }
             }
-            TimeSeriesQuery::ExpressionAs(t, ..) => {
-                t.get_timestamp_variables()
-            }
+            TimeSeriesQuery::ExpressionAs(t, ..) => t.get_timestamp_variables(),
         }
     }
 }
@@ -395,6 +390,37 @@ impl BasicTimeSeriesQuery {
 }
 
 impl TimeSeriesQuery {
+    pub fn get_groupby_column(&self) -> Option<&String> {
+        match self {
+            TimeSeriesQuery::Basic(..) => {
+                None
+            }
+            TimeSeriesQuery::GroupedBasic(_, _, colname) => {
+                Some(colname)
+            }
+            TimeSeriesQuery::Filtered(tsq, _) => tsq.get_groupby_column(),
+            TimeSeriesQuery::InnerSynchronized(tsqs, _) => {
+                let mut colname = None;
+                for tsq in tsqs {
+                    let new_colname = tsq.get_groupby_column();
+                    if new_colname.is_some() {
+                        if colname.is_some() {
+                            panic!("Should never happen")
+                        }
+                        colname = new_colname;
+                    }
+                }
+                colname
+            }
+            TimeSeriesQuery::ExpressionAs(tsq, v, e) => {
+                tsq.get_groupby_column()
+            }
+            TimeSeriesQuery::Grouped(grouped) => {
+                grouped.tsq.get_groupby_column()
+            }
+        }
+    }
+
     pub fn get_timeseries_functions(&self, context: &Context) -> Vec<(&Variable, &Expression)> {
         match self {
             TimeSeriesQuery::Basic(..) => {

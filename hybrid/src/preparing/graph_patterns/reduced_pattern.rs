@@ -1,8 +1,8 @@
-use log::debug;
 use super::TimeSeriesQueryPrepper;
-use crate::query_context::{Context, PathEntry};
-use spargebra::algebra::GraphPattern;
 use crate::preparing::graph_patterns::GPPrepReturn;
+use crate::query_context::{Context, PathEntry};
+use log::debug;
+use spargebra::algebra::GraphPattern;
 
 impl TimeSeriesQueryPrepper {
     pub fn prepare_reduced(
@@ -13,7 +13,7 @@ impl TimeSeriesQueryPrepper {
     ) -> GPPrepReturn {
         if try_groupby_complex_query {
             debug!("Encountered graph inside reduced, not supported for complex groupby pushdown");
-            return GPPrepReturn::fail_groupby_complex_query()
+            return GPPrepReturn::fail_groupby_complex_query();
         } else {
             let mut inner_prepare = self.prepare_graph_pattern(
                 inner,

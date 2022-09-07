@@ -4,7 +4,7 @@ use crate::constants::{HAS_DATATYPE, HAS_DATA_POINT, HAS_EXTERNAL_ID, HAS_TIMEST
 use crate::constraints::{Constraint, VariableConstraints};
 use crate::query_context::{Context, PathEntry, VariableInContext};
 use crate::rewriting::graph_patterns::GPReturn;
-use crate::timeseries_query::{BasicTimeSeriesQuery};
+use crate::timeseries_query::BasicTimeSeriesQuery;
 use oxrdf::{NamedNode, Variable};
 use spargebra::algebra::GraphPattern;
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};

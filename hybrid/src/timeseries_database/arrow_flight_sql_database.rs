@@ -22,7 +22,7 @@ use polars::frame::DataFrame;
 use polars_core::utils::accumulate_dataframes_vertical;
 
 use crate::timeseries_database::timeseries_sql_rewrite::{
-    create_query, TimeSeriesQueryToSQLError, TimeSeriesTable,
+    TimeSeriesQueryToSQLError, TimeSeriesQueryToSQLTransformer, TimeSeriesTable,
 };
 use arrow_format::flight::service::flight_service_client::FlightServiceClient;
 use arrow_format::ipc::planus::ReadAsRoot;
@@ -225,7 +225,8 @@ impl TimeSeriesQueryable for ArrowFlightSQLDatabase {
     async fn execute(&mut self, tsq: &TimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
         let query_string;
         {
-            let (query, _) = create_query(tsq, &self.time_series_tables, false)?;
+            let transformer = TimeSeriesQueryToSQLTransformer::new(&self.time_series_tables);
+            let (query, _) = transformer.create_query(tsq, false)?;
             query_string = query.to_string(PostgresQueryBuilder);
         }
         Ok(self.execute_sql_query(query_string).await?)

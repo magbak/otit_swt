@@ -1,4 +1,5 @@
 use crate::constants::DATETIME_AS_SECONDS;
+use crate::query_context::Context;
 use crate::timeseries_database::TimeSeriesQueryable;
 use crate::timeseries_query::TimeSeriesQuery;
 use async_trait::async_trait;
@@ -22,7 +23,6 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
-use crate::query_context::Context;
 
 const OPCUA_AGG_FUNC_AVERAGE: u32 = 2342;
 const OPCUA_AGG_FUNC_COUNT: u32 = 2352;
@@ -103,8 +103,12 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
 
         let mut colnames_identifiers = vec![];
         if let TimeSeriesQuery::Grouped(grouped) = tsq {
-            let (colname, processed_details_some) =
-                create_read_processed_details(tsq, start_time, end_time, &grouped.graph_pattern_context);
+            let (colname, processed_details_some) = create_read_processed_details(
+                tsq,
+                start_time,
+                end_time,
+                &grouped.graph_pattern_context,
+            );
             processed_details = Some(processed_details_some);
             timestamp_grouping_colname = colname;
             for c in grouped.tsq.get_ids() {
@@ -624,7 +628,7 @@ fn datetime_from_expression(
     }
 }
 
-fn find_grouping_interval(tsq: &TimeSeriesQuery, context:&Context) -> Option<(String, f64)> {
+fn find_grouping_interval(tsq: &TimeSeriesQuery, context: &Context) -> Option<(String, f64)> {
     if let TimeSeriesQuery::Grouped(grouped) = tsq {
         let mut tsf = None;
         let mut grvar = None;

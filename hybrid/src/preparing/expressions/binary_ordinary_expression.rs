@@ -1,7 +1,7 @@
 use super::TimeSeriesQueryPrepper;
+use crate::preparing::expressions::EXPrepReturn;
 use crate::query_context::{Context, PathEntry};
 use spargebra::algebra::Expression;
-use crate::preparing::expressions::EXPrepReturn;
 
 pub enum BinaryOrdinaryOperator {
     Add,
@@ -26,44 +26,21 @@ impl TimeSeriesQueryPrepper {
         context: &Context,
     ) -> EXPrepReturn {
         let (left_path_entry, right_path_entry) = match { operation } {
-            BinaryOrdinaryOperator::Add => {
-                (PathEntry::AddLeft, PathEntry::AddRight)
+            BinaryOrdinaryOperator::Add => (PathEntry::AddLeft, PathEntry::AddRight),
+            BinaryOrdinaryOperator::Subtract => (PathEntry::SubtractLeft, PathEntry::SubtractRight),
+            BinaryOrdinaryOperator::Multiply => (PathEntry::MultiplyLeft, PathEntry::MultiplyRight),
+            BinaryOrdinaryOperator::Divide => (PathEntry::DivideLeft, PathEntry::DivideRight),
+            BinaryOrdinaryOperator::LessOrEqual => {
+                (PathEntry::LessOrEqualLeft, PathEntry::LessOrEqualRight)
             }
-            BinaryOrdinaryOperator::Subtract => (
-                PathEntry::SubtractLeft,
-                PathEntry::SubtractRight,
-            ),
-            BinaryOrdinaryOperator::Multiply => (
-                PathEntry::MultiplyLeft,
-                PathEntry::MultiplyRight,
-            ),
-            BinaryOrdinaryOperator::Divide => (
-                PathEntry::DivideLeft,
-                PathEntry::DivideRight,
-            ),
-            BinaryOrdinaryOperator::LessOrEqual => (
-                PathEntry::LessOrEqualLeft,
-                PathEntry::LessOrEqualRight,
-            ),
-            BinaryOrdinaryOperator::Less => {
-                (PathEntry::LessLeft, PathEntry::LessRight)
-            }
-            BinaryOrdinaryOperator::Greater => (
-                PathEntry::GreaterLeft,
-                PathEntry::GreaterRight,
-            ),
+            BinaryOrdinaryOperator::Less => (PathEntry::LessLeft, PathEntry::LessRight),
+            BinaryOrdinaryOperator::Greater => (PathEntry::GreaterLeft, PathEntry::GreaterRight),
             BinaryOrdinaryOperator::GreaterOrEqual => (
                 PathEntry::GreaterOrEqualLeft,
                 PathEntry::GreaterOrEqualRight,
             ),
-            BinaryOrdinaryOperator::SameTerm => (
-                PathEntry::SameTermLeft,
-                PathEntry::SameTermRight,
-            ),
-            BinaryOrdinaryOperator::Equal => (
-                PathEntry::EqualLeft,
-                PathEntry::EqualRight,
-            ),
+            BinaryOrdinaryOperator::SameTerm => (PathEntry::SameTermLeft, PathEntry::SameTermRight),
+            BinaryOrdinaryOperator::Equal => (PathEntry::EqualLeft, PathEntry::EqualRight),
         };
 
         let mut left_prepare = self.prepare_expression(
@@ -77,7 +54,7 @@ impl TimeSeriesQueryPrepper {
             &context.extension_with(right_path_entry),
         );
         if left_prepare.fail_groupby_complex_query || right_prepare.fail_groupby_complex_query {
-            return EXPrepReturn::fail_groupby_complex_query()
+            return EXPrepReturn::fail_groupby_complex_query();
         }
         left_prepare.with_time_series_queries_from(&mut right_prepare);
         left_prepare

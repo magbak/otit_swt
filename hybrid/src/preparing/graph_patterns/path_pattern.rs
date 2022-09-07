@@ -1,6 +1,6 @@
 use super::TimeSeriesQueryPrepper;
 use crate::preparing::graph_patterns::GPPrepReturn;
-use spargebra::algebra::{PropertyPathExpression};
+use spargebra::algebra::PropertyPathExpression;
 use spargebra::term::TermPattern;
 
 impl TimeSeriesQueryPrepper {

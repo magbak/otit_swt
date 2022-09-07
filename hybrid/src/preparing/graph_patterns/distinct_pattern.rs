@@ -1,8 +1,8 @@
-use log::debug;
 use super::TimeSeriesQueryPrepper;
+use log::debug;
 
-use crate::query_context::{Context, PathEntry};
 use crate::preparing::graph_patterns::GPPrepReturn;
+use crate::query_context::{Context, PathEntry};
 use spargebra::algebra::GraphPattern;
 
 impl TimeSeriesQueryPrepper {
@@ -14,11 +14,16 @@ impl TimeSeriesQueryPrepper {
         context: &Context,
     ) -> GPPrepReturn {
         if try_groupby_complex_query {
-            debug!("Encountered distinct inside groupby, not supported for complex groupby pushdown");
-            return GPPrepReturn::fail_groupby_complex_query()
+            debug!(
+                "Encountered distinct inside groupby, not supported for complex groupby pushdown"
+            );
+            return GPPrepReturn::fail_groupby_complex_query();
         }
-        let mut gpr_inner =
-            self.prepare_graph_pattern(inner, try_groupby_complex_query, &context.extension_with(PathEntry::DistinctInner));
+        let mut gpr_inner = self.prepare_graph_pattern(
+            inner,
+            try_groupby_complex_query,
+            &context.extension_with(PathEntry::DistinctInner),
+        );
         gpr_inner
     }
 }

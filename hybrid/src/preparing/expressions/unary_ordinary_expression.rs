@@ -1,9 +1,9 @@
 use super::TimeSeriesQueryPrepper;
-use crate::query_context::{Context, PathEntry};
 use crate::preparing::expressions::EXPrepReturn;
+use crate::query_context::{Context, PathEntry};
 use spargebra::algebra::Expression;
 
-pub(crate) enum UnaryOrdinaryOperator {
+pub enum UnaryOrdinaryOperator {
     UnaryPlus,
     UnaryMinus,
 }
@@ -13,7 +13,7 @@ impl TimeSeriesQueryPrepper {
         &mut self,
         wrapped: &Expression,
         operation: &UnaryOrdinaryOperator,
-                try_groupby_complex_query: bool,
+        try_groupby_complex_query: bool,
         context: &Context,
     ) -> EXPrepReturn {
         let path_entry = match operation {

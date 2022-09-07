@@ -7,9 +7,9 @@ mod pushups;
 
 use crate::change_types::ChangeType;
 use crate::constraints::{Constraint, VariableConstraints};
-use crate::query_context::{Context};
+use crate::query_context::Context;
 use crate::rewriting::expressions::ExReturn;
-use crate::timeseries_query::{BasicTimeSeriesQuery};
+use crate::timeseries_query::BasicTimeSeriesQuery;
 use spargebra::term::Variable;
 use spargebra::Query;
 use std::collections::HashSet;

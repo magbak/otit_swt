@@ -10,35 +10,41 @@ mod or_expression;
 mod unary_ordinary_expression;
 
 use super::TimeSeriesQueryPrepper;
-use crate::query_context::Context;
-use spargebra::algebra::{Expression};
 use crate::preparing::expressions::binary_ordinary_expression::BinaryOrdinaryOperator;
 use crate::preparing::expressions::unary_ordinary_expression::UnaryOrdinaryOperator;
+use crate::query_context::Context;
 use crate::timeseries_query::TimeSeriesQuery;
+use spargebra::algebra::Expression;
 
 pub struct EXPrepReturn {
     pub fail_groupby_complex_query: bool,
-    pub time_series_queries:Vec<TimeSeriesQuery>
+    pub time_series_queries: Vec<TimeSeriesQuery>,
 }
 
 impl EXPrepReturn {
-    fn new(time_series_queries:Vec<TimeSeriesQuery>) -> EXPrepReturn {
+    fn new(time_series_queries: Vec<TimeSeriesQuery>) -> EXPrepReturn {
         EXPrepReturn {
             time_series_queries,
-            fail_groupby_complex_query:false,
+            fail_groupby_complex_query: false,
         }
     }
 
     pub fn fail_groupby_complex_query() -> EXPrepReturn {
-        EXPrepReturn { fail_groupby_complex_query: true, time_series_queries: vec![] }
+        EXPrepReturn {
+            fail_groupby_complex_query: true,
+            time_series_queries: vec![],
+        }
     }
 
-    pub fn with_time_series_queries_from(&mut self, other:&mut EXPrepReturn) {
-        self.time_series_queries.extend(other.drained_time_series_queries());
+    pub fn with_time_series_queries_from(&mut self, other: &mut EXPrepReturn) {
+        self.time_series_queries
+            .extend(other.drained_time_series_queries());
     }
 
     pub fn drained_time_series_queries(&mut self) -> Vec<TimeSeriesQuery> {
-        self.time_series_queries.drain(0..self.time_series_queries.len()).collect()
+        self.time_series_queries
+            .drain(0..self.time_series_queries.len())
+            .collect()
     }
 }
 
@@ -46,34 +52,26 @@ impl TimeSeriesQueryPrepper {
     pub fn prepare_expression(
         &mut self,
         expression: &Expression,
-                try_groupby_complex_query: bool,
+        try_groupby_complex_query: bool,
         context: &Context,
     ) -> EXPrepReturn {
         match expression {
-            Expression::NamedNode(nn) => {
+            Expression::NamedNode(..) => {
                 let mut exr = EXPrepReturn::new(vec![]);
                 exr
             }
-            Expression::Literal(l) => {
-                let mut exr = EXPrepReturn::new(vec![]);
+            Expression::Literal(..) => {
+                let exr = EXPrepReturn::new(vec![]);
                 exr
             }
-            Expression::Variable(v) => {
-                EXPrepReturn::new(vec![])
+            Expression::Variable(v) => EXPrepReturn::new(vec![]),
+            Expression::Or(left, right) => {
+                self.prepare_or_expression(left, right, try_groupby_complex_query, context)
             }
-            Expression::Or(left, right) => self.prepare_or_expression(
-                left,
-                right,
-                try_groupby_complex_query,
-                context,
-            ),
 
-            Expression::And(left, right) => self.prepare_and_expression(
-                left,
-                right,
-                try_groupby_complex_query,
-                context,
-            ),
+            Expression::And(left, right) => {
+                self.prepare_and_expression(left, right, try_groupby_complex_query, context)
+            }
             Expression::Equal(left, right) => self.prepare_binary_ordinary_expression(
                 left,
                 right,
@@ -116,12 +114,9 @@ impl TimeSeriesQueryPrepper {
                 try_groupby_complex_query,
                 context,
             ),
-            Expression::In(left, expressions) => self.prepare_in_expression(
-                left,
-                expressions,
-                try_groupby_complex_query,
-                context,
-            ),
+            Expression::In(left, expressions) => {
+                self.prepare_in_expression(left, expressions, try_groupby_complex_query, context)
+            }
             Expression::Add(left, right) => self.prepare_binary_ordinary_expression(
                 left,
                 right,
@@ -162,23 +157,21 @@ impl TimeSeriesQueryPrepper {
                 try_groupby_complex_query,
                 context,
             ),
-            Expression::Not(wrapped) => self.prepare_not_expression(
-                wrapped,
-                try_groupby_complex_query,
-                context,
-            ),
-            Expression::Exists(wrapped) => self.prepare_exists_expression(wrapped, try_groupby_complex_query, context),
-            Expression::Bound(v) => {
-                EXPrepReturn::new(vec![])
+            Expression::Not(wrapped) => {
+                self.prepare_not_expression(wrapped, try_groupby_complex_query, context)
             }
+            Expression::Exists(wrapped) => {
+                self.prepare_exists_expression(wrapped, try_groupby_complex_query, context)
+            }
+            Expression::Bound(v) => EXPrepReturn::new(vec![]),
             Expression::If(left, mid, right) => {
-                self.prepare_if_expression(left, mid, right,try_groupby_complex_query, context)
+                self.prepare_if_expression(left, mid, right, try_groupby_complex_query, context)
             }
             Expression::Coalesce(wrapped) => {
-                self.prepare_coalesce_expression(wrapped,  try_groupby_complex_query,context)
+                self.prepare_coalesce_expression(wrapped, try_groupby_complex_query, context)
             }
             Expression::FunctionCall(fun, args) => {
-                self.prepare_function_call_expression(fun, args, try_groupby_complex_query,context)
+                self.prepare_function_call_expression(fun, args, try_groupby_complex_query, context)
             }
         }
     }

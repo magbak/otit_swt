@@ -1,10 +1,9 @@
-
+use crate::change_types::ChangeType;
 use crate::pushdown_setting::PushdownSetting;
 use crate::query_context::{Context, PathEntry};
 use crate::timeseries_query::TimeSeriesQuery;
 use spargebra::algebra::Expression;
 use std::collections::HashSet;
-use crate::change_types::ChangeType;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TimeSeriesExpressionRewriteContext {
