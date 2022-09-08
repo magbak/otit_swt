@@ -57,14 +57,14 @@ impl TimeSeriesQueryPrepper {
     ) -> EXPrepReturn {
         match expression {
             Expression::NamedNode(..) => {
-                let mut exr = EXPrepReturn::new(vec![]);
+                let exr = EXPrepReturn::new(vec![]);
                 exr
             }
             Expression::Literal(..) => {
                 let exr = EXPrepReturn::new(vec![]);
                 exr
             }
-            Expression::Variable(v) => EXPrepReturn::new(vec![]),
+            Expression::Variable(..) => EXPrepReturn::new(vec![]),
             Expression::Or(left, right) => {
                 self.prepare_or_expression(left, right, try_groupby_complex_query, context)
             }
@@ -163,7 +163,7 @@ impl TimeSeriesQueryPrepper {
             Expression::Exists(wrapped) => {
                 self.prepare_exists_expression(wrapped, try_groupby_complex_query, context)
             }
-            Expression::Bound(v) => EXPrepReturn::new(vec![]),
+            Expression::Bound(..) => EXPrepReturn::new(vec![]),
             Expression::If(left, mid, right) => {
                 self.prepare_if_expression(left, mid, right, try_groupby_complex_query, context)
             }

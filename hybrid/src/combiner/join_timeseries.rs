@@ -9,7 +9,6 @@ pub fn join_tsq(
     tsq: TimeSeriesQuery,
     df: DataFrame,
 ) -> LazyFrame {
-    println!("Join tsq: {}", df);
     let mut join_on = vec![];
     for c in df.get_column_names() {
         if columns.contains(c) {

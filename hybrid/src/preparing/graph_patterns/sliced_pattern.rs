@@ -8,8 +8,6 @@ impl TimeSeriesQueryPrepper {
     pub fn prepare_slice(
         &mut self,
         inner: &GraphPattern,
-        start: &usize,
-        length: &Option<usize>,
         try_groupby_complex_query: bool,
         context: &Context,
     ) -> GPPrepReturn {
@@ -17,7 +15,7 @@ impl TimeSeriesQueryPrepper {
             debug!("Encountered graph inside slice, not supported for complex groupby pushdown");
             return GPPrepReturn::fail_groupby_complex_query();
         } else {
-            let mut inner_prepare = self.prepare_graph_pattern(
+            let inner_prepare = self.prepare_graph_pattern(
                 inner,
                 try_groupby_complex_query,
                 &context.extension_with(PathEntry::ReducedInner),

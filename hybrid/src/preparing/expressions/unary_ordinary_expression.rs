@@ -20,7 +20,7 @@ impl TimeSeriesQueryPrepper {
             UnaryOrdinaryOperator::UnaryPlus => PathEntry::UnaryPlus,
             UnaryOrdinaryOperator::UnaryMinus => PathEntry::UnaryMinus,
         };
-        let mut wrapped_prepare = self.prepare_expression(
+        let wrapped_prepare = self.prepare_expression(
             wrapped,
             try_groupby_complex_query,
             &context.extension_with(path_entry),

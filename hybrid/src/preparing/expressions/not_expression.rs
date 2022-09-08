@@ -10,7 +10,7 @@ impl TimeSeriesQueryPrepper {
         try_groupby_complex_query: bool,
         context: &Context,
     ) -> EXPrepReturn {
-        let mut wrapped_prepare = self.prepare_expression(
+        let wrapped_prepare = self.prepare_expression(
             wrapped,
             try_groupby_complex_query,
             &context.extension_with(PathEntry::Not),

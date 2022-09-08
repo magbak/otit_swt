@@ -10,7 +10,6 @@ use crate::sparql_result_to_polars::{
     sparql_literal_to_polars_literal_value, sparql_named_node_to_polars_literal_value,
 };
 use crate::timeseries_query::TimeSeriesQuery;
-use log::debug;
 use oxrdf::vocab::xsd;
 use polars::datatypes::DataType;
 use polars::frame::DataFrame;
@@ -29,7 +28,6 @@ pub fn lazy_expression(
     time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
     context: &Context,
 ) -> LazyFrame {
-    debug!("Combining started processing expression {}", expr);
     let lf = match expr {
         Expression::NamedNode(nn) => {
             let inner_lf = inner_lf.with_column(
@@ -350,8 +348,6 @@ pub fn lazy_expression(
                 .unique(None, UniqueKeepStrategy::First)
                 .collect()
                 .expect("Collect lazy exists error");
-            debug!("Exists dataframe: {}", exists_df);
-            debug!("Exists original dataframe: {}", df);
             let mut ser = Series::from(
                 df.column(&exists_context.as_str())
                     .unwrap()
@@ -361,7 +357,6 @@ pub fn lazy_expression(
             ser.rename(context.as_str());
             df.with_column(ser).unwrap();
             df = df.drop(&exists_context.as_str()).unwrap();
-            debug!("Dataframe after {}", df);
             df.lazy()
         }
         Expression::Bound(v) => {
@@ -436,7 +431,6 @@ pub fn lazy_expression(
                 .map(|i| context.extension_with(PathEntry::FunctionCall(i as u16)))
                 .collect();
             let mut inner_lf = inner_lf;
-            debug!("INNER LF BEFORE DF: {}", inner_lf.clone().collect().unwrap());
             for i in 0..args.len() {
                 inner_lf = lazy_expression(
                     args.get(i).unwrap(),
@@ -445,8 +439,6 @@ pub fn lazy_expression(
                     time_series,
                     args_contexts.get(i).unwrap(),
                 ).collect().unwrap().lazy(); //TODO: workaround for stack overflow - post bug?
-                debug!("INNER LF AFTER {:?}: {}",args.get(i), inner_lf.clone().collect().unwrap());
-
             }
             match func {
                 Function::Year => {
@@ -529,7 +521,6 @@ pub fn lazy_expression(
                 }
                 Function::Concat => {
                     assert!(args.len() > 1);
-                    debug!("INNER LF DF: {}", inner_lf.clone().collect().unwrap());
                     inner_lf = inner_lf.with_column(
                         concat_str(
                             args_contexts
@@ -620,6 +611,5 @@ pub fn lazy_expression(
             )
         }
     };
-    debug!("Combining ended processing expression {}", expr);
     lf
 }

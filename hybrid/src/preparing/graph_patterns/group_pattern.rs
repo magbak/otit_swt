@@ -29,7 +29,7 @@ impl TimeSeriesQueryPrepper {
         let inner_context = &context.extension_with(PathEntry::GroupInner);
         let mut try_graph_pattern_prepare =
             self.prepare_graph_pattern(graph_pattern, true, &inner_context);
-
+        println!("inner: {:?}", try_graph_pattern_prepare);
         if !try_graph_pattern_prepare.fail_groupby_complex_query
             && self.pushdown_settings.contains(&PushdownSetting::GroupBy)
         {
@@ -46,15 +46,14 @@ impl TimeSeriesQueryPrepper {
                         &self.static_result_df,
                         &grouping_col,
                     );
-                    let mut idvars = tsq.get_identifier_variables();
-                    assert_eq!(idvars.len(), 1);
-                    let idvar = idvars.remove(0);
-                    self.static_result_df = self.static_result_df.drop(idvar.as_str()).unwrap();
+                    let mut by = by.clone();
+                    by.push(Variable::new_unchecked(&grouping_col));
+                    //TODO: For OPC UA we must ensure that mapping df is 1:1 with identities, or alternatively group on these
 
                     tsq = TimeSeriesQuery::Grouped(GroupedTimeSeriesQuery {
                         tsq: Box::new(tsq),
                         graph_pattern_context: context.clone(),
-                        by: by.clone(),
+                        by,
                         aggregations: aggregations.clone(),
                     });
                     return GPPrepReturn::new(vec![tsq])
@@ -72,7 +71,7 @@ impl TimeSeriesQueryPrepper {
     fn add_grouping_col(&mut self, by: &Vec<Variable>) -> String {
         let grouping_col = format!("{}_{}", GROUPING_COL, self.grouping_counter);
         self.grouping_counter += 1;
-        let by_names: Vec<String> = by.iter().map(|x| x.as_str().to_string()).collect();
+        let by_names: Vec<String> = by.iter().filter(|x|self.static_result_df.get_column_names().contains(&x.as_str())).map(|x| x.as_str().to_string()).collect();
         let mut df = self
             .static_result_df
             .select(by_names.as_slice())
@@ -125,7 +124,7 @@ fn add_basic_groupby_mapping_values(
 ) -> TimeSeriesQuery {
     match tsq {
         TimeSeriesQuery::Basic(b) => {
-            let mut by_vec = vec![
+            let by_vec = vec![
                 grouping_col,
                 b.identifier_variable.as_ref().unwrap().as_str(),
             ];

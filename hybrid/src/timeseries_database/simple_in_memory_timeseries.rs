@@ -30,7 +30,6 @@ impl TimeSeriesQueryable for InMemoryTimeseriesDatabase {
 
 impl InMemoryTimeseriesDatabase {
     fn execute_query(&self, tsq: &TimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
-        println!("Executing query: {:?}", tsq);
         match tsq {
             TimeSeriesQuery::Basic(b) => self.execute_basic(b),
             TimeSeriesQuery::Filtered(inner, filter) => self.execute_filtered(inner, filter),
@@ -124,10 +123,8 @@ impl InMemoryTimeseriesDatabase {
         &self,
         grouped: &GroupedTimeSeriesQuery,
     ) -> Result<DataFrame, Box<dyn Error>> {
-        //Important to do iteration in reversed direction for nested functions
         let df = self.execute_query(&grouped.tsq)?;
-        println!("Execute grouped working on : {:?}", df);
-        let mut columns = df
+        let columns = df
             .get_column_names()
             .into_iter()
             .map(|x| x.to_string())
@@ -160,7 +157,18 @@ impl InMemoryTimeseriesDatabase {
                 aggregate_inner_contexts.push(inner_context);
             }
         }
-        let grouped_lf = out_lf.groupby(vec![col(grouped.tsq.get_groupby_column().unwrap())]);
+        let mut groupby = vec![col(grouped.tsq.get_groupby_column().unwrap())];
+        let tsfuncs = grouped.tsq.get_timeseries_functions(&grouped.graph_pattern_context);
+        for b in &grouped.by {
+            for (v,_) in &tsfuncs {
+                if b == *v {
+                    groupby.push(col(v.as_str()));
+                    break
+                }
+            }
+        }
+
+        let grouped_lf = out_lf.groupby(groupby);
         out_lf = grouped_lf.agg(aggregation_exprs.as_slice()).drop_columns(
             aggregate_inner_contexts
                 .iter()
@@ -169,7 +177,6 @@ impl InMemoryTimeseriesDatabase {
         );
 
         let collected = out_lf.collect()?;
-        println!("Finish grouping {:?}", collected);
         Ok(collected)
     }
 
@@ -179,6 +186,7 @@ impl InMemoryTimeseriesDatabase {
         synchronizers: &Vec<Synchronizer>,
     ) -> Result<DataFrame, Box<dyn Error>> {
         assert_eq!(synchronizers.len(), 1);
+        #[allow(irrefutable_let_patterns)]
         if let Synchronizer::Identity(timestamp_col) = synchronizers.get(0).unwrap() {
             let mut dfs = vec![];
             for q in inners {

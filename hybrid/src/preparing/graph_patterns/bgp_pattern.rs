@@ -11,16 +11,11 @@ impl TimeSeriesQueryPrepper {
         context: &Context,
     ) -> GPPrepReturn {
         let context = context.extension_with(PathEntry::BGP);
-        println!(
-            "IN BGP WITH CONTEXT: {:?} TSQ: {:?}",
-            context, self.basic_time_series_queries
-        );
         let mut local_tsqs = vec![];
         for tsq in &self.basic_time_series_queries {
             if let Some(dp_ctx) = &tsq.data_point_variable {
-                println!("Here context: {:?}, idvar context: {:?}", context, dp_ctx);
+                println!("Query context: {:?}, bgp context: {:?}", dp_ctx.context, context);
                 if &dp_ctx.context == &context {
-                    println!("Pushed tsq {:?}", tsq);
                     local_tsqs.push(TimeSeriesQuery::Basic(tsq.clone()));
                 }
             }

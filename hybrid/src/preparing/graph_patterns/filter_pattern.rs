@@ -28,7 +28,6 @@ impl TimeSeriesQueryPrepper {
 
         let mut out_tsqs = vec![];
         out_tsqs.extend(expression_prepare.drained_time_series_queries());
-        println!("Out filter tsqs: {:?}", out_tsqs);
         for t in inner_prepare.drained_time_series_queries() {
             let use_change_type = if try_groupby_complex_query {
                 ChangeType::NoChange

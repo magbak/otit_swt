@@ -92,7 +92,7 @@ impl OPCUAHistoryRead {
 #[async_trait]
 impl TimeSeriesQueryable for OPCUAHistoryRead {
     async fn execute(&mut self, tsq: &TimeSeriesQuery) -> Result<DataFrame, Box<dyn Error>> {
-        validate_tsq(tsq, true)?;
+        validate_tsq(tsq, true, false)?;
         let session = self.session.write().unwrap();
         let start_time = find_time(tsq, &FindTime::Start);
         let end_time = find_time(tsq, &FindTime::End);
@@ -102,6 +102,8 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
         let mut raw_modified_details = None;
 
         let mut colnames_identifiers = vec![];
+        let mut grouping_col_lookup = HashMap::new();
+        let mut grouping_col_name = None;
         if let TimeSeriesQuery::Grouped(grouped) = tsq {
             let (colname, processed_details_some) = create_read_processed_details(
                 tsq,
@@ -116,6 +118,23 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                     colnames_identifiers.push((v.as_str().to_string(), c.clone()));
                 }
             }
+            let mapping_df = grouped.tsq.get_groupby_mapping_df().unwrap();
+            grouping_col_name= Some(grouped.tsq.get_groupby_column().unwrap());
+            let identifier_var = grouped.tsq.get_identifier_variables().get(0).unwrap().as_str();
+            let mut id_iter = mapping_df.column(identifier_var).unwrap().iter();
+            let mut grouping_col_iter = mapping_df.column(grouping_col_name.unwrap().as_str()).unwrap().iter();
+            for _ in 0..mapping_df.height() {
+                let id_value = match id_iter.next().unwrap() {
+                    AnyValue::Utf8(id_value) => {id_value}
+                    _=> {panic!("Should never happen")}
+                };
+                let grouping_col_value = match grouping_col_iter.next().unwrap() {
+                    AnyValue::UInt32(grouping_col_value) => {grouping_col_value}
+                    _=> {panic!("Should never happen")}
+                };
+                grouping_col_lookup.insert(id_value, grouping_col_value);
+            }
+
         } else {
             raw_modified_details = Some(create_raw_details(start_time, end_time));
             for c in tsq.get_ids() {
@@ -177,7 +196,7 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
             //Now we process the data
             for (i, h) in resp.into_iter().enumerate() {
                 let HistoryReadResult {
-                    status_code,
+                    status_code:_,
                     continuation_point: _,
                     history_data,
                 } = h;
@@ -211,28 +230,42 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                 let series_vec = series_map.remove(&k).unwrap();
                 let mut first_ts = None;
                 let mut value_vec = vec![];
-                for (i, (ts, val)) in series_vec.into_iter().enumerate() {
+                for  (ts, val) in series_vec.into_iter() {
                     if let Some(_) = &first_ts {
                     } else {
                         first_ts = Some(ts);
                     }
                     value_vec.push(val);
                 }
-                let mut identifier_series = Series::new_empty(
-                    tsq.get_identifier_variables().get(0).unwrap().as_str(),
-                    &DataType::Utf8,
-                );
-                identifier_series = identifier_series
-                    .extend_constant(AnyValue::Utf8(&k), first_ts.as_ref().unwrap().len())
-                    .unwrap();
+                let mut identifier_series = if let Some(grouping_col) = grouping_col_name {
+                    Series::new_empty(
+                        grouping_col,
+                        &DataType::UInt32,
+                    )
+                } else {
+                    Series::new_empty(
+                        tsq.get_identifier_variables().get(0).unwrap().as_str(),
+                        &DataType::Utf8,
+                    )
+                };
+                identifier_series = if let Some(_) = grouping_col_name {
+                    identifier_series
+                        .extend_constant(AnyValue::UInt32(*grouping_col_lookup.get(k.as_str()).unwrap()), first_ts.as_ref().unwrap().len())
+                        .unwrap()
+                } else {
+                   identifier_series
+                        .extend_constant(AnyValue::Utf8(&k), first_ts.as_ref().unwrap().len())
+                        .unwrap()
+                };
                 value_vec.push(identifier_series);
                 value_vec.push(first_ts.unwrap());
                 value_vec.sort_by_key(|x| x.name().to_string());
                 dfs.push(DataFrame::new(value_vec).unwrap().lazy())
             }
         }
-
-        Ok(concat(dfs, true).unwrap().collect().unwrap())
+        let df = concat(dfs, true).unwrap().collect().unwrap();
+        println!("DF!! {}", df);
+        Ok(df)
     }
 
     fn allow_compound_timeseries_queries(&self) -> bool {
@@ -240,18 +273,29 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
     }
 }
 
-fn validate_tsq(tsq: &TimeSeriesQuery, toplevel: bool) -> Result<(), OPCUAHistoryReadError> {
+fn validate_tsq(tsq: &TimeSeriesQuery, toplevel: bool, inside_grouping:bool) -> Result<(), OPCUAHistoryReadError> {
     match tsq {
         TimeSeriesQuery::Basic(_) => Ok(()),
-        TimeSeriesQuery::Filtered(f, _) => validate_tsq(f, false),
+        TimeSeriesQuery::Filtered(f, _) => validate_tsq(f, false, inside_grouping),
         TimeSeriesQuery::Grouped(g) => {
             if !toplevel {
                 Err(OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported)
             } else {
-                validate_tsq(&g.tsq, false)
+                validate_tsq(&g.tsq, false, true)
             }
         }
-        _ => Err(OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported),
+        TimeSeriesQuery::GroupedBasic(_, _, _) => {
+            if inside_grouping {
+                Ok(())
+            }
+            else {Err(OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported)}
+        }
+        TimeSeriesQuery::InnerSynchronized(_, _) => {
+            Err(OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported)
+        }
+        TimeSeriesQuery::ExpressionAs(t, _, _) => {
+            validate_tsq(t, false, inside_grouping)
+        }
     }
 }
 
@@ -661,7 +705,7 @@ fn find_grouping_interval_multiplication(a: &Expression, b: &Expression) -> Opti
     if let (Expression::FunctionCall(f, args), Expression::Literal(_)) = (a, b) {
         if f == &Function::Floor && args.len() == 1 {
             if let Expression::Divide(left, right) = args.get(0).unwrap() {
-                if let (Expression::FunctionCall(f, args), Expression::Literal(lit)) =
+                if let (Expression::FunctionCall(f,..), Expression::Literal(lit)) =
                     (left.as_ref(), right.as_ref())
                 {
                     if let Function::Custom(nn) = f {

@@ -21,7 +21,6 @@ impl TimeSeriesQueryPrepper {
             if wrapped_prepare.fail_groupby_complex_query {
                 EXPrepReturn::fail_groupby_complex_query()
             } else {
-                println!("wrapped prepare in exists {:?}", wrapped_prepare.time_series_queries);
                 EXPrepReturn::new(wrapped_prepare.drained_time_series_queries())
             }
         }

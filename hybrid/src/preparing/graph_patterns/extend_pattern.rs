@@ -21,18 +21,20 @@ impl TimeSeriesQueryPrepper {
             try_groupby_complex_query,
             &context.extension_with(PathEntry::ExtendInner),
         );
-        println!("Inner prepare in extend: {:?}", inner_prepare);
+        println!("Context: {:?}", context);
+        println!("Inner prepare: {:?}", inner_prepare);
         if try_groupby_complex_query {
             let mut expression_vars = HashSet::new();
             find_all_used_variables_in_expression(expr, &mut expression_vars);
             let mut found_i = None;
+            println!("All used: {:?}", expression_vars);
             for (i, tsq) in inner_prepare.time_series_queries.iter().enumerate() {
                 let mut found_all = true;
                 let mut found_some = false;
                 for expression_var in &expression_vars {
                     if tsq.has_equivalent_value_variable(expression_var, context) {
                         found_some = true;
-                    } else if tsq.has_equivalent_timeseries_variable(expression_var, context) {
+                    } else if tsq.has_equivalent_timestamp_variable(expression_var, context) {
                         found_some = true;
                     } else {
                         found_all = false;
@@ -43,6 +45,7 @@ impl TimeSeriesQueryPrepper {
                     found_i = Some(i);
                 }
             }
+            println!("Found i: {:?}", found_i );
             if let Some(i) = found_i {
                 let inner_tsq = inner_prepare.time_series_queries.remove(i);
                 let new_tsq =

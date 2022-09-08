@@ -7,8 +7,7 @@ use hybrid::static_sparql::execute_sparql_query;
 use hybrid::timeseries_database::simple_in_memory_timeseries::InMemoryTimeseriesDatabase;
 use log::debug;
 use oxrdf::{NamedNode, Term, Variable};
-use polars::io::SerWriter;
-use polars::prelude::{CsvReader, CsvWriter, SerReader};
+use polars::prelude::{CsvReader, SerReader};
 use rstest::*;
 use serial_test::serial;
 use sparesults::QuerySolution;
@@ -698,7 +697,7 @@ async fn test_optional_clause_query(
         }
     }
     "#;
-    let mut df = engine
+    let df = engine
         .execute_hybrid_query(query, QUERY_ENDPOINT)
         .await
         .expect("Hybrid error");
@@ -1022,7 +1021,7 @@ async fn test_coalesce_query(
         }
     }
     "#;
-    let mut df = engine
+    let df = engine
         .execute_hybrid_query(query, QUERY_ENDPOINT)
         .await
         .expect("Hybrid error")

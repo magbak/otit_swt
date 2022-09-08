@@ -36,7 +36,6 @@ impl Combiner {
         static_result_df: DataFrame,
         time_series: &mut Vec<(TimeSeriesQuery, DataFrame)>,
     ) -> LazyFrame {
-        println!("Combiner init with df: {}", static_result_df);
         let project_variables;
         let inner_graph_pattern;
         let mut distinct = false;
@@ -75,8 +74,6 @@ impl Combiner {
 
         let mut lf = static_result_df.lazy();
         lf = self.lazy_graph_pattern(&mut columns, lf, inner_graph_pattern, time_series, &context);
-        let df = lf.clone().collect().unwrap();
-        debug!("DF: {}", df);
         let projections = project_variables
             .iter()
             .map(|c| col(c.as_str()))

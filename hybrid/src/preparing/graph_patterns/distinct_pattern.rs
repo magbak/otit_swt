@@ -19,7 +19,7 @@ impl TimeSeriesQueryPrepper {
             );
             return GPPrepReturn::fail_groupby_complex_query();
         }
-        let mut gpr_inner = self.prepare_graph_pattern(
+        let gpr_inner = self.prepare_graph_pattern(
             inner,
             try_groupby_complex_query,
             &context.extension_with(PathEntry::DistinctInner),
