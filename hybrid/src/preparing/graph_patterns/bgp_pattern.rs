@@ -14,7 +14,6 @@ impl TimeSeriesQueryPrepper {
         let mut local_tsqs = vec![];
         for tsq in &self.basic_time_series_queries {
             if let Some(dp_ctx) = &tsq.data_point_variable {
-                println!("Query context: {:?}, bgp context: {:?}", dp_ctx.context, context);
                 if &dp_ctx.context == &context {
                     local_tsqs.push(TimeSeriesQuery::Basic(tsq.clone()));
                 }

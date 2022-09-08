@@ -293,10 +293,12 @@ impl Combiner {
                 let inner_context = context.extension_with(PathEntry::ExtendInner);
                 let mut inner_lf =
                     self.lazy_graph_pattern(columns, input_lf, inner, time_series, &inner_context);
-                inner_lf =
-                    lazy_expression(expression, inner_lf, columns, time_series, &inner_context)
-                        .rename([inner_context.as_str()], &[variable.as_str()]);
-                columns.insert(variable.as_str().to_string());
+                if !columns.contains(variable.as_str()) {
+                    inner_lf =
+                        lazy_expression(expression, inner_lf, columns, time_series, &inner_context)
+                            .rename([inner_context.as_str()], &[variable.as_str()]);
+                    columns.insert(variable.as_str().to_string());
+                }
                 inner_lf
             }
             GraphPattern::Minus { left, right } => {

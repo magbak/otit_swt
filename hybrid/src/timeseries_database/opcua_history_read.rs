@@ -264,7 +264,6 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
             }
         }
         let df = concat(dfs, true).unwrap().collect().unwrap();
-        println!("DF!! {}", df);
         Ok(df)
     }
 

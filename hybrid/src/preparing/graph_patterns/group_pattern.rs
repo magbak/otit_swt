@@ -29,7 +29,6 @@ impl TimeSeriesQueryPrepper {
         let inner_context = &context.extension_with(PathEntry::GroupInner);
         let mut try_graph_pattern_prepare =
             self.prepare_graph_pattern(graph_pattern, true, &inner_context);
-        println!("inner: {:?}", try_graph_pattern_prepare);
         if !try_graph_pattern_prepare.fail_groupby_complex_query
             && self.pushdown_settings.contains(&PushdownSetting::GroupBy)
         {
