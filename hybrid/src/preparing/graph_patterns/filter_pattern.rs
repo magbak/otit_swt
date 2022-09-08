@@ -14,8 +14,11 @@ impl TimeSeriesQueryPrepper {
         try_groupby_complex_query: bool,
         context: &Context,
     ) -> GPPrepReturn {
-        let mut expression_prepare =
-            self.prepare_expression(expression, try_groupby_complex_query, &context.extension_with(PathEntry::FilterExpression));
+        let mut expression_prepare = self.prepare_expression(
+            expression,
+            try_groupby_complex_query,
+            &context.extension_with(PathEntry::FilterExpression),
+        );
         let mut inner_prepare = self.prepare_graph_pattern(
             inner,
             try_groupby_complex_query,

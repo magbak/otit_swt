@@ -119,22 +119,33 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                 }
             }
             let mapping_df = grouped.tsq.get_groupby_mapping_df().unwrap();
-            grouping_col_name= Some(grouped.tsq.get_groupby_column().unwrap());
-            let identifier_var = grouped.tsq.get_identifier_variables().get(0).unwrap().as_str();
+            grouping_col_name = Some(grouped.tsq.get_groupby_column().unwrap());
+            let identifier_var = grouped
+                .tsq
+                .get_identifier_variables()
+                .get(0)
+                .unwrap()
+                .as_str();
             let mut id_iter = mapping_df.column(identifier_var).unwrap().iter();
-            let mut grouping_col_iter = mapping_df.column(grouping_col_name.unwrap().as_str()).unwrap().iter();
+            let mut grouping_col_iter = mapping_df
+                .column(grouping_col_name.unwrap().as_str())
+                .unwrap()
+                .iter();
             for _ in 0..mapping_df.height() {
                 let id_value = match id_iter.next().unwrap() {
-                    AnyValue::Utf8(id_value) => {id_value}
-                    _=> {panic!("Should never happen")}
+                    AnyValue::Utf8(id_value) => id_value,
+                    _ => {
+                        panic!("Should never happen")
+                    }
                 };
                 let grouping_col_value = match grouping_col_iter.next().unwrap() {
-                    AnyValue::UInt32(grouping_col_value) => {grouping_col_value}
-                    _=> {panic!("Should never happen")}
+                    AnyValue::UInt32(grouping_col_value) => grouping_col_value,
+                    _ => {
+                        panic!("Should never happen")
+                    }
                 };
                 grouping_col_lookup.insert(id_value, grouping_col_value);
             }
-
         } else {
             raw_modified_details = Some(create_raw_details(start_time, end_time));
             for c in tsq.get_ids() {
@@ -196,7 +207,7 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
             //Now we process the data
             for (i, h) in resp.into_iter().enumerate() {
                 let HistoryReadResult {
-                    status_code:_,
+                    status_code: _,
                     continuation_point: _,
                     history_data,
                 } = h;
@@ -230,7 +241,7 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                 let series_vec = series_map.remove(&k).unwrap();
                 let mut first_ts = None;
                 let mut value_vec = vec![];
-                for  (ts, val) in series_vec.into_iter() {
+                for (ts, val) in series_vec.into_iter() {
                     if let Some(_) = &first_ts {
                     } else {
                         first_ts = Some(ts);
@@ -238,10 +249,7 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                     value_vec.push(val);
                 }
                 let mut identifier_series = if let Some(grouping_col) = grouping_col_name {
-                    Series::new_empty(
-                        grouping_col,
-                        &DataType::UInt32,
-                    )
+                    Series::new_empty(grouping_col, &DataType::UInt32)
                 } else {
                     Series::new_empty(
                         tsq.get_identifier_variables().get(0).unwrap().as_str(),
@@ -250,10 +258,13 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                 };
                 identifier_series = if let Some(_) = grouping_col_name {
                     identifier_series
-                        .extend_constant(AnyValue::UInt32(*grouping_col_lookup.get(k.as_str()).unwrap()), first_ts.as_ref().unwrap().len())
+                        .extend_constant(
+                            AnyValue::UInt32(*grouping_col_lookup.get(k.as_str()).unwrap()),
+                            first_ts.as_ref().unwrap().len(),
+                        )
                         .unwrap()
                 } else {
-                   identifier_series
+                    identifier_series
                         .extend_constant(AnyValue::Utf8(&k), first_ts.as_ref().unwrap().len())
                         .unwrap()
                 };
@@ -272,7 +283,11 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
     }
 }
 
-fn validate_tsq(tsq: &TimeSeriesQuery, toplevel: bool, inside_grouping:bool) -> Result<(), OPCUAHistoryReadError> {
+fn validate_tsq(
+    tsq: &TimeSeriesQuery,
+    toplevel: bool,
+    inside_grouping: bool,
+) -> Result<(), OPCUAHistoryReadError> {
     match tsq {
         TimeSeriesQuery::Basic(_) => Ok(()),
         TimeSeriesQuery::Filtered(f, _) => validate_tsq(f, false, inside_grouping),
@@ -286,15 +301,14 @@ fn validate_tsq(tsq: &TimeSeriesQuery, toplevel: bool, inside_grouping:bool) -> 
         TimeSeriesQuery::GroupedBasic(_, _, _) => {
             if inside_grouping {
                 Ok(())
+            } else {
+                Err(OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported)
             }
-            else {Err(OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported)}
         }
         TimeSeriesQuery::InnerSynchronized(_, _) => {
             Err(OPCUAHistoryReadError::TimeSeriesQueryTypeNotSupported)
         }
-        TimeSeriesQuery::ExpressionAs(t, _, _) => {
-            validate_tsq(t, false, inside_grouping)
-        }
+        TimeSeriesQuery::ExpressionAs(t, _, _) => validate_tsq(t, false, inside_grouping),
     }
 }
 
@@ -704,7 +718,7 @@ fn find_grouping_interval_multiplication(a: &Expression, b: &Expression) -> Opti
     if let (Expression::FunctionCall(f, args), Expression::Literal(_)) = (a, b) {
         if f == &Function::Floor && args.len() == 1 {
             if let Expression::Divide(left, right) = args.get(0).unwrap() {
-                if let (Expression::FunctionCall(f,..), Expression::Literal(lit)) =
+                if let (Expression::FunctionCall(f, ..), Expression::Literal(lit)) =
                     (left.as_ref(), right.as_ref())
                 {
                     if let Function::Custom(nn) = f {

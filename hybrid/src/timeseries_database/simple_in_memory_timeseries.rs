@@ -48,7 +48,9 @@ impl InMemoryTimeseriesDatabase {
                         None,
                     )
                     .unwrap();
-                basic_df = basic_df.drop(btsq.identifier_variable.as_ref().unwrap().as_str()).unwrap();
+                basic_df = basic_df
+                    .drop(btsq.identifier_variable.as_ref().unwrap().as_str())
+                    .unwrap();
                 Ok(basic_df)
             }
             TimeSeriesQuery::ExpressionAs(tsq, v, e) => {
@@ -158,12 +160,14 @@ impl InMemoryTimeseriesDatabase {
             }
         }
         let mut groupby = vec![col(grouped.tsq.get_groupby_column().unwrap())];
-        let tsfuncs = grouped.tsq.get_timeseries_functions(&grouped.graph_pattern_context);
+        let tsfuncs = grouped
+            .tsq
+            .get_timeseries_functions(&grouped.graph_pattern_context);
         for b in &grouped.by {
-            for (v,_) in &tsfuncs {
+            for (v, _) in &tsfuncs {
                 if b == *v {
                     groupby.push(col(v.as_str()));
-                    break
+                    break;
                 }
             }
         }

@@ -114,10 +114,10 @@ impl TimeSeriesQuery {
                 }
                 let tsfuncs = g.tsq.get_timeseries_functions(&g.graph_pattern_context);
                 for b in &g.by {
-                    for (v,_) in &tsfuncs {
+                    for (v, _) in &tsfuncs {
                         if b == *v {
                             expected_columns.insert(v.as_str());
-                            break
+                            break;
                         }
                     }
                 }
@@ -130,7 +130,7 @@ impl TimeSeriesQuery {
                 expected.insert(c.as_str());
                 expected.remove(b.identifier_variable.as_ref().unwrap().as_str());
                 expected
-            },
+            }
             TimeSeriesQuery::ExpressionAs(t, ..) => t.expected_columns(),
         }
     }
@@ -296,12 +296,8 @@ impl BasicTimeSeriesQuery {
 impl TimeSeriesQuery {
     pub fn get_groupby_column(&self) -> Option<&String> {
         match self {
-            TimeSeriesQuery::Basic(..) => {
-                None
-            }
-            TimeSeriesQuery::GroupedBasic(_, _, colname) => {
-                Some(colname)
-            }
+            TimeSeriesQuery::Basic(..) => None,
+            TimeSeriesQuery::GroupedBasic(_, _, colname) => Some(colname),
             TimeSeriesQuery::Filtered(tsq, _) => tsq.get_groupby_column(),
             TimeSeriesQuery::InnerSynchronized(tsqs, _) => {
                 let mut colname = None;
@@ -316,23 +312,15 @@ impl TimeSeriesQuery {
                 }
                 colname
             }
-            TimeSeriesQuery::ExpressionAs(tsq, ..) => {
-                tsq.get_groupby_column()
-            }
-            TimeSeriesQuery::Grouped(grouped) => {
-                grouped.tsq.get_groupby_column()
-            }
+            TimeSeriesQuery::ExpressionAs(tsq, ..) => tsq.get_groupby_column(),
+            TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_groupby_column(),
         }
     }
 
     pub fn get_groupby_mapping_df(&self) -> Option<&DataFrame> {
         match self {
-            TimeSeriesQuery::Basic(..) => {
-                None
-            }
-            TimeSeriesQuery::GroupedBasic(_, df, _) => {
-                Some(df)
-            }
+            TimeSeriesQuery::Basic(..) => None,
+            TimeSeriesQuery::GroupedBasic(_, df, _) => Some(df),
             TimeSeriesQuery::Filtered(tsq, _) => tsq.get_groupby_mapping_df(),
             TimeSeriesQuery::InnerSynchronized(tsqs, _) => {
                 let mut colname = None;
@@ -347,12 +335,8 @@ impl TimeSeriesQuery {
                 }
                 colname
             }
-            TimeSeriesQuery::ExpressionAs(tsq, ..) => {
-                tsq.get_groupby_mapping_df()
-            }
-            TimeSeriesQuery::Grouped(grouped) => {
-                grouped.tsq.get_groupby_mapping_df()
-            }
+            TimeSeriesQuery::ExpressionAs(tsq, ..) => tsq.get_groupby_mapping_df(),
+            TimeSeriesQuery::Grouped(grouped) => grouped.tsq.get_groupby_mapping_df(),
         }
     }
 
@@ -392,9 +376,7 @@ impl TimeSeriesQuery {
                 tsfs.extend(tsq.get_timeseries_functions(context));
                 tsfs
             }
-            TimeSeriesQuery::Grouped(tsq,..) => {
-                tsq.tsq.get_timeseries_functions(context)
-            }
+            TimeSeriesQuery::Grouped(tsq, ..) => tsq.tsq.get_timeseries_functions(context),
         }
     }
 }

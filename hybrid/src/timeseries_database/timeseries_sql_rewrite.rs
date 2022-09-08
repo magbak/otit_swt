@@ -636,21 +636,21 @@ fn check_partitioning_support(tables: &Vec<TimeSeriesTable>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::query_context::{
-        Context, VariableInContext,
+    use crate::query_context::{Context, VariableInContext};
+    use crate::timeseries_database::timeseries_sql_rewrite::{
+        TimeSeriesQueryToSQLTransformer, TimeSeriesTable,
     };
-    use crate::timeseries_database::timeseries_sql_rewrite::{TimeSeriesQueryToSQLTransformer, TimeSeriesTable};
     use crate::timeseries_query::{
         BasicTimeSeriesQuery, GroupedTimeSeriesQuery, Synchronizer, TimeSeriesQuery,
     };
     use oxrdf::vocab::xsd;
     use oxrdf::{Literal, NamedNode, Variable};
-    use sea_query::PostgresQueryBuilder;
-    use spargebra::algebra::{AggregateExpression, Expression, Function};
-    use std::vec;
     use polars_core::frame::DataFrame;
     use polars_core::prelude::NamedFrom;
     use polars_core::series::Series;
+    use sea_query::PostgresQueryBuilder;
+    use spargebra::algebra::{AggregateExpression, Expression, Function};
+    use std::vec;
 
     #[test]
     pub fn test_translate() {
@@ -700,7 +700,7 @@ mod tests {
         };
         let tables = vec![table];
         let transformer = TimeSeriesQueryToSQLTransformer::new(&tables);
-        let (sql_query, _) = transformer.create_query(&tsq,  false).unwrap();
+        let (sql_query, _) = transformer.create_query(&tsq, false).unwrap();
         //println!("{}", sql_query)
         assert_eq!(
             &sql_query.to_string(PostgresQueryBuilder),
@@ -752,14 +752,13 @@ mod tests {
                                                     ),
                                                     ids: Some(vec!["id1".to_string()]),
                                                 },
-                                            DataFrame::new(
-                                                vec![Series::new("ts_external_id_1", ["id1"]),
-                                               Series::new("grouping_col_0", [0u32])]
-                                            ).unwrap(),
-                                                "grouping_col_0".to_string()
-                                            ),
-
-                                            ),
+                                                DataFrame::new(vec![
+                                                    Series::new("ts_external_id_1", ["id1"]),
+                                                    Series::new("grouping_col_0", [0u32]),
+                                                ])
+                                                .unwrap(),
+                                                "grouping_col_0".to_string(),
+                                            )),
                                             Box::new(TimeSeriesQuery::GroupedBasic(
                                                 BasicTimeSeriesQuery {
                                                     identifier_variable: Some(
@@ -793,14 +792,13 @@ mod tests {
                                                     ),
                                                     ids: Some(vec!["id2".to_string()]),
                                                 },
-
-                                            DataFrame::new(
-                                                vec![Series::new("ts_external_id_2", ["id2"]),
-                                               Series::new("grouping_col_0", [1u32])]
-                                            ).unwrap(),
-                                                "grouping_col_0".to_string()
-                                            ),
-                                            )
+                                                DataFrame::new(vec![
+                                                    Series::new("ts_external_id_2", ["id2"]),
+                                                    Series::new("grouping_col_0", [1u32]),
+                                                ])
+                                                .unwrap(),
+                                                "grouping_col_0".to_string(),
+                                            )),
                                         ],
                                         vec![Synchronizer::Identity("t".to_string())],
                                     )),
@@ -913,7 +911,7 @@ mod tests {
         };
         let tables = vec![table];
         let transformer = TimeSeriesQueryToSQLTransformer::new(&tables);
-        let (sql_query, _) = transformer.create_query(&tsq,  false).unwrap();
+        let (sql_query, _) = transformer.create_query(&tsq, false).unwrap();
         let expected_str = r#"SELECT AVG("outer_query"."val_dir") AS "f7ca5ee9058effba8691ac9c642fbe95", AVG("outer_query"."val_speed") AS "990362f372e4019bc151c13baf0b50d5", "outer_query"."year" AS "year", "outer_query"."month" AS "month", "outer_query"."day" AS "day", "outer_query"."hour" AS "hour", "outer_query"."minute_10" AS "minute_10", "outer_query"."grouping_col_0" AS "grouping_col_0" FROM (SELECT "inner_query"."day" AS "day", "inner_query"."grouping_col_0" AS "grouping_col_0", "inner_query"."hour" AS "hour", "inner_query"."minute_10" AS "minute_10", "inner_query"."month" AS "month", "inner_query"."t" AS "t", "inner_query"."val_dir" AS "val_dir", "inner_query"."val_speed" AS "val_speed", "inner_query"."year" AS "year" FROM (SELECT "day" AS "day", "grouping_col_0" AS "grouping_col_0", "hour" AS "hour", "minute_10" AS "minute_10", "month" AS "month", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "subquery"."year_partition_column_name" AS "year" FROM (SELECT "day" AS "day", "day_partition_column_name" AS "day_partition_column_name", "grouping_col_0" AS "grouping_col_0", "hour" AS "hour", "minute_10" AS "minute_10", "month_partition_column_name" AS "month_partition_column_name", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "year_partition_column_name" AS "year_partition_column_name", "subquery"."month_partition_column_name" AS "month" FROM (SELECT "day_partition_column_name" AS "day_partition_column_name", "grouping_col_0" AS "grouping_col_0", "hour" AS "hour", "minute_10" AS "minute_10", "month_partition_column_name" AS "month_partition_column_name", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "year_partition_column_name" AS "year_partition_column_name", "subquery"."day_partition_column_name" AS "day" FROM (SELECT "day_partition_column_name" AS "day_partition_column_name", "grouping_col_0" AS "grouping_col_0", "minute_10" AS "minute_10", "month_partition_column_name" AS "month_partition_column_name", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "year_partition_column_name" AS "year_partition_column_name", date_part('hour', "subquery"."t") AS "hour" FROM (SELECT "day_partition_column_name" AS "day_partition_column_name", "grouping_col_0" AS "grouping_col_0", "month_partition_column_name" AS "month_partition_column_name", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "year_partition_column_name" AS "year_partition_column_name", CAST(FLOOR(date_part('minute', "subquery"."t") / 10), 'BIGINT') AS "minute_10" FROM (SELECT "first_query"."day_partition_column_name" AS "day_partition_column_name", "first_query"."grouping_col_0" AS "grouping_col_0", "first_query"."month_partition_column_name" AS "month_partition_column_name", "first_query"."t" AS "t", "first_query"."val_speed" AS "val_speed", "first_query"."year_partition_column_name" AS "year_partition_column_name", "other_0"."day_partition_column_name" AS "day_partition_column_name", "other_0"."grouping_col_0" AS "grouping_col_0", "other_0"."month_partition_column_name" AS "month_partition_column_name", "other_0"."val_dir" AS "val_dir", "other_0"."year_partition_column_name" AS "year_partition_column_name" FROM (SELECT "basic_query"."day_partition_column_name" AS "day_partition_column_name", "basic_query"."month_partition_column_name" AS "month_partition_column_name", "basic_query"."t" AS "t", "basic_query"."val_speed" AS "val_speed", "basic_query"."year_partition_column_name" AS "year_partition_column_name", "static_query"."grouping_col_0" AS "grouping_col_0" FROM (SELECT "dir2" AS "day_partition_column_name", "dir1" AS "month_partition_column_name", "timestamp" AS "t", "dir3" AS "ts_external_id_1", "value" AS "val_speed", "dir0" AS "year_partition_column_name" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('id1')) AS "basic_query" INNER JOIN (SELECT "mapping"."column1" AS "ts_external_id_1", "mapping"."column2" AS "grouping_col_0" FROM (VALUES ('id1', 0)) AS "mapping") AS "static_query" ON "static_query"."ts_external_id_1" = "basic_query"."ts_external_id_1") AS "first_query" INNER JOIN (SELECT "basic_query"."day_partition_column_name" AS "day_partition_column_name", "basic_query"."month_partition_column_name" AS "month_partition_column_name", "basic_query"."t" AS "t", "basic_query"."val_dir" AS "val_dir", "basic_query"."year_partition_column_name" AS "year_partition_column_name", "static_query"."grouping_col_0" AS "grouping_col_0" FROM (SELECT "dir2" AS "day_partition_column_name", "dir1" AS "month_partition_column_name", "timestamp" AS "t", "dir3" AS "ts_external_id_2", "value" AS "val_dir", "dir0" AS "year_partition_column_name" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('id2')) AS "basic_query" INNER JOIN (SELECT "mapping"."column1" AS "ts_external_id_2", "mapping"."column2" AS "grouping_col_0" FROM (VALUES ('id2', 1)) AS "mapping") AS "static_query" ON "static_query"."ts_external_id_2" = "basic_query"."ts_external_id_2") AS "other_0" ON ("first_query"."grouping_col_0" = "other_0"."grouping_col_0") AND ("first_query"."t" = "other_0"."t") AND ("first_query"."year_partition_column_name" = "other_0"."year_partition_column_name") AND ("first_query"."month_partition_column_name" = "other_0"."month_partition_column_name") AND ("first_query"."day_partition_column_name" = "other_0"."day_partition_column_name") WHERE ("year_partition_column_name" > 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" > 8)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" > 30) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" = 30) AND ("t" >= '2022-08-30 08:46:53') AND (("year_partition_column_name" < 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" < 8)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" < 30) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" = 30) AND ("t" <= '2022-08-30 21:46:53'))) AS "subquery") AS "subquery") AS "subquery") AS "subquery") AS "subquery") AS "inner_query") AS "outer_query" GROUP BY "outer_query"."year", "outer_query"."month", "outer_query"."day", "outer_query"."hour", "outer_query"."minute_10", "outer_query"."grouping_col_0""#;
         assert_eq!(expected_str, sql_query.to_string(PostgresQueryBuilder));
     }

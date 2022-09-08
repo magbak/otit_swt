@@ -1,6 +1,6 @@
 use oxrdf::vocab::xsd;
 use oxrdf::{Literal, NamedNode, Term};
-use polars::export::chrono::NaiveDateTime;
+use polars::export::chrono::{DateTime, NaiveDateTime, Utc};
 use polars::prelude::{DataFrame, LiteralValue, NamedFrom, Series, TimeUnit};
 use sparesults::QuerySolution;
 use spargebra::algebra::GraphPattern;
@@ -96,10 +96,17 @@ pub(crate) fn sparql_literal_to_polars_literal_value(lit: &Literal) -> LiteralVa
         let b = bool::from_str(value).expect("Boolean parsing error");
         LiteralValue::Boolean(b)
     } else if datatype == xsd::DATE_TIME {
-        let dt = value
-            .parse::<NaiveDateTime>()
-            .expect("Datetime parsing error");
-        LiteralValue::DateTime(dt, TimeUnit::Nanoseconds)
+        let dt_without_tz = value.parse::<NaiveDateTime>();
+        if let Ok(dt) = dt_without_tz {
+            LiteralValue::DateTime(dt, TimeUnit::Nanoseconds)
+        } else {
+            let dt_without_tz = value.parse::<DateTime<Utc>>();
+            if let Ok(dt) = dt_without_tz {
+                LiteralValue::DateTime(dt.naive_utc(), TimeUnit::Nanoseconds)
+            } else {
+                panic!("Could not parse datetime: {}", value);
+            }
+        }
     } else if datatype == xsd::DECIMAL {
         let d = f64::from_str(value).expect("Decimal parsing error");
         LiteralValue::Float64(d)

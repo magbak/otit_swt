@@ -120,10 +120,9 @@ impl TimeSeriesQueryPrepper {
             GraphPattern::Reduced { inner } => {
                 self.prepare_reduced(inner, try_groupby_complex_query, context)
             }
-            GraphPattern::Slice {
-                inner,
-                ..
-            } => self.prepare_slice(inner,  try_groupby_complex_query, context),
+            GraphPattern::Slice { inner, .. } => {
+                self.prepare_slice(inner, try_groupby_complex_query, context)
+            }
             GraphPattern::Group {
                 inner,
                 variables,

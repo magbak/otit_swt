@@ -438,7 +438,10 @@ pub fn lazy_expression(
                     columns,
                     time_series,
                     args_contexts.get(i).unwrap(),
-                ).collect().unwrap().lazy(); //TODO: workaround for stack overflow - post bug?
+                )
+                .collect()
+                .unwrap()
+                .lazy(); //TODO: workaround for stack overflow - post bug?
             }
             match func {
                 Function::Year => {

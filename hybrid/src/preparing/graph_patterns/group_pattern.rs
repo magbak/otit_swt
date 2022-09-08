@@ -55,7 +55,7 @@ impl TimeSeriesQueryPrepper {
                         by,
                         aggregations: aggregations.clone(),
                     });
-                    return GPPrepReturn::new(vec![tsq])
+                    return GPPrepReturn::new(vec![tsq]);
                 }
             }
         }
@@ -70,7 +70,15 @@ impl TimeSeriesQueryPrepper {
     fn add_grouping_col(&mut self, by: &Vec<Variable>) -> String {
         let grouping_col = format!("{}_{}", GROUPING_COL, self.grouping_counter);
         self.grouping_counter += 1;
-        let by_names: Vec<String> = by.iter().filter(|x|self.static_result_df.get_column_names().contains(&x.as_str())).map(|x| x.as_str().to_string()).collect();
+        let by_names: Vec<String> = by
+            .iter()
+            .filter(|x| {
+                self.static_result_df
+                    .get_column_names()
+                    .contains(&x.as_str())
+            })
+            .map(|x| x.as_str().to_string())
+            .collect();
         let mut df = self
             .static_result_df
             .select(by_names.as_slice())
