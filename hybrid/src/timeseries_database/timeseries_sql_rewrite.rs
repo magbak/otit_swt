@@ -266,7 +266,7 @@ impl TimeSeriesQueryToSQLTransformer<'_> {
             } else {
                 panic!("Should never happen");
             };
-            let grp_value = if let AnyValue::UInt32(grp_value) = grp {
+            let grp_value = if let AnyValue::Int32(grp_value) = grp {
                 grp_value
             } else {
                 panic!("Should never happen");
