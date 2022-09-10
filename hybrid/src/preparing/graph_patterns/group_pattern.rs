@@ -92,7 +92,7 @@ impl TimeSeriesQueryPrepper {
             .unwrap()
             .unique(Some(by_names.as_slice()), UniqueKeepStrategy::First)
             .unwrap();
-        let mut series = Series::from_iter(0..(df.height() as i32));
+        let mut series = Series::from_iter(0..(df.height() as i64));
         series.rename(&grouping_col);
         df.with_column(series).unwrap();
         self.static_result_df = self

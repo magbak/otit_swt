@@ -139,7 +139,7 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                     }
                 };
                 let grouping_col_value = match grouping_col_iter.next().unwrap() {
-                    AnyValue::Int32(grouping_col_value) => grouping_col_value,
+                    AnyValue::Int64(grouping_col_value) => grouping_col_value,
                     _ => {
                         panic!("Should never happen")
                     }
@@ -249,7 +249,7 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                     value_vec.push(val);
                 }
                 let mut identifier_series = if let Some(grouping_col) = grouping_col_name {
-                    Series::new_empty(grouping_col, &DataType::Int32)
+                    Series::new_empty(grouping_col, &DataType::Int64)
                 } else {
                     Series::new_empty(
                         tsq.get_identifier_variables().get(0).unwrap().as_str(),
@@ -259,7 +259,7 @@ impl TimeSeriesQueryable for OPCUAHistoryRead {
                 identifier_series = if let Some(_) = grouping_col_name {
                     identifier_series
                         .extend_constant(
-                            AnyValue::Int32(*grouping_col_lookup.get(k.as_str()).unwrap()),
+                            AnyValue::Int64(*grouping_col_lookup.get(k.as_str()).unwrap()),
                             first_ts.as_ref().unwrap().len(),
                         )
                         .unwrap()
