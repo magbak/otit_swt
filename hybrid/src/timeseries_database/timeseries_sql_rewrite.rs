@@ -132,7 +132,7 @@ impl TimeSeriesQueryToSQLTransformer<'_> {
                     ),
                 )?;
 
-                let (select, columns) =
+                let (select, mut columns) =
                     self.create_query(tsq, need_partition_columns || project_date_partition)?;
 
                 let wraps_inner = if let TimeSeriesQuery::Basic(_) = **tsq {
@@ -145,18 +145,17 @@ impl TimeSeriesQueryToSQLTransformer<'_> {
                     let alias = "filtering_query";
                     let mut outer_select = Query::select();
                     outer_select.from_subquery(select, Alias::new(alias));
+                    if !project_date_partition && need_partition_columns {
+                        columns.remove(YEAR_PARTITION_COLUMN_NAME);
+                        columns.remove(MONTH_PARTITION_COLUMN_NAME);
+                        columns.remove(DAY_PARTITION_COLUMN_NAME);
+                    }
                     let mut sorted_cols: Vec<&String> = columns.iter().collect();
                     sorted_cols.sort();
                     for c in sorted_cols {
-                        if !(!project_date_partition && need_partition_columns)
-                            || (c != YEAR_PARTITION_COLUMN_NAME
-                                && c != MONTH_PARTITION_COLUMN_NAME
-                                && c != DAY_PARTITION_COLUMN_NAME)
-                        {
-                            outer_select.expr(SimpleExpr::Column(ColumnRef::Column(Rc::new(
-                                Name::Column(c.clone()),
-                            ))));
-                        }
+                        outer_select.expr(SimpleExpr::Column(ColumnRef::Column(Rc::new(
+                            Name::Column(c.clone()),
+                        ))));
                     }
                     use_select = outer_select;
                 } else {
