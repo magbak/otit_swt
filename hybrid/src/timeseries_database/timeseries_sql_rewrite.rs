@@ -774,7 +774,7 @@ mod tests {
                                                 },
                                                 DataFrame::new(vec![
                                                     Series::new("ts_external_id_1", ["id1"]),
-                                                    Series::new("grouping_col_0", [0u32]),
+                                                    Series::new("grouping_col_0", [0i32]),
                                                 ])
                                                 .unwrap(),
                                                 "grouping_col_0".to_string(),
@@ -814,7 +814,7 @@ mod tests {
                                                 },
                                                 DataFrame::new(vec![
                                                     Series::new("ts_external_id_2", ["id2"]),
-                                                    Series::new("grouping_col_0", [1u32]),
+                                                    Series::new("grouping_col_0", [1i32]),
                                                 ])
                                                 .unwrap(),
                                                 "grouping_col_0".to_string(),
