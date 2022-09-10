@@ -81,7 +81,10 @@ def test_dsl_query(dremio_testdata, oxigraph_testdata):
     to 2023-12-02T00:00:01+00:00
     aggregate mean 5s
     """)
+    df = df.sort(["BigWidget_ImportantSensor__path_name", "timestamp"])
+
     expected_csv = TESTDATA_PATH / "expected_dsl_query.csv"
     #df.to_csv(expected_csv)
     expected_df = pl.read_csv(expected_csv, parse_dates=True)
+    expected_df = expected_df.sort(["BigWidget_ImportantSensor__path_name", "timestamp"])
     pl.testing.assert_frame_equal(df, expected_df, check_dtype=False)
