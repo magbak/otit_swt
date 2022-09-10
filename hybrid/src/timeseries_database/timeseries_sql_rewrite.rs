@@ -221,6 +221,11 @@ impl TimeSeriesQueryToSQLTransformer<'_> {
             tsq,
             project_date_partition || expr_transformer.used_partitioning,
         )?;
+        if !project_date_partition && expr_transformer.used_partitioning {
+            columns.remove(YEAR_PARTITION_COLUMN_NAME);
+            columns.remove(MONTH_PARTITION_COLUMN_NAME);
+            columns.remove(DAY_PARTITION_COLUMN_NAME);
+        }
 
         let mut expression_select = Query::select();
         expression_select.from_subquery(select, Alias::new(subquery_alias));
@@ -276,14 +281,14 @@ impl TimeSeriesQueryToSQLTransformer<'_> {
         static_select.expr_as(
             SimpleExpr::Column(ColumnRef::TableColumn(
                 Rc::new(Name::Table(mapping_values_alias.to_string())),
-                Rc::new(Name::Column("column1".to_string())),
+                Rc::new(Name::Column("EXPR$0".to_string())),
             )),
             Alias::new(identifier_colname),
         );
         static_select.expr_as(
             SimpleExpr::Column(ColumnRef::TableColumn(
                 Rc::new(Name::Table(mapping_values_alias.to_string())),
-                Rc::new(Name::Column("column2".to_string())),
+                Rc::new(Name::Column("EXPR$1".to_string())),
             )),
             Alias::new(column_name),
         );
@@ -484,10 +489,15 @@ impl TimeSeriesQueryToSQLTransformer<'_> {
             aggs.push(agg_transformer.sparql_aggregate_expression_to_sql_expression(agg)?);
         }
 
-        let (query, columns) = self.create_query(
+        let (query, mut columns) = self.create_query(
             &inner_tsq,
             agg_transformer.used_partitioning || project_date_partition,
         )?;
+        if !project_date_partition && agg_transformer.used_partitioning {
+            columns.remove(YEAR_PARTITION_COLUMN_NAME);
+            columns.remove(MONTH_PARTITION_COLUMN_NAME);
+            columns.remove(DAY_PARTITION_COLUMN_NAME);
+        }
         let mut inner_query = Query::select();
 
         inner_query.from_subquery(query, inner_query_name.clone());
@@ -586,26 +596,37 @@ impl TimeSeriesTable {
                 .to_string(),
             self.timestamp_column.clone(),
         );
+        let mut projection_column_name_map = HashMap::new();
         if project_date_partition {
-            variable_column_name_map.insert(
+            projection_column_name_map.insert(
                 YEAR_PARTITION_COLUMN_NAME.to_string(),
                 self.year_column.as_ref().unwrap().clone(),
             );
-            variable_column_name_map.insert(
+            projection_column_name_map.insert(
                 MONTH_PARTITION_COLUMN_NAME.to_string(),
                 self.month_column.as_ref().unwrap().clone(),
             );
-            variable_column_name_map.insert(
+            projection_column_name_map.insert(
                 DAY_PARTITION_COLUMN_NAME.to_string(),
                 self.day_column.as_ref().unwrap().clone(),
             );
         }
+        let mut columns = HashSet::new();
 
         let mut kvs: Vec<_> = variable_column_name_map.iter().collect();
         kvs.sort();
         for (k, v) in kvs {
             basic_query.expr_as(SeaExpr::col(Name::Column(v.clone())), Alias::new(k));
+            columns.insert(k.clone());
         }
+
+        let mut kvs: Vec<_> = projection_column_name_map.iter().collect();
+        kvs.sort();
+        for (k, v) in kvs {
+            basic_query.expr_as(SeaExpr::col(Name::Column(v.clone())).as_enum(Alias::new("INTEGER")), Alias::new(k));
+            columns.insert(k.clone());
+        }
+
         if let Some(schema) = &self.schema {
             basic_query.from((
                 Name::Schema(schema.clone()),
@@ -624,7 +645,7 @@ impl TimeSeriesTable {
             );
         }
 
-        Ok((basic_query, variable_column_name_map.into_keys().collect()))
+        Ok((basic_query, columns))
     }
 }
 
@@ -704,7 +725,7 @@ mod tests {
         //println!("{}", sql_query)
         assert_eq!(
             &sql_query.to_string(PostgresQueryBuilder),
-            r#"SELECT "id", "t", "v" FROM (SELECT "dir2" AS "day_partition_column_name", "dir3" AS "id", "dir1" AS "month_partition_column_name", "timestamp" AS "t", "value" AS "v", "dir0" AS "year_partition_column_name" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('A', 'B')) AS "filtering_query" WHERE ("year_partition_column_name" < 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" < 6)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 6) AND ("day_partition_column_name" < 1) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 6) AND ("day_partition_column_name" = 1) AND ("t" <= '2022-06-01 08:46:53')"#
+            r#"SELECT "id", "t", "v" FROM (SELECT "dir3" AS "id", "timestamp" AS "t", "value" AS "v", CAST("dir2" AS INTEGER) AS "day_partition_column_name", CAST("dir1" AS INTEGER) AS "month_partition_column_name", CAST("dir0" AS INTEGER) AS "year_partition_column_name" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('A', 'B')) AS "filtering_query" WHERE ("year_partition_column_name" < 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" < 6)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 6) AND ("day_partition_column_name" < 1) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 6) AND ("day_partition_column_name" = 1) AND ("t" <= '2022-06-01 08:46:53')"#
         );
     }
 
@@ -912,7 +933,7 @@ mod tests {
         let tables = vec![table];
         let transformer = TimeSeriesQueryToSQLTransformer::new(&tables);
         let (sql_query, _) = transformer.create_query(&tsq, false).unwrap();
-        let expected_str = r#"SELECT AVG("outer_query"."val_dir") AS "f7ca5ee9058effba8691ac9c642fbe95", AVG("outer_query"."val_speed") AS "990362f372e4019bc151c13baf0b50d5", "outer_query"."year" AS "year", "outer_query"."month" AS "month", "outer_query"."day" AS "day", "outer_query"."hour" AS "hour", "outer_query"."minute_10" AS "minute_10", "outer_query"."grouping_col_0" AS "grouping_col_0" FROM (SELECT "inner_query"."day" AS "day", "inner_query"."grouping_col_0" AS "grouping_col_0", "inner_query"."hour" AS "hour", "inner_query"."minute_10" AS "minute_10", "inner_query"."month" AS "month", "inner_query"."t" AS "t", "inner_query"."val_dir" AS "val_dir", "inner_query"."val_speed" AS "val_speed", "inner_query"."year" AS "year" FROM (SELECT "day" AS "day", "grouping_col_0" AS "grouping_col_0", "hour" AS "hour", "minute_10" AS "minute_10", "month" AS "month", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "subquery"."year_partition_column_name" AS "year" FROM (SELECT "day" AS "day", "day_partition_column_name" AS "day_partition_column_name", "grouping_col_0" AS "grouping_col_0", "hour" AS "hour", "minute_10" AS "minute_10", "month_partition_column_name" AS "month_partition_column_name", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "year_partition_column_name" AS "year_partition_column_name", "subquery"."month_partition_column_name" AS "month" FROM (SELECT "day_partition_column_name" AS "day_partition_column_name", "grouping_col_0" AS "grouping_col_0", "hour" AS "hour", "minute_10" AS "minute_10", "month_partition_column_name" AS "month_partition_column_name", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "year_partition_column_name" AS "year_partition_column_name", "subquery"."day_partition_column_name" AS "day" FROM (SELECT "day_partition_column_name" AS "day_partition_column_name", "grouping_col_0" AS "grouping_col_0", "minute_10" AS "minute_10", "month_partition_column_name" AS "month_partition_column_name", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "year_partition_column_name" AS "year_partition_column_name", date_part('hour', "subquery"."t") AS "hour" FROM (SELECT "day_partition_column_name" AS "day_partition_column_name", "grouping_col_0" AS "grouping_col_0", "month_partition_column_name" AS "month_partition_column_name", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "year_partition_column_name" AS "year_partition_column_name", CAST(FLOOR(date_part('minute', "subquery"."t") / 10), 'BIGINT') AS "minute_10" FROM (SELECT "first_query"."day_partition_column_name" AS "day_partition_column_name", "first_query"."grouping_col_0" AS "grouping_col_0", "first_query"."month_partition_column_name" AS "month_partition_column_name", "first_query"."t" AS "t", "first_query"."val_speed" AS "val_speed", "first_query"."year_partition_column_name" AS "year_partition_column_name", "other_0"."day_partition_column_name" AS "day_partition_column_name", "other_0"."grouping_col_0" AS "grouping_col_0", "other_0"."month_partition_column_name" AS "month_partition_column_name", "other_0"."val_dir" AS "val_dir", "other_0"."year_partition_column_name" AS "year_partition_column_name" FROM (SELECT "basic_query"."day_partition_column_name" AS "day_partition_column_name", "basic_query"."month_partition_column_name" AS "month_partition_column_name", "basic_query"."t" AS "t", "basic_query"."val_speed" AS "val_speed", "basic_query"."year_partition_column_name" AS "year_partition_column_name", "static_query"."grouping_col_0" AS "grouping_col_0" FROM (SELECT "dir2" AS "day_partition_column_name", "dir1" AS "month_partition_column_name", "timestamp" AS "t", "dir3" AS "ts_external_id_1", "value" AS "val_speed", "dir0" AS "year_partition_column_name" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('id1')) AS "basic_query" INNER JOIN (SELECT "mapping"."column1" AS "ts_external_id_1", "mapping"."column2" AS "grouping_col_0" FROM (VALUES ('id1', 0)) AS "mapping") AS "static_query" ON "static_query"."ts_external_id_1" = "basic_query"."ts_external_id_1") AS "first_query" INNER JOIN (SELECT "basic_query"."day_partition_column_name" AS "day_partition_column_name", "basic_query"."month_partition_column_name" AS "month_partition_column_name", "basic_query"."t" AS "t", "basic_query"."val_dir" AS "val_dir", "basic_query"."year_partition_column_name" AS "year_partition_column_name", "static_query"."grouping_col_0" AS "grouping_col_0" FROM (SELECT "dir2" AS "day_partition_column_name", "dir1" AS "month_partition_column_name", "timestamp" AS "t", "dir3" AS "ts_external_id_2", "value" AS "val_dir", "dir0" AS "year_partition_column_name" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('id2')) AS "basic_query" INNER JOIN (SELECT "mapping"."column1" AS "ts_external_id_2", "mapping"."column2" AS "grouping_col_0" FROM (VALUES ('id2', 1)) AS "mapping") AS "static_query" ON "static_query"."ts_external_id_2" = "basic_query"."ts_external_id_2") AS "other_0" ON ("first_query"."grouping_col_0" = "other_0"."grouping_col_0") AND ("first_query"."t" = "other_0"."t") AND ("first_query"."year_partition_column_name" = "other_0"."year_partition_column_name") AND ("first_query"."month_partition_column_name" = "other_0"."month_partition_column_name") AND ("first_query"."day_partition_column_name" = "other_0"."day_partition_column_name") WHERE ("year_partition_column_name" > 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" > 8)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" > 30) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" = 30) AND ("t" >= '2022-08-30 08:46:53') AND (("year_partition_column_name" < 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" < 8)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" < 30) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" = 30) AND ("t" <= '2022-08-30 21:46:53'))) AS "subquery") AS "subquery") AS "subquery") AS "subquery") AS "subquery") AS "inner_query") AS "outer_query" GROUP BY "outer_query"."year", "outer_query"."month", "outer_query"."day", "outer_query"."hour", "outer_query"."minute_10", "outer_query"."grouping_col_0""#;
+        let expected_str = r#"SELECT AVG("outer_query"."val_dir") AS "f7ca5ee9058effba8691ac9c642fbe95", AVG("outer_query"."val_speed") AS "990362f372e4019bc151c13baf0b50d5", "outer_query"."year" AS "year", "outer_query"."month" AS "month", "outer_query"."day" AS "day", "outer_query"."hour" AS "hour", "outer_query"."minute_10" AS "minute_10", "outer_query"."grouping_col_0" AS "grouping_col_0" FROM (SELECT "inner_query"."day" AS "day", "inner_query"."grouping_col_0" AS "grouping_col_0", "inner_query"."hour" AS "hour", "inner_query"."minute_10" AS "minute_10", "inner_query"."month" AS "month", "inner_query"."t" AS "t", "inner_query"."val_dir" AS "val_dir", "inner_query"."val_speed" AS "val_speed", "inner_query"."year" AS "year" FROM (SELECT "day" AS "day", "grouping_col_0" AS "grouping_col_0", "hour" AS "hour", "minute_10" AS "minute_10", "month" AS "month", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "subquery"."year_partition_column_name" AS "year" FROM (SELECT "day" AS "day", "day_partition_column_name" AS "day_partition_column_name", "grouping_col_0" AS "grouping_col_0", "hour" AS "hour", "minute_10" AS "minute_10", "month_partition_column_name" AS "month_partition_column_name", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "year_partition_column_name" AS "year_partition_column_name", "subquery"."month_partition_column_name" AS "month" FROM (SELECT "day_partition_column_name" AS "day_partition_column_name", "grouping_col_0" AS "grouping_col_0", "hour" AS "hour", "minute_10" AS "minute_10", "month_partition_column_name" AS "month_partition_column_name", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "year_partition_column_name" AS "year_partition_column_name", "subquery"."day_partition_column_name" AS "day" FROM (SELECT "day_partition_column_name" AS "day_partition_column_name", "grouping_col_0" AS "grouping_col_0", "minute_10" AS "minute_10", "month_partition_column_name" AS "month_partition_column_name", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "year_partition_column_name" AS "year_partition_column_name", date_part('hour', "subquery"."t") AS "hour" FROM (SELECT "day_partition_column_name" AS "day_partition_column_name", "grouping_col_0" AS "grouping_col_0", "month_partition_column_name" AS "month_partition_column_name", "t" AS "t", "val_dir" AS "val_dir", "val_speed" AS "val_speed", "year_partition_column_name" AS "year_partition_column_name", CAST(FLOOR(date_part('minute', "subquery"."t") / 10) AS INTEGER) AS "minute_10" FROM (SELECT "first_query"."day_partition_column_name" AS "day_partition_column_name", "first_query"."grouping_col_0" AS "grouping_col_0", "first_query"."month_partition_column_name" AS "month_partition_column_name", "first_query"."t" AS "t", "first_query"."val_speed" AS "val_speed", "first_query"."year_partition_column_name" AS "year_partition_column_name", "other_0"."day_partition_column_name" AS "day_partition_column_name", "other_0"."grouping_col_0" AS "grouping_col_0", "other_0"."month_partition_column_name" AS "month_partition_column_name", "other_0"."val_dir" AS "val_dir", "other_0"."year_partition_column_name" AS "year_partition_column_name" FROM (SELECT "basic_query"."day_partition_column_name" AS "day_partition_column_name", "basic_query"."month_partition_column_name" AS "month_partition_column_name", "basic_query"."t" AS "t", "basic_query"."val_speed" AS "val_speed", "basic_query"."year_partition_column_name" AS "year_partition_column_name", "static_query"."grouping_col_0" AS "grouping_col_0" FROM (SELECT "timestamp" AS "t", "dir3" AS "ts_external_id_1", "value" AS "val_speed", CAST("dir2" AS INTEGER) AS "day_partition_column_name", CAST("dir1" AS INTEGER) AS "month_partition_column_name", CAST("dir0" AS INTEGER) AS "year_partition_column_name" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('id1')) AS "basic_query" INNER JOIN (SELECT "mapping"."EXPR$0" AS "ts_external_id_1", "mapping"."EXPR$1" AS "grouping_col_0" FROM (VALUES ('id1', 0)) AS "mapping") AS "static_query" ON "static_query"."ts_external_id_1" = "basic_query"."ts_external_id_1") AS "first_query" INNER JOIN (SELECT "basic_query"."day_partition_column_name" AS "day_partition_column_name", "basic_query"."month_partition_column_name" AS "month_partition_column_name", "basic_query"."t" AS "t", "basic_query"."val_dir" AS "val_dir", "basic_query"."year_partition_column_name" AS "year_partition_column_name", "static_query"."grouping_col_0" AS "grouping_col_0" FROM (SELECT "timestamp" AS "t", "dir3" AS "ts_external_id_2", "value" AS "val_dir", CAST("dir2" AS INTEGER) AS "day_partition_column_name", CAST("dir1" AS INTEGER) AS "month_partition_column_name", CAST("dir0" AS INTEGER) AS "year_partition_column_name" FROM "s3.otit-benchmark"."timeseries_double" WHERE "dir3" IN ('id2')) AS "basic_query" INNER JOIN (SELECT "mapping"."EXPR$0" AS "ts_external_id_2", "mapping"."EXPR$1" AS "grouping_col_0" FROM (VALUES ('id2', 1)) AS "mapping") AS "static_query" ON "static_query"."ts_external_id_2" = "basic_query"."ts_external_id_2") AS "other_0" ON ("first_query"."grouping_col_0" = "other_0"."grouping_col_0") AND ("first_query"."t" = "other_0"."t") AND ("first_query"."year_partition_column_name" = "other_0"."year_partition_column_name") AND ("first_query"."month_partition_column_name" = "other_0"."month_partition_column_name") AND ("first_query"."day_partition_column_name" = "other_0"."day_partition_column_name") WHERE ("year_partition_column_name" > 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" > 8)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" > 30) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" = 30) AND ("t" >= '2022-08-30 08:46:53') AND (("year_partition_column_name" < 2022) OR (("year_partition_column_name" = 2022) AND ("month_partition_column_name" < 8)) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" < 30) OR ("year_partition_column_name" = 2022) AND ("month_partition_column_name" = 8) AND ("day_partition_column_name" = 30) AND ("t" <= '2022-08-30 21:46:53'))) AS "subquery") AS "subquery") AS "subquery") AS "subquery") AS "subquery") AS "inner_query") AS "outer_query" GROUP BY "outer_query"."year", "outer_query"."month", "outer_query"."day", "outer_query"."hour", "outer_query"."minute_10", "outer_query"."grouping_col_0""#;
         assert_eq!(expected_str, sql_query.to_string(PostgresQueryBuilder));
     }
 }

@@ -45,14 +45,21 @@ impl TimeSeriesQueryPrepper {
                         &self.static_result_df,
                         &grouping_col,
                     );
-                    let mut by = by.clone();
-                    by.push(Variable::new_unchecked(&grouping_col));
+                    let tsfuncs = tsq.get_timeseries_functions(context);
+                    let mut keep_by = vec![Variable::new_unchecked(&grouping_col)];
+                    for v in by {
+                        for (v2,_) in &tsfuncs {
+                            if v2.as_str() == v.as_str() {
+                                keep_by.push(v.clone())
+                            }
+                        }
+                    }
                     //TODO: For OPC UA we must ensure that mapping df is 1:1 with identities, or alternatively group on these
 
                     tsq = TimeSeriesQuery::Grouped(GroupedTimeSeriesQuery {
                         tsq: Box::new(tsq),
                         graph_pattern_context: context.clone(),
-                        by,
+                        by:keep_by,
                         aggregations: aggregations.clone(),
                     });
                     return GPPrepReturn::new(vec![tsq]);
