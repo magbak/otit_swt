@@ -43,7 +43,7 @@ impl StaticQueryRewriter {
             && left_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange
         {
             if expressions_rewritten.iter().all(|x| {
-                x.expression.is_none() && x.change_type.as_ref().unwrap() == &ChangeType::NoChange
+                x.expression.is_some() && x.change_type.as_ref().unwrap() == &ChangeType::NoChange
             }) {
                 let left_expression_rewrite = left_rewrite.expression.take().unwrap();
                 let expressions_rewritten_nochange = expressions_rewritten
@@ -59,6 +59,7 @@ impl StaticQueryRewriter {
                     expressions_rewritten_nochange,
                 ))
                 .with_change_type(ChangeType::NoChange);
+                println!("Nochange in");
                 return exr;
             }
 
