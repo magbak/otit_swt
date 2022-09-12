@@ -228,6 +228,7 @@ impl TimeSeriesQueryable for ArrowFlightSQLDatabase {
             let transformer = TimeSeriesQueryToSQLTransformer::new(&self.time_series_tables);
             let (query, _) = transformer.create_query(tsq, false)?;
             query_string = query.to_string(PostgresQueryBuilder);
+            debug!("SQL: {}", query_string);
         }
         Ok(self.execute_sql_query(query_string).await?)
     }

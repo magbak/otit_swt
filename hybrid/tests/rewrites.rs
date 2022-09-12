@@ -1,3 +1,6 @@
+use oxrdf::vocab::xsd;
+use polars_core::frame::DataFrame;
+use polars_core::series::Series;
 use hybrid::preprocessing::Preprocessor;
 use hybrid::query_context::{Context, PathEntry, VariableInContext};
 use hybrid::rewriting::StaticQueryRewriter;

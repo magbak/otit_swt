@@ -59,7 +59,6 @@ impl StaticQueryRewriter {
                     expressions_rewritten_nochange,
                 ))
                 .with_change_type(ChangeType::NoChange);
-                println!("Nochange in");
                 return exr;
             }
 
