@@ -4,7 +4,7 @@ use std::cmp::min;
 use std::fmt;
 use std::fmt::Formatter;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PathEntry {
     BGP,
     UnionLeftSide,
@@ -259,7 +259,7 @@ impl fmt::Display for PathEntry {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub struct Context {
     string_rep: String,
     pub path: Vec<PathEntry>,

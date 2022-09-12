@@ -79,12 +79,14 @@ impl Engine {
         )?;
         let static_result_df =
             create_static_query_result_df(&static_rewrite, static_query_solutions);
+        let StaticQueryRewriter { rewritten_filters , ..} = rewriter;
         let mut prepper = TimeSeriesQueryPrepper::new(
             self.pushdown_settings.clone(),
             self.time_series_database
                 .allow_compound_timeseries_queries(),
             basic_time_series_queries,
             static_result_df,
+            rewritten_filters
         );
         let time_series_queries = prepper.prepare(&parsed_query);
         let TimeSeriesQueryPrepper {

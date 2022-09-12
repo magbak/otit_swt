@@ -42,9 +42,10 @@ impl TimeSeriesQueryPrepper {
                 expression,
                 &use_change_type,
                 context,
+                self.rewritten_filters.get(&context),
                 &self.pushdown_settings,
             );
-            if try_groupby_complex_query && lost_value {
+            if try_groupby_complex_query && (lost_value || time_series_condition.is_none()) {
                 return GPPrepReturn::fail_groupby_complex_query();
             }
             if let Some(expr) = time_series_condition {
