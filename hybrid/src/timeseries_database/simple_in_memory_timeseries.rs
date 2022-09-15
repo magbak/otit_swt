@@ -152,7 +152,7 @@ impl InMemoryTimeseriesDatabase {
                     &columns,
                     out_lf,
                     &mut vec![],
-                    &grouped.graph_pattern_context,
+                    &grouped.graph_pattern_context.extension_with(PathEntry::GroupAggregation(i as u16)),
                 );
             out_lf = lf;
             aggregation_exprs.push(agg_expr);

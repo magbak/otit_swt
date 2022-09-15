@@ -46,7 +46,6 @@ impl TimeSeriesQueryPrepper {
                 &conj_vec,
                 &self.pushdown_settings,
             );
-            println!("Expression: {:?}, {:?}", expression, time_series_condition);
             if try_groupby_complex_query && (lost_value || time_series_condition.is_none()) {
                 return GPPrepReturn::fail_groupby_complex_query();
             }

@@ -129,7 +129,6 @@ GROUP BY ?site_label ?wtur_label ?year ?month ?day ?hour ?minute_10
         .execute_hybrid_query(query, QUERY_ENDPOINT)
         .await
         .expect("Hybrid error").sort(vec!["site_label", "wtur_label", "year", "month", "day", "hour", "minute_10"], false).unwrap();
-    println!("DF: {}", df);
 
     let mut file_path = testdata_path.clone();
     file_path.push("expected_should_pushdown.csv");
@@ -210,7 +209,6 @@ GROUP BY ?site_label ?wtur_label ?year ?month ?day ?hour ?minute_10
         .execute_hybrid_query(query, QUERY_ENDPOINT)
         .await
         .expect("Hybrid error").sort(vec!["site_label", "wtur_label", "year", "month", "day", "hour", "minute_10"], false).unwrap();
-    println!("DF: {}", df);
 
     let mut file_path = testdata_path.clone();
     file_path.push("expected_multi_should_pushdown.csv");
