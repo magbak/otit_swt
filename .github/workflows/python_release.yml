@@ -46,8 +46,8 @@ jobs:
 
     - name: Set up nightly rust
       run: |
-        rustup toolchain install nightly
-        rustup default nightly
+        rustup toolchain install nightly-2022-09-13
+        rustup default nightly-2022-09-13
 
     - name: Build query wheels
       run: |
