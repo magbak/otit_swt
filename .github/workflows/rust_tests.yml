@@ -20,7 +20,7 @@ jobs:
     - name: Upgrade rust with nightly and pull oxigraph and dremio image
       run: |
         rustup update
-        rustup toolchain install nightly
+        rustup toolchain install nightly-2022-09-13
         rustup default nightly
 
         docker pull oxigraph/oxigraph:v0.3.2
