@@ -147,3 +147,84 @@ GROUP BY ?site_label ?wtur_label ?year ?month ?day ?hour ?minute_10
     // writer.finish(&mut df).expect("writeok");
     // println!("{}", df);
 }
+
+#[rstest]
+#[tokio::test]
+#[serial]
+async fn test_multi_should_pushdown_query(
+    #[future] with_testdata: (),
+    mut engine: Engine,
+    testdata_path: PathBuf,
+    use_logger: (),
+) {
+    let _ = use_logger;
+    let _ = with_testdata.await;
+    let query = r#"PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+PREFIX otit:<https://github.com/magbak/otit_swt#>
+PREFIX wp:<https://github.com/magbak/otit_swt/windpower_example#>
+PREFIX rdfs:<http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf:<http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rds:<https://github.com/magbak/otit_swt/rds_power#>
+SELECT ?site_label ?wtur_label ?year ?month ?day ?hour ?minute_10 (AVG(?val_prod) as ?val_prod_avg) (AVG(?val_dir) as ?val_dir_avg) (AVG(?val_speed) as ?val_speed_avg) WHERE {
+    ?site a rds:Site .
+    ?site rdfs:label ?site_label .
+    ?site rds:hasFunctionalAspect ?wtur_asp .
+    ?wtur_asp rdfs:label ?wtur_label .
+    ?wtur rds:hasFunctionalAspectNode ?wtur_asp .
+    ?wtur a rds:A .
+    ?wtur rds:hasFunctionalAspect ?gensys_asp .
+    ?gensys rds:hasFunctionalAspectNode ?gensys_asp .
+    ?gensys a rds:RA .
+    ?gensys rds:hasFunctionalAspect ?generator_asp .
+    ?generator rds:hasFunctionalAspectNode ?generator_asp .
+    ?generator a rds:GAA .
+    ?wtur rds:hasFunctionalAspect ?weather_asp .
+    ?weather rds:hasFunctionalAspectNode ?weather_asp .
+    ?weather a rds:LE .
+    ?weather otit:hasTimeseries ?ts_speed .
+    ?ts_speed otit:hasDataPoint ?dp_speed .
+    ?dp_speed otit:hasValue ?val_speed .
+    ?dp_speed otit:hasTimestamp ?t .
+    ?ts_speed rdfs:label "Windspeed" .
+    ?weather otit:hasTimeseries ?ts_dir .
+    ?ts_dir otit:hasDataPoint ?dp_dir .
+    ?dp_dir otit:hasValue ?val_dir .
+    ?dp_dir otit:hasTimestamp ?t .
+    ?ts_dir rdfs:label "WindDirection" .
+    ?generator otit:hasTimeseries ?ts_prod .
+    ?ts_prod rdfs:label "Production" .
+    ?ts_prod otit:hasDataPoint ?dp_prod .
+    ?dp_prod otit:hasValue ?val_prod .
+    ?dp_prod otit:hasTimestamp ?t .
+    BIND(10 * FLOOR(minutes(?t) / 10.0) as ?minute_10)
+    BIND(hours(?t) AS ?hour)
+    BIND(day(?t) AS ?day)
+    BIND(month(?t) AS ?month)
+    BIND(year(?t) AS ?year)
+    FILTER(?t >= "2022-08-30T08:46:53"^^xsd:dateTime
+    && ?t <= "2022-08-30T21:46:53"^^xsd:dateTime) .
+}
+GROUP BY ?site_label ?wtur_label ?year ?month ?day ?hour ?minute_10
+    "#;
+    let mut df = engine
+        .execute_hybrid_query(query, QUERY_ENDPOINT)
+        .await
+        .expect("Hybrid error").sort(vec!["site_label", "wtur_label", "year", "month", "day", "hour", "minute_10"], false).unwrap();
+    println!("DF: {}", df);
+
+    let mut file_path = testdata_path.clone();
+    file_path.push("expected_multi_should_pushdown.csv");
+
+    let file = File::open(file_path.as_path()).expect("Read file problem");
+    let expected_df = CsvReader::new(file)
+        .infer_schema(None)
+        .has_header(true)
+        .with_parse_dates(true)
+        .finish()
+        .expect("DF read error");
+    assert_eq!(expected_df, df);
+    // let file = File::create(file_path.as_path()).expect("could not open file");
+    // let mut writer = CsvWriter::new(file);
+    // writer.finish(&mut df).expect("writeok");
+    // println!("{}", df);
+}

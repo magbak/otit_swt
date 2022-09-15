@@ -12,6 +12,7 @@ use polars_core::prelude::JoinType;
 use spargebra::algebra::Expression;
 use std::collections::HashMap;
 use std::error::Error;
+use crate::constants::GROUPING_COL;
 
 pub struct InMemoryTimeseriesDatabase {
     pub frames: HashMap<String, DataFrame>,
@@ -192,17 +193,27 @@ impl InMemoryTimeseriesDatabase {
         assert_eq!(synchronizers.len(), 1);
         #[allow(irrefutable_let_patterns)]
         if let Synchronizer::Identity(timestamp_col) = synchronizers.get(0).unwrap() {
+            let mut on = vec![timestamp_col.clone()];
             let mut dfs = vec![];
             for q in inners {
                 let df = self.execute_query(q)?;
+                for c in df.get_column_names() {
+                    if c.starts_with(GROUPING_COL) {
+                        let c_string = c.to_string();
+                        if !on.contains(&c_string) {
+                            on.push(c_string);
+                        }
+                    }
+                }
                 dfs.push(df);
+
             }
             let mut first_df = dfs.remove(0);
             for df in dfs.into_iter() {
                 first_df = first_df.join(
                     &df,
-                    [&timestamp_col],
-                    [&timestamp_col],
+                    on.as_slice(),
+                    on.as_slice(),
                     JoinType::Inner,
                     None,
                 )?;
