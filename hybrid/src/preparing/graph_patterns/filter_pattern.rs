@@ -37,14 +37,16 @@ impl TimeSeriesQueryPrepper {
             } else {
                 ChangeType::Relaxed
             };
+            let conj_vec = conjunction_to_vec(self.rewritten_filters.get(&context));
             let (time_series_condition, lost_value) = rewrite_filter_expression(
                 &t,
                 expression,
                 &use_change_type,
                 context,
-                self.rewritten_filters.get(&context),
+                &conj_vec,
                 &self.pushdown_settings,
             );
+            println!("Expression: {:?}, {:?}", expression, time_series_condition);
             if try_groupby_complex_query && (lost_value || time_series_condition.is_none()) {
                 return GPPrepReturn::fail_groupby_complex_query();
             }
@@ -55,5 +57,31 @@ impl TimeSeriesQueryPrepper {
             }
         }
         GPPrepReturn::new(out_tsqs)
+    }
+}
+
+fn conjunction_to_vec(expr_opt: Option<&Expression>) -> Option<Vec<&Expression>> {
+    let mut out = vec![];
+    if let Some(expr) = expr_opt {
+        match expr {
+            Expression::And(left, right) => {
+                let left_conj = conjunction_to_vec(Some(left));
+                if let Some(left_vec) = left_conj {
+                    out.extend(left_vec);
+                }
+                let right_conj = conjunction_to_vec(Some(right));
+                if let Some(right_vec) = right_conj {
+                    out.extend(right_vec);
+                }
+            }
+            _ => {
+                out.push(expr);
+            }
+        }
+    }
+    if out.len() > 0 {
+        Some(out)
+    } else {
+        None
     }
 }

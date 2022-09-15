@@ -2,9 +2,9 @@ use crate::change_types::ChangeType;
 use crate::pushdown_setting::PushdownSetting;
 use crate::query_context::{Context, PathEntry};
 use crate::timeseries_query::TimeSeriesQuery;
+use oxrdf::Literal;
 use spargebra::algebra::Expression;
 use std::collections::HashSet;
-use oxrdf::Literal;
 
 pub(crate) struct RecursiveRewriteReturn {
     pub expression: Option<Expression>,
@@ -38,16 +38,12 @@ pub(crate) fn rewrite_filter_expression(
     expression: &Expression,
     required_change_direction: &ChangeType,
     context: &Context,
-    static_rewrite: Option<&Expression>,
+    static_rewrite_conjunction: &Option<Vec<&Expression>>,
     pushdown_settings: &HashSet<PushdownSetting>,
 ) -> (Option<Expression>, bool) {
-    if static_rewrite.is_some() && expression == static_rewrite.unwrap() {
-        return (Some(Expression::Literal(Literal::from(true))), false)
-    }
-
     let mut rewrite = try_recursive_rewrite_expression(
         tsq,
-        static_rewrite,
+        static_rewrite_conjunction,
         expression,
         required_change_direction,
         context,
@@ -58,12 +54,16 @@ pub(crate) fn rewrite_filter_expression(
 
 pub(crate) fn try_recursive_rewrite_expression(
     tsq: &TimeSeriesQuery,
-    static_rewrite: Option<&Expression>,
+    static_rewrite_conjunction: &Option<Vec<&Expression>>,
     expression: &Expression,
     required_change_direction: &ChangeType,
     context: &Context,
     pushdown_settings: &HashSet<PushdownSetting>,
 ) -> RecursiveRewriteReturn {
+    if static_rewrite_conjunction.is_some() && static_rewrite_conjunction.as_ref().unwrap().contains(&expression) {
+        return RecursiveRewriteReturn::new(Some(Expression::Literal(Literal::from(true))), Some(ChangeType::NoChange), false);
+    }
+
     match &expression {
         Expression::Literal(lit) => {
             return RecursiveRewriteReturn::new(
@@ -85,8 +85,7 @@ pub(crate) fn try_recursive_rewrite_expression(
                 .find(|x| &x.variable == v)
                 .is_some()
             {
-                if pushdown_settings.contains(&PushdownSetting::ValueConditions)
-                {
+                if pushdown_settings.contains(&PushdownSetting::ValueConditions) {
                     return RecursiveRewriteReturn::new(
                         Some(Expression::Variable(v.clone())),
                         Some(ChangeType::NoChange),
@@ -100,15 +99,9 @@ pub(crate) fn try_recursive_rewrite_expression(
             }
         }
         Expression::Or(left, right) => {
-            let mut static_left = None;
-            let mut static_right = None;
-            if let Some(Expression::Or(static_or_left, static_or_right)) = static_rewrite {
-                static_left = Some(static_or_left.as_ref());
-                static_right = Some(static_or_right.as_ref());
-            }
             let mut left_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                static_left,
+                static_rewrite_conjunction,
                 left,
                 required_change_direction,
                 &context.extension_with(PathEntry::OrLeft),
@@ -116,7 +109,7 @@ pub(crate) fn try_recursive_rewrite_expression(
             );
             let mut right_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                static_right,
+                static_rewrite_conjunction,
                 right,
                 required_change_direction,
                 &context.extension_with(PathEntry::OrRight),
@@ -235,15 +228,9 @@ pub(crate) fn try_recursive_rewrite_expression(
             RecursiveRewriteReturn::none(use_lost_value)
         }
         Expression::And(left, right) => {
-            let mut static_left = None;
-            let mut static_right = None;
-            if let Some(Expression::And(static_or_left, static_or_right)) = static_rewrite {
-                static_left = Some(static_or_left.as_ref());
-                static_right = Some(static_or_right.as_ref());
-            }
             let mut left_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                static_left,
+                static_rewrite_conjunction,
                 left,
                 required_change_direction,
                 &context.extension_with(PathEntry::AndLeft),
@@ -251,7 +238,7 @@ pub(crate) fn try_recursive_rewrite_expression(
             );
             let mut right_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                static_right,
+                static_rewrite_conjunction,
                 right,
                 required_change_direction,
                 &context.extension_with(PathEntry::AndRight),
@@ -364,38 +351,14 @@ pub(crate) fn try_recursive_rewrite_expression(
                             use_lost_value,
                         );
                     }
-                    if static_rewrite.is_some() && left_rewrite.expression.is_some() && left_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange && right_rewrite.expression.is_none() {
-                        if right.as_ref() == static_rewrite.unwrap() {
-                            return RecursiveRewriteReturn::new(
-                                left_rewrite.expression.take(),
-                                Some(ChangeType::NoChange),
-                                    use_lost_value
-                            );
-                        }
-                    }
-                    if static_rewrite.is_some() && right_rewrite.expression.is_some() && right_rewrite.change_type.as_ref().unwrap() == &ChangeType::NoChange && left_rewrite.expression.is_none() {
-                        if left.as_ref() == static_rewrite.unwrap() {
-                            return RecursiveRewriteReturn::new(
-                                right_rewrite.expression.take(),
-                                Some(ChangeType::NoChange),
-                                    use_lost_value
-                            );
-                        }
-                    }
                 }
             }
             RecursiveRewriteReturn::none(use_lost_value)
         }
         Expression::Equal(left, right) => {
-            let mut static_left = None;
-            let mut static_right = None;
-            if let Some(Expression::Equal(static_or_left, static_or_right)) = static_rewrite {
-                static_left = Some(static_or_left.as_ref());
-                static_right = Some(static_or_right.as_ref());
-            }
             let mut left_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                static_left,
+                static_rewrite_conjunction,
                 left,
                 required_change_direction,
                 &context.extension_with(PathEntry::EqualLeft),
@@ -403,7 +366,7 @@ pub(crate) fn try_recursive_rewrite_expression(
             );
             let mut right_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                static_right,
+                static_rewrite_conjunction,
                 right,
                 required_change_direction,
                 &context.extension_with(PathEntry::EqualRight),
@@ -430,7 +393,7 @@ pub(crate) fn try_recursive_rewrite_expression(
         Expression::Greater(left, right) => {
             let mut left_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 left,
                 required_change_direction,
                 &context.extension_with(PathEntry::GreaterLeft),
@@ -438,7 +401,7 @@ pub(crate) fn try_recursive_rewrite_expression(
             );
             let mut right_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 right,
                 required_change_direction,
                 &context.extension_with(PathEntry::GreaterRight),
@@ -465,7 +428,7 @@ pub(crate) fn try_recursive_rewrite_expression(
         Expression::GreaterOrEqual(left, right) => {
             let mut left_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 left,
                 required_change_direction,
                 &context.extension_with(PathEntry::GreaterOrEqualLeft),
@@ -473,7 +436,7 @@ pub(crate) fn try_recursive_rewrite_expression(
             );
             let mut right_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 right,
                 required_change_direction,
                 &context.extension_with(PathEntry::GreaterOrEqualRight),
@@ -500,7 +463,7 @@ pub(crate) fn try_recursive_rewrite_expression(
         Expression::Less(left, right) => {
             let mut left_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 left,
                 required_change_direction,
                 &context.extension_with(PathEntry::LessLeft),
@@ -508,7 +471,7 @@ pub(crate) fn try_recursive_rewrite_expression(
             );
             let mut right_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 right,
                 required_change_direction,
                 &context.extension_with(PathEntry::LessRight),
@@ -535,7 +498,7 @@ pub(crate) fn try_recursive_rewrite_expression(
         Expression::LessOrEqual(left, right) => {
             let mut left_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 left,
                 required_change_direction,
                 &context.extension_with(PathEntry::LessOrEqualLeft),
@@ -543,7 +506,7 @@ pub(crate) fn try_recursive_rewrite_expression(
             );
             let mut right_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 right,
                 required_change_direction,
                 &context.extension_with(PathEntry::LessOrEqualRight),
@@ -570,7 +533,7 @@ pub(crate) fn try_recursive_rewrite_expression(
         Expression::In(left, right) => {
             let mut left_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 left,
                 &ChangeType::NoChange,
                 &context.extension_with(PathEntry::InLeft),
@@ -583,7 +546,7 @@ pub(crate) fn try_recursive_rewrite_expression(
                 .map(|(i, e)| {
                     try_recursive_rewrite_expression(
                         tsq,
-                        None,
+                        &None,
                         e,
                         required_change_direction,
                         &context.extension_with(PathEntry::InRight(i as u16)),
@@ -644,7 +607,7 @@ pub(crate) fn try_recursive_rewrite_expression(
         Expression::Add(left, right) => {
             let mut left_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 left,
                 required_change_direction,
                 &context.extension_with(PathEntry::AddLeft),
@@ -652,7 +615,7 @@ pub(crate) fn try_recursive_rewrite_expression(
             );
             let mut right_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 right,
                 required_change_direction,
                 &context.extension_with(PathEntry::AddRight),
@@ -679,7 +642,7 @@ pub(crate) fn try_recursive_rewrite_expression(
         Expression::Subtract(left, right) => {
             let mut left_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 left,
                 required_change_direction,
                 &context.extension_with(PathEntry::SubtractLeft),
@@ -687,7 +650,7 @@ pub(crate) fn try_recursive_rewrite_expression(
             );
             let mut right_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 right,
                 required_change_direction,
                 &context.extension_with(PathEntry::SubtractRight),
@@ -714,7 +677,7 @@ pub(crate) fn try_recursive_rewrite_expression(
         Expression::Multiply(left, right) => {
             let mut left_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 left,
                 required_change_direction,
                 &context.extension_with(PathEntry::MultiplyLeft),
@@ -722,7 +685,7 @@ pub(crate) fn try_recursive_rewrite_expression(
             );
             let mut right_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 right,
                 required_change_direction,
                 &context.extension_with(PathEntry::MultiplyRight),
@@ -749,7 +712,7 @@ pub(crate) fn try_recursive_rewrite_expression(
         Expression::Divide(left, right) => {
             let mut left_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 left,
                 required_change_direction,
                 &context.extension_with(PathEntry::DivideLeft),
@@ -757,7 +720,7 @@ pub(crate) fn try_recursive_rewrite_expression(
             );
             let mut right_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 right,
                 required_change_direction,
                 &context.extension_with(PathEntry::DivideRight),
@@ -784,7 +747,7 @@ pub(crate) fn try_recursive_rewrite_expression(
         Expression::UnaryPlus(inner) => {
             let mut inner_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 inner,
                 required_change_direction,
                 &context.extension_with(PathEntry::UnaryPlus),
@@ -806,7 +769,7 @@ pub(crate) fn try_recursive_rewrite_expression(
         Expression::UnaryMinus(inner) => {
             let mut inner_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                None,
+                &None,
                 inner,
                 required_change_direction,
                 &context.extension_with(PathEntry::UnaryMinus),
@@ -831,13 +794,10 @@ pub(crate) fn try_recursive_rewrite_expression(
                 ChangeType::Constrained => ChangeType::Relaxed,
                 ChangeType::NoChange => ChangeType::NoChange,
             };
-            let mut static_inner = None;
-            if let Some(Expression::Not(static_not_inner)) = static_rewrite {
-                static_inner = Some(static_not_inner.as_ref());
-            }
+
             let mut inner_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                static_inner,
+                &None,
                 inner,
                 &use_direction,
                 &context.extension_with(PathEntry::Not),
@@ -877,17 +837,9 @@ pub(crate) fn try_recursive_rewrite_expression(
             RecursiveRewriteReturn::none(inner_rewrite.lost_value)
         }
         Expression::If(left, middle, right) => {
-            let mut static_left = None;
-            let mut static_mid = None;
-            let mut static_right = None;
-            if let Some(Expression::If(static_if_left, static_if_mid, static_if_right)) = static_rewrite {
-                static_left = Some(static_if_left.as_ref());
-                static_mid = Some(static_if_mid.as_ref());
-                static_right = Some(static_if_right.as_ref());
-            }
             let mut left_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                static_left,
+                &None,
                 left,
                 required_change_direction,
                 &context.extension_with(PathEntry::IfLeft),
@@ -895,7 +847,7 @@ pub(crate) fn try_recursive_rewrite_expression(
             );
             let mut middle_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                static_mid,
+                &None,
                 middle,
                 required_change_direction,
                 &context.extension_with(PathEntry::IfMiddle),
@@ -903,7 +855,7 @@ pub(crate) fn try_recursive_rewrite_expression(
             );
             let mut right_rewrite = try_recursive_rewrite_expression(
                 tsq,
-                static_right,
+                &None,
                 right,
                 required_change_direction,
                 &context.extension_with(PathEntry::IfRight),
@@ -938,7 +890,7 @@ pub(crate) fn try_recursive_rewrite_expression(
                 .map(|(i, e)| {
                     try_recursive_rewrite_expression(
                         tsq,
-                        None,
+                        &None,
                         e,
                         required_change_direction,
                         &context.extension_with(PathEntry::Coalesce(i as u16)),
@@ -973,7 +925,7 @@ pub(crate) fn try_recursive_rewrite_expression(
                 .map(|(i, e)| {
                     try_recursive_rewrite_expression(
                         tsq,
-                        None,
+                        &None,
                         e,
                         required_change_direction,
                         &context.extension_with(PathEntry::FunctionCall(i as u16)),

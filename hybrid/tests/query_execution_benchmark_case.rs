@@ -1,0 +1,149 @@
+mod common;
+
+use hybrid::engine::Engine;
+use hybrid::pushdown_setting::all_pushdowns;
+use hybrid::timeseries_database::simple_in_memory_timeseries::InMemoryTimeseriesDatabase;
+use log::debug;
+use polars::prelude::{CsvReader, CsvWriter, SerReader};
+use rstest::*;
+use serial_test::serial;
+use std::collections::HashMap;
+use std::fs::File;
+use std::path::PathBuf;
+use polars::io::SerWriter;
+
+use crate::common::{
+    add_sparql_testdata, start_sparql_container, QUERY_ENDPOINT,
+};
+
+#[fixture]
+fn use_logger() {
+    let res = env_logger::try_init();
+    match res {
+        Ok(_) => {}
+        Err(_) => {
+            debug!("Tried to initialize logger which is already initialize")
+        }
+    }
+}
+
+#[fixture]
+fn testdata_path() -> PathBuf {
+    let manidir = env!("CARGO_MANIFEST_DIR");
+    let mut testdata_path = PathBuf::new();
+    testdata_path.push(manidir);
+    testdata_path.push("tests");
+    testdata_path.push("query_execution_benchmark_case");
+    testdata_path
+}
+
+#[fixture]
+async fn sparql_endpoint() {
+    start_sparql_container().await
+}
+
+#[fixture]
+async fn with_testdata(#[future] sparql_endpoint: (), testdata_path: PathBuf) {
+    let _ = sparql_endpoint.await;
+    let mut testdata_path = testdata_path.clone();
+    testdata_path.push("testdata.sparql");
+    add_sparql_testdata(testdata_path).await;
+}
+
+#[fixture]
+fn inmem_time_series_database(testdata_path: PathBuf) -> InMemoryTimeseriesDatabase {
+    let mut frames = HashMap::new();
+    for t in [
+        "ep1", "ep2", "ep3", "ep4", "ep5", "ep6", "ep7", "ep8", "wsp1", "wsp2", "wsp3", "wsp4",
+        "wsp5", "wsp6", "wsp7", "wsp8", "wdir1", "wdir2", "wdir3", "wdir4", "wdir5", "wdir6",
+        "wdir7", "wdir8",
+    ] {
+        let mut file_path = testdata_path.clone();
+        file_path.push(t.to_string() + ".csv");
+
+        let file = File::open(file_path.as_path()).expect("could not open file");
+        let df = CsvReader::new(file)
+            .infer_schema(None)
+            .has_header(true)
+            .with_parse_dates(true)
+            .finish()
+            .expect("DF read error");
+        frames.insert(t.to_string(), df);
+    }
+    InMemoryTimeseriesDatabase { frames }
+}
+
+#[fixture]
+fn engine(inmem_time_series_database: InMemoryTimeseriesDatabase) -> Engine {
+    Engine::new(all_pushdowns(), Box::new(inmem_time_series_database))
+}
+
+#[rstest]
+#[tokio::test]
+#[serial]
+async fn test_should_pushdown_query(
+    #[future] with_testdata: (),
+    mut engine: Engine,
+    testdata_path: PathBuf,
+    use_logger: (),
+) {
+    let _ = use_logger;
+    let _ = with_testdata.await;
+    let query = r#"PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+PREFIX otit:<https://github.com/magbak/otit_swt#>
+PREFIX wp:<https://github.com/magbak/otit_swt/windpower_example#>
+PREFIX rdfs:<http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf:<http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rds:<https://github.com/magbak/otit_swt/rds_power#>
+SELECT ?site_label ?wtur_label ?year ?month ?day ?hour ?minute_10 (AVG(?val) as ?avg_val) WHERE {
+    ?site a rds:Site .
+    ?site rdfs:label ?site_label .
+    ?site rds:hasFunctionalAspect ?wtur_asp .
+    ?wtur_asp rdfs:label ?wtur_label .
+    ?wtur rds:hasFunctionalAspectNode ?wtur_asp .
+    ?wtur rds:hasFunctionalAspect ?gensys_asp .
+    ?wtur a rds:A .
+    ?gensys rds:hasFunctionalAspectNode ?gensys_asp .
+    ?gensys a rds:RA .
+    ?gensys rds:hasFunctionalAspect ?generator_asp .
+    ?generator rds:hasFunctionalAspectNode ?generator_asp .
+    ?generator a rds:GAA .
+    ?generator otit:hasTimeseries ?ts .
+    ?ts rdfs:label "Production" .
+    ?ts otit:hasDataPoint ?dp .
+    ?dp otit:hasValue ?val .
+    ?dp otit:hasTimestamp ?t .
+    BIND(10 * FLOOR(minutes(?t) / 10.0) as ?minute_10)
+    BIND(hours(?t) AS ?hour)
+    BIND(day(?t) AS ?day)
+    BIND(month(?t) AS ?month)
+    BIND(year(?t) AS ?year)
+    FILTER(?site_label = "Wind Mountain"
+        && ?wtur_label = "A1"
+        && ?t >= "2022-08-30T08:46:53"^^xsd:dateTime
+        && ?t <= "2022-08-30T21:46:53"^^xsd:dateTime) .
+}
+GROUP BY ?site_label ?wtur_label ?year ?month ?day ?hour ?minute_10
+    "#;
+    let mut df = engine
+        .execute_hybrid_query(query, QUERY_ENDPOINT)
+        .await
+        .expect("Hybrid error").sort(vec!["site_label", "wtur_label", "year", "month", "day", "hour", "minute_10"], false).unwrap();
+    println!("DF: {}", df);
+
+    let mut file_path = testdata_path.clone();
+    file_path.push("expected_should_pushdown.csv");
+
+    let file = File::open(file_path.as_path()).expect("Read file problem");
+    let expected_df = CsvReader::new(file)
+        .infer_schema(None)
+        .has_header(true)
+        .with_parse_dates(true)
+        .finish()
+        .expect("DF read error");
+    assert_eq!(expected_df, df);
+    // let file = File::create(file_path.as_path()).expect("could not open file");
+    // let mut writer = CsvWriter::new(file);
+    // writer.finish(&mut df).expect("writeok");
+    // println!("{}", df);
+}
