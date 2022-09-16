@@ -1,6 +1,6 @@
 [package]
 name = "py_otit_swt_query"
-version = "0.1.39"
+version = "0.1.40"
 edition = "2021"
 
 [workspace]
