@@ -1,5 +1,6 @@
 use crate::combiner::lazy_aggregate::sparql_aggregate_expression_as_lazy_column_and_expression;
 use crate::combiner::lazy_expressions::lazy_expression;
+use crate::constants::GROUPING_COL;
 use crate::query_context::{Context, PathEntry};
 use crate::timeseries_database::TimeSeriesQueryable;
 use crate::timeseries_query::{
@@ -12,7 +13,6 @@ use polars_core::prelude::JoinType;
 use spargebra::algebra::Expression;
 use std::collections::HashMap;
 use std::error::Error;
-use crate::constants::GROUPING_COL;
 
 pub struct InMemoryTimeseriesDatabase {
     pub frames: HashMap<String, DataFrame>,
@@ -152,7 +152,9 @@ impl InMemoryTimeseriesDatabase {
                     &columns,
                     out_lf,
                     &mut vec![],
-                    &grouped.graph_pattern_context.extension_with(PathEntry::GroupAggregation(i as u16)),
+                    &grouped
+                        .graph_pattern_context
+                        .extension_with(PathEntry::GroupAggregation(i as u16)),
                 );
             out_lf = lf;
             aggregation_exprs.push(agg_expr);
@@ -206,17 +208,11 @@ impl InMemoryTimeseriesDatabase {
                     }
                 }
                 dfs.push(df);
-
             }
             let mut first_df = dfs.remove(0);
             for df in dfs.into_iter() {
-                first_df = first_df.join(
-                    &df,
-                    on.as_slice(),
-                    on.as_slice(),
-                    JoinType::Inner,
-                    None,
-                )?;
+                first_df =
+                    first_df.join(&df, on.as_slice(), on.as_slice(), JoinType::Inner, None)?;
             }
             Ok(first_df)
         } else {

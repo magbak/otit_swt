@@ -1,6 +1,6 @@
 use oxrdf::vocab::xsd;
 use polars::export::chrono::{DateTime, NaiveDateTime, Utc};
-use sea_query::{Expr as SeaExpr};
+use sea_query::Expr as SeaExpr;
 use sea_query::{BinOper, ColumnRef, Function, SimpleExpr, UnOper, Value};
 use spargebra::algebra::Expression;
 use std::rc::Rc;
@@ -215,9 +215,9 @@ impl SPARQLToSQLExpressionTransformer<'_> {
                         )
                     } else if c.as_str() == xsd::INTEGER.as_str() {
                         SimpleExpr::AsEnum(
-                                Rc::new(Name::Table("INTEGER".to_string())),
-                                Box::new(mapped_e)
-                                )
+                            Rc::new(Name::Table("INTEGER".to_string())),
+                            Box::new(mapped_e),
+                        )
                     } else {
                         todo!("Fix custom {}", c)
                     }

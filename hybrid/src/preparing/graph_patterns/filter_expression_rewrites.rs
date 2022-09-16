@@ -60,8 +60,17 @@ pub(crate) fn try_recursive_rewrite_expression(
     context: &Context,
     pushdown_settings: &HashSet<PushdownSetting>,
 ) -> RecursiveRewriteReturn {
-    if static_rewrite_conjunction.is_some() && static_rewrite_conjunction.as_ref().unwrap().contains(&expression) {
-        return RecursiveRewriteReturn::new(Some(Expression::Literal(Literal::from(true))), Some(ChangeType::NoChange), false);
+    if static_rewrite_conjunction.is_some()
+        && static_rewrite_conjunction
+            .as_ref()
+            .unwrap()
+            .contains(&expression)
+    {
+        return RecursiveRewriteReturn::new(
+            Some(Expression::Literal(Literal::from(true))),
+            Some(ChangeType::NoChange),
+            false,
+        );
     }
 
     match &expression {

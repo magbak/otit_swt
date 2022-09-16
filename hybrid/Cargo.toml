@@ -20,7 +20,7 @@ tokio-stream = "0.1.9"
 arrow2 = {version="0.13.1", features=["io_flight", "simd"]}
 arrow-format = {version="0.7.0", features=["flight-data", "flight-service"]}
 polars-core = "0.23.2"
-sea-query = {version ="0.26.0", features=["with-chrono"]}
+sea-query = { git = "https://github.com/magbak/sea-query", branch = "dirty_bugfix_parentheses", features=["with-chrono"]}
 async-trait = "0.1.56"
 base64 = "0.13.0"
 opcua-client = "0.9.1"

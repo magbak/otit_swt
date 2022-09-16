@@ -49,7 +49,10 @@ impl StaticQueryRewriter {
                 } else {
                     panic!("Should never happen");
                 }
-                self.rewritten_filters.insert(context.clone(), expression_rewrite.expression.as_ref().unwrap().clone());
+                self.rewritten_filters.insert(
+                    context.clone(),
+                    expression_rewrite.expression.as_ref().unwrap().clone(),
+                );
                 let inner_graph_pattern = inner_rewrite.graph_pattern.take().unwrap();
                 inner_rewrite
                     .with_graph_pattern(GraphPattern::Filter {

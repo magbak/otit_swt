@@ -10,10 +10,10 @@ use crate::constraints::{Constraint, VariableConstraints};
 use crate::query_context::Context;
 use crate::rewriting::expressions::ExReturn;
 use crate::timeseries_query::BasicTimeSeriesQuery;
+use spargebra::algebra::Expression;
 use spargebra::term::Variable;
 use spargebra::Query;
 use std::collections::{HashMap, HashSet};
-use spargebra::algebra::Expression;
 
 #[derive(Debug)]
 pub struct StaticQueryRewriter {
@@ -21,7 +21,7 @@ pub struct StaticQueryRewriter {
     additional_projections: HashSet<Variable>,
     variable_constraints: VariableConstraints,
     basic_time_series_queries: Vec<BasicTimeSeriesQuery>,
-    pub rewritten_filters: HashMap<Context, Expression>
+    pub rewritten_filters: HashMap<Context, Expression>,
 }
 
 impl StaticQueryRewriter {
@@ -31,7 +31,7 @@ impl StaticQueryRewriter {
             additional_projections: Default::default(),
             variable_constraints: variable_constraints.clone(),
             basic_time_series_queries: vec![],
-            rewritten_filters: HashMap::new()
+            rewritten_filters: HashMap::new(),
         }
     }
 

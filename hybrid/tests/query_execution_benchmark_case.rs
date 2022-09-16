@@ -4,17 +4,15 @@ use hybrid::engine::Engine;
 use hybrid::pushdown_setting::all_pushdowns;
 use hybrid::timeseries_database::simple_in_memory_timeseries::InMemoryTimeseriesDatabase;
 use log::debug;
+use polars::io::SerWriter;
 use polars::prelude::{CsvReader, CsvWriter, SerReader};
 use rstest::*;
 use serial_test::serial;
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::PathBuf;
-use polars::io::SerWriter;
 
-use crate::common::{
-    add_sparql_testdata, start_sparql_container, QUERY_ENDPOINT,
-};
+use crate::common::{add_sparql_testdata, start_sparql_container, QUERY_ENDPOINT};
 
 #[fixture]
 fn use_logger() {
@@ -128,7 +126,20 @@ GROUP BY ?site_label ?wtur_label ?year ?month ?day ?hour ?minute_10
     let mut df = engine
         .execute_hybrid_query(query, QUERY_ENDPOINT)
         .await
-        .expect("Hybrid error").sort(vec!["site_label", "wtur_label", "year", "month", "day", "hour", "minute_10"], false).unwrap();
+        .expect("Hybrid error")
+        .sort(
+            vec![
+                "site_label",
+                "wtur_label",
+                "year",
+                "month",
+                "day",
+                "hour",
+                "minute_10",
+            ],
+            false,
+        )
+        .unwrap();
 
     let mut file_path = testdata_path.clone();
     file_path.push("expected_should_pushdown.csv");
@@ -141,7 +152,15 @@ GROUP BY ?site_label ?wtur_label ?year ?month ?day ?hour ?minute_10
         .finish()
         .expect("DF read error");
     for c in df.get_columns() {
-        expected_df.with_column(expected_df.column(c.name()).unwrap().cast(c.dtype()).unwrap()).unwrap();
+        expected_df
+            .with_column(
+                expected_df
+                    .column(c.name())
+                    .unwrap()
+                    .cast(c.dtype())
+                    .unwrap(),
+            )
+            .unwrap();
     }
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
@@ -211,7 +230,20 @@ GROUP BY ?site_label ?wtur_label ?year ?month ?day ?hour ?minute_10
     let mut df = engine
         .execute_hybrid_query(query, QUERY_ENDPOINT)
         .await
-        .expect("Hybrid error").sort(vec!["site_label", "wtur_label", "year", "month", "day", "hour", "minute_10"], false).unwrap();
+        .expect("Hybrid error")
+        .sort(
+            vec![
+                "site_label",
+                "wtur_label",
+                "year",
+                "month",
+                "day",
+                "hour",
+                "minute_10",
+            ],
+            false,
+        )
+        .unwrap();
 
     let mut file_path = testdata_path.clone();
     file_path.push("expected_multi_should_pushdown.csv");
@@ -224,7 +256,15 @@ GROUP BY ?site_label ?wtur_label ?year ?month ?day ?hour ?minute_10
         .finish()
         .expect("DF read error");
     for c in df.get_columns() {
-        expected_df.with_column(expected_df.column(c.name()).unwrap().cast(c.dtype()).unwrap()).unwrap();
+        expected_df
+            .with_column(
+                expected_df
+                    .column(c.name())
+                    .unwrap()
+                    .cast(c.dtype())
+                    .unwrap(),
+            )
+            .unwrap();
     }
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
