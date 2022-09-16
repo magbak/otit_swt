@@ -134,12 +134,15 @@ GROUP BY ?site_label ?wtur_label ?year ?month ?day ?hour ?minute_10
     file_path.push("expected_should_pushdown.csv");
 
     let file = File::open(file_path.as_path()).expect("Read file problem");
-    let expected_df = CsvReader::new(file)
+    let mut expected_df = CsvReader::new(file)
         .infer_schema(None)
         .has_header(true)
         .with_parse_dates(true)
         .finish()
         .expect("DF read error");
+    for c in df.get_columns() {
+        expected_df.with_column(expected_df.column(c.name()).unwrap().cast(c.dtype()).unwrap()).unwrap();
+    }
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let mut writer = CsvWriter::new(file);
@@ -214,12 +217,15 @@ GROUP BY ?site_label ?wtur_label ?year ?month ?day ?hour ?minute_10
     file_path.push("expected_multi_should_pushdown.csv");
 
     let file = File::open(file_path.as_path()).expect("Read file problem");
-    let expected_df = CsvReader::new(file)
+    let mut expected_df = CsvReader::new(file)
         .infer_schema(None)
         .has_header(true)
         .with_parse_dates(true)
         .finish()
         .expect("DF read error");
+    for c in df.get_columns() {
+        expected_df.with_column(expected_df.column(c.name()).unwrap().cast(c.dtype()).unwrap()).unwrap();
+    }
     assert_eq!(expected_df, df);
     // let file = File::create(file_path.as_path()).expect("could not open file");
     // let mut writer = CsvWriter::new(file);
