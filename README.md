@@ -1,4 +1,6 @@
 # OT/IT with Semantic Web Technologies (SWT)
+# Now split in two and moved to [chrontext](https://github.com/magbak/chrontext) and [stOTTRs](https://github.com/magbak/stOTTRs)
+
 This repository provides experimental tools for moving between the world of [Operational Technology (OT)](https://en.wikipedia.org/wiki/Operational_technology) to the world of Information Technology (IT).  
 
 - __Model Mapper:__ - An implementation of [stOttr](https://dev.spec.ottr.xyz/stOTTR/) with extensions for mapping asset structures based on the [Epsilon Transformation Language](https://www.eclipse.org/epsilon/doc/etl/). Implemented with [Apache Arrow](https://arrow.apache.org/) in Rust using [Pola.rs](https://www.pola.rs/).  
